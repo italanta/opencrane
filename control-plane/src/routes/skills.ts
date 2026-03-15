@@ -1,66 +1,78 @@
-import { readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { Hono } from "hono";
+import { Router } from "express";
+import type { PrismaClient } from "@prisma/client";
 
 import type { SkillEntry } from "../types.js";
 
 /** Default filesystem path where shared skills are stored. */
-const SHARED_SKILLS_PATH =
-  process.env.SHARED_SKILLS_PATH ?? "/data/shared-skills";
+const SHARED_SKILLS_PATH = process.env.SHARED_SKILLS_PATH ?? "/data/shared-skills";
 
 /**
- * Creates a Hono sub-router that lists and retrieves shared skill
- * definitions from the filesystem.
+ * Creates an Express router that lists and retrieves shared skill
+ * definitions from the filesystem and persists metadata to the database.
+ * @param prisma - Prisma ORM client for skill metadata persistence
+ * @returns Configured Express Router
  */
-export function skillsRouter(): Hono
+export function skillsRouter(prisma: PrismaClient): Router
 {
-  const router = new Hono();
+  const router = Router();
 
-  // List all shared skills
-  router.get("/", async (c) => {
+  /** List all shared skills (scans filesystem + syncs to DB). */
+  router.get("/", async function _listSkills(req, res)
+  {
     const skills: SkillEntry[] = [];
 
-    // Scan org skills
-    await scanSkillDir(join(SHARED_SKILLS_PATH, "org"), "org", skills);
+    await _scanSkillDir(join(SHARED_SKILLS_PATH, "org"), "org", skills);
 
-    // Scan team skills
-    try {
-      const teams = await readdir(join(SHARED_SKILLS_PATH, "teams"), {
-        withFileTypes: true,
-      });
-      for (const team of teams) {
-        if (team.isDirectory()) {
-          await scanSkillDir(
-            join(SHARED_SKILLS_PATH, "teams", team.name),
-            "team",
-            skills,
-          );
+    try
+    {
+      const teams = await readdir(join(SHARED_SKILLS_PATH, "teams"), { withFileTypes: true });
+      for (const team of teams)
+      {
+        if (team.isDirectory())
+        {
+          await _scanSkillDir(join(SHARED_SKILLS_PATH, "teams", team.name), "team", skills);
         }
       }
-    } catch {
+    }
+    catch
+    {
       // No teams directory
     }
 
-    return c.json(skills);
+    // Sync discovered skills to the database
+    for (const skill of skills)
+    {
+      await prisma.skill.upsert({
+        where: { name_scope_team: { name: skill.name, scope: skill.scope, team: "" } },
+        create: { name: skill.name, scope: skill.scope, team: "", path: skill.path },
+        update: { path: skill.path },
+      });
+    }
+
+    res.json(skills);
   });
 
-  // Get a specific skill's content
-  router.get("/:scope/:name", async (c) => {
-    const scope = c.req.param("scope");
-    const name = c.req.param("name");
+  /** Get a specific skill's content by scope and name. */
+  router.get("/:scope/:name", async function _getSkill(req, res)
+  {
+    const scope = req.params.scope;
+    const name = req.params.name;
 
-    const skillPath =
-      scope === "org"
-        ? join(SHARED_SKILLS_PATH, "org", name, "SKILL.md")
-        : join(SHARED_SKILLS_PATH, "teams", scope, name, "SKILL.md");
+    const skillPath = scope === "org"
+      ? join(SHARED_SKILLS_PATH, "org", name, "SKILL.md")
+      : join(SHARED_SKILLS_PATH, "teams", scope, name, "SKILL.md");
 
-    try {
-      const { readFile } = await import("node:fs/promises");
+    try
+    {
       const file = await readFile(skillPath, "utf-8");
-      return c.json({ name, scope, content: file });
-    } catch {
-      return c.json({ error: "Skill not found" }, 404);
+      res.json({ name, scope, content: file });
+    }
+    catch
+    {
+      res.status(404).json({ error: "Skill not found" });
     }
   });
 
@@ -70,17 +82,19 @@ export function skillsRouter(): Hono
 /**
  * Scans a directory for skill subdirectories and appends entries
  * to the provided skills array.
+ * @param dir - Directory path to scan
+ * @param scope - Visibility scope of discovered skills
+ * @param skills - Accumulator array for found skill entries
  */
-async function scanSkillDir(
-  dir: string,
-  scope: "org" | "team",
-  skills: SkillEntry[],
-): Promise<void>
+async function _scanSkillDir(dir: string, scope: "org" | "team", skills: SkillEntry[]): Promise<void>
 {
-  try {
+  try
+  {
     const entries = await readdir(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
+    for (const entry of entries)
+    {
+      if (entry.isDirectory())
+      {
         skills.push({
           name: entry.name,
           scope,
@@ -88,7 +102,9 @@ async function scanSkillDir(
         });
       }
     }
-  } catch {
+  }
+  catch
+  {
     // Directory doesn't exist, skip
   }
 }

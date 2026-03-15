@@ -1,66 +1,119 @@
-import { Hono } from "hono";
-import { describe, expect, it } from "vitest";
+import express from "express";
+import type { Express } from "express";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import request from "supertest";
 
-describe("Control Plane", () => {
-  it("healthz endpoint returns ok", async () => {
-    const app = new Hono();
-    app.get("/healthz", (c) => c.json({ status: "ok" }));
+import { authMiddleware } from "./middleware/auth.js";
 
-    const res = await app.request("/healthz");
-    expect(res.status).toBe(200);
+/**
+ * Build a minimal Express app with the auth middleware and a test endpoint.
+ * @returns An Express app wired for testing
+ */
+function _buildTestApp(): Express
+{
+  const app = express();
+  app.use(express.json());
+  app.use(authMiddleware());
 
-    const body = await res.json();
-    expect(body).toEqual({ status: "ok" });
+  app.get("/healthz", function _healthz(req, res)
+  {
+    res.json({ status: "ok", db: true });
   });
 
-  it("auth middleware rejects missing token when configured", async () => {
-    const originalToken = process.env.OPENCRANE_API_TOKEN;
-    process.env.OPENCRANE_API_TOKEN = "test-secret";
+  app.get("/api/test", function _test(req, res)
+  {
+    res.json({ ok: true });
+  });
 
-    try {
-      const app = new Hono();
-      app.use("*", async (c, next) => {
-        if (c.req.path === "/healthz") return next();
-        const token = process.env.OPENCRANE_API_TOKEN;
-        if (!token) return next();
+  return app;
+}
 
-        const header = c.req.header("Authorization");
-        if (!header?.startsWith("Bearer ")) {
-          return c.json({ error: "Missing Authorization header" }, 401);
-        }
-        const provided = header.slice(7);
-        if (provided !== token) {
-          return c.json({ error: "Invalid token" }, 403);
-        }
-        return next();
-      });
-      app.get("/api/test", (c) => c.json({ ok: true }));
+describe("Control Plane", () =>
+{
+  it("healthz endpoint returns ok", async () =>
+  {
+    const app = _buildTestApp();
+    const res = await request(app).get("/healthz");
 
-      // Without token
-      const res1 = await app.request("/api/test");
-      expect(res1.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ status: "ok", db: true });
+  });
 
-      // With wrong token
-      const res2 = await app.request("/api/test", {
-        headers: { Authorization: "Bearer wrong" },
-      });
-      expect(res2.status).toBe(403);
+  describe("auth middleware", () =>
+  {
+    let originalToken: string | undefined;
 
-      // With correct token
-      const res3 = await app.request("/api/test", {
-        headers: { Authorization: "Bearer test-secret" },
-      });
-      expect(res3.status).toBe(200);
+    beforeEach(() =>
+    {
+      originalToken = process.env.OPENCRANE_API_TOKEN;
+    });
 
-      // Health check bypasses auth
-      const res4 = await app.request("/healthz");
-      expect(res4.status).toBe(404); // no healthz route in this mini app
-    } finally {
-      if (originalToken) {
+    afterEach(() =>
+    {
+      if (originalToken)
+      {
         process.env.OPENCRANE_API_TOKEN = originalToken;
-      } else {
+      }
+      else
+      {
         delete process.env.OPENCRANE_API_TOKEN;
       }
-    }
+    });
+
+    it("rejects requests without Authorization header when token is configured", async () =>
+    {
+      process.env.OPENCRANE_API_TOKEN = "test-secret";
+      const app = _buildTestApp();
+
+      const res = await request(app).get("/api/test");
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual({ error: "Missing Authorization header" });
+    });
+
+    it("rejects requests with wrong token", async () =>
+    {
+      process.env.OPENCRANE_API_TOKEN = "test-secret";
+      const app = _buildTestApp();
+
+      const res = await request(app)
+        .get("/api/test")
+        .set("Authorization", "Bearer wrong-token");
+
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({ error: "Invalid token" });
+    });
+
+    it("allows requests with correct token", async () =>
+    {
+      process.env.OPENCRANE_API_TOKEN = "test-secret";
+      const app = _buildTestApp();
+
+      const res = await request(app)
+        .get("/api/test")
+        .set("Authorization", "Bearer test-secret");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true });
+    });
+
+    it("allows all requests when no token is configured (dev mode)", async () =>
+    {
+      delete process.env.OPENCRANE_API_TOKEN;
+      const app = _buildTestApp();
+
+      const res = await request(app).get("/api/test");
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true });
+    });
+
+    it("healthz bypasses auth even with token configured", async () =>
+    {
+      process.env.OPENCRANE_API_TOKEN = "test-secret";
+      const app = _buildTestApp();
+
+      const res = await request(app).get("/healthz");
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("ok");
+    });
   });
 });

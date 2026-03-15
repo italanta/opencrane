@@ -1,0 +1,65 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  name            String       @id
+  displayName     String       @map("display_name")
+  email           String
+  team            String?
+  phase           String       @default("Pending")
+  ingressHost     String?      @map("ingress_host")
+  configOverrides Json?        @map("config_overrides")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+  auditEntries    AuditEntry[]
+
+  @@map("tenants")
+}
+
+model AccessPolicy {
+  name           String   @id
+  description    String?
+  tenantSelector Json?    @map("tenant_selector")
+  domains        Json?
+  egressRules    Json?    @map("egress_rules")
+  mcpServers     Json?    @map("mcp_servers")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("access_policies")
+}
+
+model AuditEntry {
+  id        Int      @id @default(autoincrement())
+  timestamp DateTime @default(now())
+  tenant    String?
+  action    String
+  resource  String
+  message   String
+  metadata  Json?
+  tenantRef Tenant?  @relation(fields: [tenant], references: [name])
+
+  @@index([tenant])
+  @@index([timestamp])
+  @@map("audit_log")
+}
+
+model Skill {
+  name        String
+  scope       String
+  team        String   @default("")
+  path        String
+  author      String?
+  contentHash String?  @map("content_hash")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@id([name, scope, team])
+  @@map("skills")
+}

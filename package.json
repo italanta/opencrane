@@ -8,6 +8,14 @@
     "node": ">=22"
   },
   "packageManager": "pnpm@10.11.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "prisma",
+      "@prisma/client",
+      "@prisma/engines"
+    ],
+    "ignoredBuiltDependencies": []
+  },
   "scripts": {
     "build": "pnpm -r build",
     "dev": "pnpm -r --parallel dev",

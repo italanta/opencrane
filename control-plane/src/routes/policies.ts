@@ -1,5 +1,6 @@
 import * as k8s from "@kubernetes/client-node";
-import { Hono } from "hono";
+import { Router } from "express";
+import type { PrismaClient } from "@prisma/client";
 
 import type { CreatePolicyRequest } from "../types.js";
 
@@ -13,56 +14,67 @@ const API_VERSION = "v1alpha1";
 const PLURAL = "accesspolicies";
 
 /**
- * Creates a Hono sub-router that exposes CRUD operations
+ * Creates an Express router that exposes CRUD operations
  * for AccessPolicy custom resources.
+ * Dual-writes to both K8s CRDs and PostgreSQL via Prisma.
+ * @param customApi - Kubernetes custom objects API client
+ * @param prisma - Prisma ORM client
+ * @returns Configured Express Router
  */
-export function policiesRouter(customApi: k8s.CustomObjectsApi): Hono
+export function policiesRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaClient): Router
 {
-  const router = new Hono();
+  const router = Router();
   const namespace = process.env.NAMESPACE ?? "default";
 
-  // List all policies
-  router.get("/", async (c) => {
-    const result = await customApi.listNamespacedCustomObject({
-      group: API_GROUP,
-      version: API_VERSION,
-      namespace,
-      plural: PLURAL,
+  /** List all access policies from the database. */
+  router.get("/", async function _listPolicies(req, res)
+  {
+    const policies = await prisma.accessPolicy.findMany({
+      orderBy: { createdAt: "desc" },
     });
 
-    const list = result as { items: Array<{ metadata: { name: string }; spec: Record<string, unknown> }> };
-    return c.json(
-      list.items.map((item) => ({
-        name: item.metadata.name,
-        ...item.spec,
-      })),
-    );
+    res.json(policies.map(function _mapPolicy(p)
+    {
+      return {
+        name: p.name,
+        description: p.description,
+        tenantSelector: p.tenantSelector,
+        domains: p.domains,
+        egressRules: p.egressRules,
+        mcpServers: p.mcpServers,
+      };
+    }));
   });
 
-  // Get a single policy
-  router.get("/:name", async (c) => {
-    const name = c.req.param("name");
-    try {
-      const result = await customApi.getNamespacedCustomObject({
-        group: API_GROUP,
-        version: API_VERSION,
-        namespace,
-        plural: PLURAL,
-        name,
-      });
+  /** Get a single policy by name. */
+  router.get("/:name", async function _getPolicy(req, res)
+  {
+    const policy = await prisma.accessPolicy.findUnique({
+      where: { name: req.params.name },
+    });
 
-      const item = result as { metadata: { name: string }; spec: Record<string, unknown> };
-      return c.json({ name: item.metadata.name, ...item.spec });
-    } catch {
-      return c.json({ error: "Policy not found" }, 404);
+    if (!policy)
+    {
+      res.status(404).json({ error: "Policy not found" });
+      return;
     }
+
+    res.json({
+      name: policy.name,
+      description: policy.description,
+      tenantSelector: policy.tenantSelector,
+      domains: policy.domains,
+      egressRules: policy.egressRules,
+      mcpServers: policy.mcpServers,
+    });
   });
 
-  // Create a policy
-  router.post("/", async (c) => {
-    const body = await c.req.json<CreatePolicyRequest>();
+  /** Create a new access policy (dual-write: K8s CRD + database). */
+  router.post("/", async function _createPolicy(req, res)
+  {
+    const body = req.body as CreatePolicyRequest;
 
-    const policy = {
+    const policyCr = {
       apiVersion: `${API_GROUP}/${API_VERSION}`,
       kind: "AccessPolicy",
       metadata: { name: body.name, namespace },
@@ -80,16 +92,36 @@ export function policiesRouter(customApi: k8s.CustomObjectsApi): Hono
       version: API_VERSION,
       namespace,
       plural: PLURAL,
-      body: policy,
+      body: policyCr,
     });
 
-    return c.json({ name: body.name, status: "created" }, 201);
+    await prisma.accessPolicy.create({
+      data: {
+        name: body.name,
+        description: body.description,
+        tenantSelector: body.tenantSelector ?? undefined,
+        domains: body.domains ?? undefined,
+        egressRules: body.egressRules ?? undefined,
+        mcpServers: body.mcpServers ?? undefined,
+      },
+    });
+
+    await prisma.auditEntry.create({
+      data: {
+        action: "Created",
+        resource: `AccessPolicy/${body.name}`,
+        message: `Access policy ${body.name} created`,
+      },
+    });
+
+    res.status(201).json({ name: body.name, status: "created" });
   });
 
-  // Update a policy
-  router.put("/:name", async (c) => {
-    const name = c.req.param("name");
-    const body = await c.req.json<Partial<CreatePolicyRequest>>();
+  /** Update a policy (dual-write: K8s CRD + database). */
+  router.put("/:name", async function _updatePolicy(req, res)
+  {
+    const name = req.params.name;
+    const body = req.body as Partial<CreatePolicyRequest>;
 
     await customApi.patchNamespacedCustomObject({
       group: API_GROUP,
@@ -100,12 +132,32 @@ export function policiesRouter(customApi: k8s.CustomObjectsApi): Hono
       body: { spec: body },
     });
 
-    return c.json({ name, status: "updated" });
+    await prisma.accessPolicy.update({
+      where: { name },
+      data: {
+        ...(body.description !== undefined ? { description: body.description } : {}),
+        ...(body.tenantSelector !== undefined ? { tenantSelector: body.tenantSelector } : {}),
+        ...(body.domains !== undefined ? { domains: body.domains } : {}),
+        ...(body.egressRules !== undefined ? { egressRules: body.egressRules } : {}),
+        ...(body.mcpServers !== undefined ? { mcpServers: body.mcpServers } : {}),
+      },
+    });
+
+    await prisma.auditEntry.create({
+      data: {
+        action: "Updated",
+        resource: `AccessPolicy/${name}`,
+        message: `Access policy ${name} updated`,
+      },
+    });
+
+    res.json({ name, status: "updated" });
   });
 
-  // Delete a policy
-  router.delete("/:name", async (c) => {
-    const name = c.req.param("name");
+  /** Delete a policy (dual-write: K8s CRD + database). */
+  router.delete("/:name", async function _deletePolicy(req, res)
+  {
+    const name = req.params.name;
 
     await customApi.deleteNamespacedCustomObject({
       group: API_GROUP,
@@ -115,7 +167,17 @@ export function policiesRouter(customApi: k8s.CustomObjectsApi): Hono
       name,
     });
 
-    return c.json({ name, status: "deleted" });
+    await prisma.auditEntry.create({
+      data: {
+        action: "Deleted",
+        resource: `AccessPolicy/${name}`,
+        message: `Access policy ${name} deleted`,
+      },
+    });
+
+    await prisma.accessPolicy.delete({ where: { name } });
+
+    res.json({ name, status: "deleted" });
   });
 
   return router;

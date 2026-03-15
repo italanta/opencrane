@@ -1,48 +1,42 @@
-import * as k8s from "@kubernetes/client-node";
-import { Hono } from "hono";
+import { Router } from "express";
+import type { PrismaClient } from "@prisma/client";
 
 import type { AuditEntry } from "../types.js";
 
 /**
- * Creates a Hono sub-router that queries Kubernetes events
- * for OpenCrane resources and returns them as audit log entries.
+ * Creates an Express router that queries the audit log from PostgreSQL.
+ * Replaces the previous K8s Events-based approach with a Prisma-backed store.
+ * @param prisma - Prisma ORM client
+ * @returns Configured Express Router
  */
-export function auditRouter(coreApi: k8s.CoreV1Api): Hono
+export function auditRouter(prisma: PrismaClient): Router
 {
-  const router = new Hono();
-  const namespace = process.env.NAMESPACE ?? "default";
+  const router = Router();
 
-  // Query audit log (Kubernetes events for opencrane resources)
-  router.get("/", async (c) => {
-    const tenant = c.req.query("tenant");
-    const limit = Number(c.req.query("limit") ?? "100");
+  /** Query audit log entries, optionally filtered by tenant. */
+  router.get("/", async function _listAuditEntries(req, res)
+  {
+    const tenant = req.query.tenant as string | undefined;
+    const limit = Number(req.query.limit ?? "100");
 
-    const result = await coreApi.listNamespacedEvent({
-      namespace,
-      fieldSelector: "involvedObject.apiVersion=opencrane.io/v1alpha1",
-      limit,
+    const entries = await prisma.auditEntry.findMany({
+      where: tenant ? { tenant } : undefined,
+      orderBy: { timestamp: "desc" },
+      take: limit,
     });
 
-    let entries: AuditEntry[] = result.items.map((event) => ({
-      timestamp: event.lastTimestamp?.toISOString() ?? event.metadata.creationTimestamp?.toISOString() ?? "",
-      tenant: event.involvedObject.name,
-      action: event.reason ?? "Unknown",
-      resource: `${event.involvedObject.kind}/${event.involvedObject.name}`,
-      message: event.message ?? "",
-    }));
+    const response: AuditEntry[] = entries.map(function _mapEntry(e)
+    {
+      return {
+        timestamp: e.timestamp.toISOString(),
+        tenant: e.tenant ?? undefined,
+        action: e.action,
+        resource: e.resource,
+        message: e.message,
+      };
+    });
 
-    // Filter by tenant if specified
-    if (tenant) {
-      entries = entries.filter((e) => e.tenant === tenant);
-    }
-
-    // Sort newest first
-    entries.sort(
-      (a, b) =>
-        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
-    );
-
-    return c.json(entries);
+    res.json(response);
   });
 
   return router;

@@ -2,6 +2,29 @@
  * API request/response types for the OpenCrane control plane.
  */
 
+import type { PrismaClient } from "@prisma/client";
+import type * as k8s from "@kubernetes/client-node";
+
+/** Dependencies injected into the Express app for route handlers. */
+export interface AppDependencies
+{
+  /** Prisma ORM client for PostgreSQL access. */
+  prisma: PrismaClient;
+  /** Kubernetes Custom Objects API client. */
+  customApi: k8s.CustomObjectsApi;
+  /** Kubernetes Core V1 API client. */
+  coreApi: k8s.CoreV1Api;
+}
+
+/** Health check response shape. */
+export interface HealthStatus
+{
+  /** Overall service status. */
+  status: string;
+  /** Whether the database is reachable. */
+  db: boolean;
+}
+
 /** Request body for creating a new tenant. */
 export interface CreateTenantRequest
 {
