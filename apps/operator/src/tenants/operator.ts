@@ -3,9 +3,10 @@ import { randomBytes } from "node:crypto";
 import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
 
-import type { OperatorConfig, Tenant } from "./types.js";
-import { applyResource, deleteResource } from "./reconciler.js";
-import { buildBucketClaim } from "./storage-provider.js";
+import type { OperatorConfig } from "../config.js";
+import type { Tenant, TenantStatus } from "./types.js";
+import { applyResource, deleteResource } from "../infra/k8s.js";
+import { buildBucketClaim } from "../storage/provider.js";
 
 /** Kubernetes API group for OpenCrane CRDs. */
 const API_GROUP = "opencrane.io";
@@ -566,6 +567,3 @@ export class TenantOperator
     };
   }
 }
-
-/** Re-export for status update typing. */
-type TenantStatus = import("./types.js").TenantStatus;

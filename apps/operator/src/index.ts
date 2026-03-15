@@ -1,9 +1,9 @@
 import * as k8s from "@kubernetes/client-node";
 import pino from "pino";
 
-import { loadOperatorConfig } from "./types.js";
-import { TenantOperator } from "./tenant-operator.js";
-import { PolicyOperator } from "./policy-operator.js";
+import { loadOperatorConfig } from "./config.js";
+import { TenantOperator } from "./tenants/operator.js";
+import { PolicyOperator } from "./policies/operator.js";
 
 /** Root logger for the opencrane-operator process. */
 const log = pino({ name: "opencrane-operator" });

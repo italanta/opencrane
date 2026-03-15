@@ -1,40 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import type { Tenant, OperatorConfig } from "./types.js";
-import { buildBucketClaim } from "./storage-provider.js";
-
-/** Default operator config used across all test cases. */
-const defaultConfig: OperatorConfig = {
-  watchNamespace: "default",
-  tenantDefaultImage: "ghcr.io/opencrane/tenant:latest",
-  ingressDomain: "opencrane.local",
-  ingressClassName: "nginx",
-  sharedSkillsPvcName: "opencrane-shared-skills",
-  gatewayPort: 18789,
-  storageProvider: "gcs",
-  bucketPrefix: "opencrane",
-  gcpProject: "my-gcp-project",
-  csiDriver: "gcsfuse.csi.storage.gke.io",
-  crossplaneEnabled: true,
-};
-
-/**
- * Create a minimal Tenant fixture with the given name and optional
- * spec overrides for use in unit tests.
- */
-function _makeTenant(name: string, overrides?: Partial<Tenant["spec"]>): Tenant
-{
-  return {
-    apiVersion: "opencrane.io/v1alpha1",
-    kind: "Tenant",
-    metadata: { name, namespace: "default" },
-    spec: {
-      displayName: name.charAt(0).toUpperCase() + name.slice(1),
-      email: `${name}@example.com`,
-      ...overrides,
-    },
-  };
-}
+import { defaultConfig, _makeTenant } from "../__tests__/fixtures.js";
 
 describe("TenantOperator", () =>
 {
@@ -115,35 +81,6 @@ describe("TenantOperator", () =>
     const tenant = _makeTenant("default-version");
     const version = tenant.spec.openclawVersion ?? "latest";
     expect(version).toBe("latest");
-  });
-});
-
-describe("StorageProvider", () =>
-{
-  it("builds bucket claim with correct name and prefix", () =>
-  {
-    const claim = buildBucketClaim("jente", "default", "opencrane");
-
-    expect(claim.metadata?.name).toBe("openclaw-jente-bucket");
-    expect((claim as Record<string, unknown>).spec).toEqual({
-      bucketName: "opencrane-jente",
-      tenantName: "jente",
-    });
-  });
-
-  it("includes tenant label on bucket claim", () =>
-  {
-    const claim = buildBucketClaim("sarah", "default", "myprefix");
-
-    expect(claim.metadata?.labels?.["opencrane.io/tenant"]).toBe("sarah");
-  });
-
-  it("generates correct GCS bucket name from prefix and tenant", () =>
-  {
-    const claim = buildBucketClaim("mike", "prod", "acme-ai");
-    const spec = (claim as Record<string, unknown>).spec as Record<string, unknown>;
-
-    expect(spec.bucketName).toBe("acme-ai-mike");
   });
 });
 

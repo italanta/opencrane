@@ -1,8 +1,9 @@
 import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
 
-import type { AccessPolicy, OperatorConfig } from "./types.js";
-import { applyResource, deleteResource } from "./reconciler.js";
+import type { OperatorConfig } from "../config.js";
+import type { AccessPolicy } from "./types.js";
+import { applyResource, deleteResource } from "../infra/k8s.js";
 
 /** Kubernetes API group for OpenCrane CRDs. */
 const API_GROUP = "opencrane.io";
