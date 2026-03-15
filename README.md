@@ -18,10 +18,10 @@ Multi-tenant [OpenClaw](https://github.com/openclaw/openclaw) platform on Kubern
 │                            │   │     OpenClaw     │   │     OpenClaw     │   │                            │
 │ - repo reconcile           │   │    (isolated)    │   │    (isolated)    │   │ - outbound policy          │
 │ - skill deployment         │   ├────────┬─────────┤   ├────────┬─────────┤   │ - proxy / allowlists       │
-│ - config push              │   │   GCS  │ IAM     |   │   GCS  │ IAM     │ - secrets brokerage        │
-│ - bootstrap sync           │   │ bucket │+ Secret │   │ bucket │+ Secret │   │ - audit / rate limiting    │
-│ - rollout coordination     │   │        │ Vault   │   │ IAM    │ Vault   │   │ - external access control  │
-│                            │   └──────────────────┘   └──────────────────┘   │                            │
+│ - config push              │   │   GCS  │ IAM     |   │   GCS  │ IAM     │   | - secrets brokerage        │  
+│ - bootstrap sync           │   │ bucket │+ Secret │   │ bucket │+ Secret │   │ - AI token access          │
+│ - rollout coordination     │   │        │ Vault   │   │ IAM    │ Vault   │   │ - audit / rate limiting    │
+│                            │   └──────────────────┘   └──────────────────┘   │ - external access control  │
 │                            │   ┌──────────────────┐                          │                            │
 │                            │   │     sara.oc      │                          │                            │
 │                            │   │     OpenClaw     │                          │                            │
