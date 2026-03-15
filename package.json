@@ -1,0 +1,20 @@
+{
+  "name": "opencrane-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Multi-tenant OpenClaw platform on Kubernetes",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@10.11.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm -r --parallel dev",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "docker:build:tenant": "docker build -f docker/Dockerfile.tenant -t ghcr.io/opencrane/tenant:latest .",
+    "docker:build:operator": "docker build -f docker/Dockerfile.operator -t ghcr.io/opencrane/operator:latest .",
+    "docker:build:control-plane": "docker build -f docker/Dockerfile.control-plane -t ghcr.io/opencrane/control-plane:latest ."
+  }
+}
