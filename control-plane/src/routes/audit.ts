@@ -1,8 +1,14 @@
-import { Hono } from "hono";
 import * as k8s from "@kubernetes/client-node";
+import { Hono } from "hono";
+
 import type { AuditEntry } from "../types.js";
 
-export function auditRouter(coreApi: k8s.CoreV1Api): Hono {
+/**
+ * Creates a Hono sub-router that queries Kubernetes events
+ * for OpenCrane resources and returns them as audit log entries.
+ */
+export function auditRouter(coreApi: k8s.CoreV1Api): Hono
+{
   const router = new Hono();
   const namespace = process.env.NAMESPACE ?? "default";
 

@@ -1,24 +1,34 @@
+import * as k8s from "@kubernetes/client-node";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { logger } from "hono/logger";
-import * as k8s from "@kubernetes/client-node";
 import pino from "pino";
-import { authMiddleware } from "./middleware/auth.js";
-import { tenantsRouter } from "./routes/tenants.js";
-import { skillsRouter } from "./routes/skills.js";
-import { policiesRouter } from "./routes/policies.js";
-import { auditRouter } from "./routes/audit.js";
 
+import { authMiddleware } from "./middleware/auth.js";
+import { auditRouter } from "./routes/audit.js";
+import { policiesRouter } from "./routes/policies.js";
+import { skillsRouter } from "./routes/skills.js";
+import { tenantsRouter } from "./routes/tenants.js";
+
+/** Application logger instance. */
 const log = pino({ name: "opencrane-control-plane" });
+
+/** HTTP port the server listens on. */
 const port = Number(process.env.PORT ?? "8080");
 
 // Initialize Kubernetes client
+/** Kubernetes configuration loaded from the default context. */
 const kc = new k8s.KubeConfig();
 kc.loadFromDefault();
+
+/** Kubernetes Custom Objects API client. */
 const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
+
+/** Kubernetes Core V1 API client. */
 const coreApi = kc.makeApiClient(k8s.CoreV1Api);
 
 // Build Hono app
+/** Root Hono application instance. */
 const app = new Hono();
 
 // Middleware

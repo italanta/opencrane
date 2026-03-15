@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
+
 import type { Tenant, OperatorConfig } from "./types.js";
 
+/** Default operator config used across all test cases. */
 const defaultConfig: OperatorConfig = {
   watchNamespace: "default",
   tenantDefaultImage: "ghcr.io/opencrane/tenant:latest",
@@ -10,7 +12,12 @@ const defaultConfig: OperatorConfig = {
   gatewayPort: 18789,
 };
 
-function makeTenant(name: string, overrides?: Partial<Tenant["spec"]>): Tenant {
+/**
+ * Create a minimal Tenant fixture with the given name and optional
+ * spec overrides for use in unit tests.
+ */
+function _makeTenant(name: string, overrides?: Partial<Tenant["spec"]>): Tenant
+{
   return {
     apiVersion: "opencrane.io/v1alpha1",
     kind: "Tenant",
@@ -25,7 +32,7 @@ function makeTenant(name: string, overrides?: Partial<Tenant["spec"]>): Tenant {
 
 describe("TenantOperator", () => {
   it("builds correct resource names from tenant name", () => {
-    const tenant = makeTenant("jente");
+    const tenant = _makeTenant("jente");
     const name = tenant.metadata!.name;
 
     expect(`openclaw-${name}`).toBe("openclaw-jente");
@@ -34,14 +41,14 @@ describe("TenantOperator", () => {
   });
 
   it("generates correct ingress host", () => {
-    const tenant = makeTenant("sarah");
+    const tenant = _makeTenant("sarah");
     const host = `${tenant.metadata!.name}.${defaultConfig.ingressDomain}`;
 
     expect(host).toBe("sarah.opencrane.local");
   });
 
   it("respects custom image override", () => {
-    const tenant = makeTenant("mike", {
+    const tenant = _makeTenant("mike", {
       openclawImage: "custom-registry/openclaw:v2",
     });
 
@@ -51,7 +58,7 @@ describe("TenantOperator", () => {
   });
 
   it("falls back to default image when no override", () => {
-    const tenant = makeTenant("anna");
+    const tenant = _makeTenant("anna");
 
     const image =
       tenant.spec.openclawImage ?? defaultConfig.tenantDefaultImage;
@@ -59,15 +66,15 @@ describe("TenantOperator", () => {
   });
 
   it("detects suspended tenants", () => {
-    const active = makeTenant("active");
-    const suspended = makeTenant("paused", { suspended: true });
+    const active = _makeTenant("active");
+    const suspended = _makeTenant("paused", { suspended: true });
 
     expect(active.spec.suspended).toBeFalsy();
     expect(suspended.spec.suspended).toBe(true);
   });
 
   it("merges config overrides", () => {
-    const tenant = makeTenant("custom", {
+    const tenant = _makeTenant("custom", {
       configOverrides: {
         agents: { defaults: { thinking: "high" } },
       },

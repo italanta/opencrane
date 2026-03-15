@@ -1,12 +1,20 @@
-import { Hono } from "hono";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+
+import { Hono } from "hono";
+
 import type { SkillEntry } from "../types.js";
 
+/** Default filesystem path where shared skills are stored. */
 const SHARED_SKILLS_PATH =
   process.env.SHARED_SKILLS_PATH ?? "/data/shared-skills";
 
-export function skillsRouter(): Hono {
+/**
+ * Creates a Hono sub-router that lists and retrieves shared skill
+ * definitions from the filesystem.
+ */
+export function skillsRouter(): Hono
+{
   const router = new Hono();
 
   // List all shared skills
@@ -59,11 +67,16 @@ export function skillsRouter(): Hono {
   return router;
 }
 
+/**
+ * Scans a directory for skill subdirectories and appends entries
+ * to the provided skills array.
+ */
 async function scanSkillDir(
   dir: string,
   scope: "org" | "team",
   skills: SkillEntry[],
-): Promise<void> {
+): Promise<void>
+{
   try {
     const entries = await readdir(dir, { withFileTypes: true });
     for (const entry of entries) {

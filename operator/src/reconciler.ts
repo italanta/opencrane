@@ -9,7 +9,8 @@ export async function applyResource<T extends k8s.KubernetesObject>(
   client: k8s.KubernetesObjectApi,
   resource: T,
   log: Logger,
-): Promise<T> {
+): Promise<T>
+{
   const name = resource.metadata?.name;
   const kind = resource.kind;
 
@@ -18,7 +19,7 @@ export async function applyResource<T extends k8s.KubernetesObject>(
     log.debug({ kind, name }, "resource applied");
     return response as T;
   } catch (err: unknown) {
-    const status = isK8sError(err) ? err.statusCode : undefined;
+    const status = _isK8sError(err) ? err.statusCode : undefined;
     if (status === 404) {
       const response = await client.create(resource);
       log.info({ kind, name }, "resource created");
@@ -35,7 +36,8 @@ export async function deleteResource(
   client: k8s.KubernetesObjectApi,
   resource: k8s.KubernetesObject,
   log: Logger,
-): Promise<void> {
+): Promise<void>
+{
   const name = resource.metadata?.name;
   const kind = resource.kind;
 
@@ -43,7 +45,7 @@ export async function deleteResource(
     await client.delete(resource);
     log.info({ kind, name }, "resource deleted");
   } catch (err: unknown) {
-    const status = isK8sError(err) ? err.statusCode : undefined;
+    const status = _isK8sError(err) ? err.statusCode : undefined;
     if (status === 404) {
       log.debug({ kind, name }, "resource already gone");
       return;
@@ -52,7 +54,12 @@ export async function deleteResource(
   }
 }
 
-function isK8sError(err: unknown): err is { statusCode: number } {
+/**
+ * Type guard that checks whether an unknown error value is a Kubernetes
+ * API error carrying a numeric statusCode property.
+ */
+function _isK8sError(err: unknown): err is { statusCode: number }
+{
   return (
     typeof err === "object" &&
     err !== null &&

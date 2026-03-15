@@ -4,7 +4,8 @@ import type { MiddlewareHandler } from "hono";
  * Simple bearer token auth middleware.
  * Validates against the OPENCRANE_API_TOKEN env var.
  */
-export function authMiddleware(): MiddlewareHandler {
+export function authMiddleware(): MiddlewareHandler
+{
   const token = process.env.OPENCRANE_API_TOKEN;
 
   return async (c, next) => {

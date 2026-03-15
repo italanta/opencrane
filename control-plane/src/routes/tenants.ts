@@ -1,12 +1,23 @@
-import { Hono } from "hono";
 import * as k8s from "@kubernetes/client-node";
+import { Hono } from "hono";
+
 import type { CreateTenantRequest, TenantResponse } from "../types.js";
 
+/** Kubernetes API group for OpenCrane custom resources. */
 const API_GROUP = "opencrane.io";
+
+/** Kubernetes API version for OpenCrane custom resources. */
 const API_VERSION = "v1alpha1";
+
+/** Plural resource name for the Tenant CRD. */
 const PLURAL = "tenants";
 
-export function tenantsRouter(customApi: k8s.CustomObjectsApi): Hono {
+/**
+ * Creates a Hono sub-router that exposes CRUD operations and
+ * suspend/resume actions for Tenant custom resources.
+ */
+export function tenantsRouter(customApi: k8s.CustomObjectsApi): Hono
+{
   const router = new Hono();
   const namespace = process.env.NAMESPACE ?? "default";
 
@@ -134,7 +145,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi): Hono {
     return c.json({ name, status: "deleted" });
   });
 
-  // Suspend/resume a tenant
+  // Suspend a tenant
   router.post("/:name/suspend", async (c) => {
     const name = c.req.param("name");
 
@@ -150,6 +161,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi): Hono {
     return c.json({ name, status: "suspended" });
   });
 
+  // Resume a tenant
   router.post("/:name/resume", async (c) => {
     const name = c.req.param("name");
 

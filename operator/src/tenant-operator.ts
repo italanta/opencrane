@@ -1,20 +1,44 @@
 import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
+
 import type { OperatorConfig, Tenant } from "./types.js";
 import { applyResource, deleteResource } from "./reconciler.js";
 
+/** Kubernetes API group for OpenCrane CRDs. */
 const API_GROUP = "opencrane.io";
+
+/** API version for the Tenant CRD. */
 const API_VERSION = "v1alpha1";
+
+/** Plural resource name for the Tenant CRD. */
 const PLURAL = "tenants";
 
-export class TenantOperator {
+/**
+ * Watches Tenant custom resources and reconciles the corresponding
+ * Kubernetes workloads (Deployment, Service, Ingress, ConfigMap, PVC).
+ */
+export class TenantOperator
+{
+  /** Client for managing custom object subresources (status updates). */
   private customApi: k8s.CustomObjectsApi;
+
+  /** Client for generic Kubernetes object CRUD via server-side apply. */
   private objectApi: k8s.KubernetesObjectApi;
+
+  /** Watch client for streaming Tenant CR events. */
   private watch: k8s.Watch;
+
+  /** Scoped logger for tenant-operator messages. */
   private log: Logger;
+
+  /** Operator runtime configuration loaded from environment. */
   private config: OperatorConfig;
 
-  constructor(kc: k8s.KubeConfig, config: OperatorConfig, log: Logger) {
+  /**
+   * Create a new TenantOperator bound to the given KubeConfig.
+   */
+  constructor(kc: k8s.KubeConfig, config: OperatorConfig, log: Logger)
+  {
     this.customApi = kc.makeApiClient(k8s.CustomObjectsApi);
     this.objectApi = k8s.KubernetesObjectApi.makeApiClient(kc);
     this.watch = new k8s.Watch(kc);
@@ -22,7 +46,12 @@ export class TenantOperator {
     this.log = log.child({ component: "tenant-operator" });
   }
 
-  async start(): Promise<void> {
+  /**
+   * Begin watching for Tenant CR events and reconcile on each change.
+   * Automatically reconnects on watch errors with a 5-second backoff.
+   */
+  async start(): Promise<void>
+  {
     const ns = this.config.watchNamespace;
     const path = ns
       ? `/apis/${API_GROUP}/${API_VERSION}/namespaces/${ns}/${PLURAL}`
@@ -56,7 +85,11 @@ export class TenantOperator {
     await watchLoop();
   }
 
-  private async handleEvent(type: string, tenant: Tenant): Promise<void> {
+  /**
+   * Route a watch event to the appropriate reconciliation handler.
+   */
+  private async handleEvent(type: string, tenant: Tenant): Promise<void>
+  {
     const name = tenant.metadata?.name;
     if (!name) return;
 
@@ -77,29 +110,34 @@ export class TenantOperator {
     }
   }
 
-  async reconcileTenant(tenant: Tenant): Promise<void> {
+  /**
+   * Reconcile all child resources for a running tenant: PVC, ConfigMap,
+   * Deployment, Service, Ingress, and update the Tenant status.
+   */
+  async reconcileTenant(tenant: Tenant): Promise<void>
+  {
     const name = tenant.metadata!.name!;
     const namespace = tenant.metadata!.namespace ?? "default";
 
     this.log.info({ name }, "reconciling tenant");
 
     // 1. Create/update PVC for tenant state
-    await applyResource(this.objectApi, this.buildPvc(tenant, namespace), this.log);
+    await applyResource(this.objectApi, this._buildPvc(tenant, namespace), this.log);
 
     // 2. Create/update ConfigMap with merged OpenClaw config
-    await applyResource(this.objectApi, this.buildConfigMap(tenant, namespace), this.log);
+    await applyResource(this.objectApi, this._buildConfigMap(tenant, namespace), this.log);
 
     // 3. Create/update Deployment (single-pod OpenClaw instance)
-    await applyResource(this.objectApi, this.buildDeployment(tenant, namespace), this.log);
+    await applyResource(this.objectApi, this._buildDeployment(tenant, namespace), this.log);
 
     // 4. Create/update Service
-    await applyResource(this.objectApi, this.buildService(tenant, namespace), this.log);
+    await applyResource(this.objectApi, this._buildService(tenant, namespace), this.log);
 
     // 5. Create/update Ingress rule
-    await applyResource(this.objectApi, this.buildIngress(tenant, namespace), this.log);
+    await applyResource(this.objectApi, this._buildIngress(tenant, namespace), this.log);
 
     // 6. Update tenant status
-    await this.updateStatus(tenant, namespace, {
+    await this._updateStatus(tenant, namespace, {
       phase: "Running",
       podName: `openclaw-${name}`,
       ingressHost: `${name}.${this.config.ingressDomain}`,
@@ -107,24 +145,34 @@ export class TenantOperator {
     });
   }
 
-  private async suspendTenant(tenant: Tenant): Promise<void> {
+  /**
+   * Suspend a tenant by scaling the deployment to zero replicas while
+   * preserving the PVC and other resources.
+   */
+  private async suspendTenant(tenant: Tenant): Promise<void>
+  {
     const name = tenant.metadata!.name!;
     const namespace = tenant.metadata!.namespace ?? "default";
 
     this.log.info({ name }, "suspending tenant");
 
     // Scale deployment to 0 but keep PVC
-    const deployment = this.buildDeployment(tenant, namespace);
+    const deployment = this._buildDeployment(tenant, namespace);
     deployment.spec!.replicas = 0;
     await applyResource(this.objectApi, deployment, this.log);
 
-    await this.updateStatus(tenant, namespace, {
+    await this._updateStatus(tenant, namespace, {
       phase: "Suspended",
       lastReconciled: new Date().toISOString(),
     });
   }
 
-  private async cleanupTenant(tenant: Tenant): Promise<void> {
+  /**
+   * Remove all child resources for a deleted tenant except the PVC,
+   * which is intentionally retained to preserve data.
+   */
+  private async cleanupTenant(tenant: Tenant): Promise<void>
+  {
     const name = tenant.metadata!.name!;
     const namespace = tenant.metadata!.namespace ?? "default";
 
@@ -159,7 +207,11 @@ export class TenantOperator {
     this.log.info({ name }, "tenant cleanup complete (PVC retained)");
   }
 
-  private buildPvc(tenant: Tenant, namespace: string): k8s.V1PersistentVolumeClaim {
+  /**
+   * Build a PersistentVolumeClaim for the tenant's state directory.
+   */
+  private _buildPvc(tenant: Tenant, namespace: string): k8s.V1PersistentVolumeClaim
+  {
     const name = tenant.metadata!.name!;
     return {
       apiVersion: "v1",
@@ -167,7 +219,7 @@ export class TenantOperator {
       metadata: {
         name: `openclaw-${name}-state`,
         namespace,
-        labels: this.tenantLabels(name),
+        labels: this._tenantLabels(name),
       },
       spec: {
         accessModes: ["ReadWriteOnce"],
@@ -178,7 +230,11 @@ export class TenantOperator {
     };
   }
 
-  private buildConfigMap(tenant: Tenant, namespace: string): k8s.V1ConfigMap {
+  /**
+   * Build a ConfigMap containing the merged OpenClaw JSON configuration.
+   */
+  private _buildConfigMap(tenant: Tenant, namespace: string): k8s.V1ConfigMap
+  {
     const name = tenant.metadata!.name!;
     const baseConfig = {
       gateway: {
@@ -204,7 +260,7 @@ export class TenantOperator {
       metadata: {
         name: `openclaw-${name}-config`,
         namespace,
-        labels: this.tenantLabels(name),
+        labels: this._tenantLabels(name),
       },
       data: {
         "openclaw.json": JSON.stringify(merged, null, 2),
@@ -212,7 +268,12 @@ export class TenantOperator {
     };
   }
 
-  private buildDeployment(tenant: Tenant, namespace: string): k8s.V1Deployment {
+  /**
+   * Build a Deployment running a single-replica OpenClaw gateway pod
+   * with state, config, and shared-skills volume mounts.
+   */
+  private _buildDeployment(tenant: Tenant, namespace: string): k8s.V1Deployment
+  {
     const name = tenant.metadata!.name!;
     const image = tenant.spec.openclawImage ?? this.config.tenantDefaultImage;
     const resources = tenant.spec.resources;
@@ -257,7 +318,7 @@ export class TenantOperator {
       metadata: {
         name: `openclaw-${name}`,
         namespace,
-        labels: this.tenantLabels(name),
+        labels: this._tenantLabels(name),
       },
       spec: {
         replicas: 1,
@@ -267,7 +328,7 @@ export class TenantOperator {
         template: {
           metadata: {
             labels: {
-              ...this.tenantLabels(name),
+              ...this._tenantLabels(name),
               "opencrane.io/tenant": name,
               ...(tenant.spec.team
                 ? { "opencrane.io/team": tenant.spec.team }
@@ -322,7 +383,11 @@ export class TenantOperator {
     };
   }
 
-  private buildService(tenant: Tenant, namespace: string): k8s.V1Service {
+  /**
+   * Build a ClusterIP Service exposing the tenant gateway port.
+   */
+  private _buildService(tenant: Tenant, namespace: string): k8s.V1Service
+  {
     const name = tenant.metadata!.name!;
     return {
       apiVersion: "v1",
@@ -330,7 +395,7 @@ export class TenantOperator {
       metadata: {
         name: `openclaw-${name}`,
         namespace,
-        labels: this.tenantLabels(name),
+        labels: this._tenantLabels(name),
       },
       spec: {
         selector: { "opencrane.io/tenant": name },
@@ -345,7 +410,11 @@ export class TenantOperator {
     };
   }
 
-  private buildIngress(tenant: Tenant, namespace: string): k8s.V1Ingress {
+  /**
+   * Build an Ingress resource routing external traffic to the tenant service.
+   */
+  private _buildIngress(tenant: Tenant, namespace: string): k8s.V1Ingress
+  {
     const name = tenant.metadata!.name!;
     const host = `${name}.${this.config.ingressDomain}`;
 
@@ -355,7 +424,7 @@ export class TenantOperator {
       metadata: {
         name: `openclaw-${name}`,
         namespace,
-        labels: this.tenantLabels(name),
+        labels: this._tenantLabels(name),
         annotations: {
           "kubernetes.io/ingress.class": this.config.ingressClassName,
         },
@@ -385,11 +454,15 @@ export class TenantOperator {
     };
   }
 
-  private async updateStatus(
+  /**
+   * Patch the status subresource of a Tenant CR with the given fields.
+   */
+  private async _updateStatus(
     tenant: Tenant,
     namespace: string,
     status: Partial<TenantStatus>,
-  ): Promise<void> {
+  ): Promise<void>
+  {
     const name = tenant.metadata!.name!;
     try {
       await this.customApi.patchNamespacedCustomObjectStatus({
@@ -405,7 +478,12 @@ export class TenantOperator {
     }
   }
 
-  private tenantLabels(name: string): Record<string, string> {
+  /**
+   * Return the standard set of Kubernetes labels applied to every
+   * resource owned by a given tenant.
+   */
+  private _tenantLabels(name: string): Record<string, string>
+  {
     return {
       "app.kubernetes.io/part-of": "opencrane",
       "app.kubernetes.io/component": "tenant",
@@ -415,5 +493,5 @@ export class TenantOperator {
   }
 }
 
-// Re-export for status update typing
+/** Re-export for status update typing. */
 type TenantStatus = import("./types.js").TenantStatus;

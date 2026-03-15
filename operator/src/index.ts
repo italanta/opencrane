@@ -1,12 +1,18 @@
 import * as k8s from "@kubernetes/client-node";
 import pino from "pino";
+
 import { loadOperatorConfig } from "./types.js";
 import { TenantOperator } from "./tenant-operator.js";
 import { PolicyOperator } from "./policy-operator.js";
 
+/** Root logger for the opencrane-operator process. */
 const log = pino({ name: "opencrane-operator" });
 
-async function main() {
+/**
+ * Bootstrap and start both the Tenant and Policy operator watch loops.
+ */
+async function main(): Promise<void>
+{
   log.info("starting opencrane operator");
 
   const config = loadOperatorConfig();
@@ -22,16 +28,20 @@ async function main() {
   await Promise.all([tenantOperator.start(), policyOperator.start()]);
 }
 
-// Graceful shutdown
-function shutdown(signal: string) {
+/**
+ * Perform a graceful shutdown by logging the signal and exiting.
+ */
+function _shutdown(signal: string): void
+{
   log.info({ signal }, "shutting down");
   process.exit(0);
 }
 
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => _shutdown("SIGTERM"));
+process.on("SIGINT", () => _shutdown("SIGINT"));
 
-main().catch((err) => {
+main().catch(function (err)
+{
   log.fatal({ err }, "operator crashed");
   process.exit(1);
 });

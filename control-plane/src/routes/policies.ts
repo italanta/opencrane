@@ -1,12 +1,23 @@
-import { Hono } from "hono";
 import * as k8s from "@kubernetes/client-node";
+import { Hono } from "hono";
+
 import type { CreatePolicyRequest } from "../types.js";
 
+/** Kubernetes API group for OpenCrane custom resources. */
 const API_GROUP = "opencrane.io";
+
+/** Kubernetes API version for OpenCrane custom resources. */
 const API_VERSION = "v1alpha1";
+
+/** Plural resource name for the AccessPolicy CRD. */
 const PLURAL = "accesspolicies";
 
-export function policiesRouter(customApi: k8s.CustomObjectsApi): Hono {
+/**
+ * Creates a Hono sub-router that exposes CRUD operations
+ * for AccessPolicy custom resources.
+ */
+export function policiesRouter(customApi: k8s.CustomObjectsApi): Hono
+{
   const router = new Hono();
   const namespace = process.env.NAMESPACE ?? "default";
 
