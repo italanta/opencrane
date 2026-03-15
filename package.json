@@ -21,8 +21,8 @@
     "dev": "pnpm -r --parallel dev",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
-    "docker:build:tenant": "docker build -f docker/Dockerfile.tenant -t ghcr.io/opencrane/tenant:latest .",
-    "docker:build:operator": "docker build -f docker/Dockerfile.operator -t ghcr.io/opencrane/operator:latest .",
-    "docker:build:control-plane": "docker build -f docker/Dockerfile.control-plane -t ghcr.io/opencrane/control-plane:latest ."
+    "docker:build:tenant": "docker build -f apps/tenant/deploy/Dockerfile -t ghcr.io/opencrane/tenant:latest .",
+    "docker:build:operator": "docker build -f apps/operator/deploy/Dockerfile -t ghcr.io/opencrane/operator:latest .",
+    "docker:build:control-plane": "docker build -f apps/control-plane/deploy/Dockerfile -t ghcr.io/opencrane/control-plane:latest ."
   }
 }

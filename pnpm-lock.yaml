@@ -8,7 +8,7 @@ importers:
 
   .: {}
 
-  control-plane:
+  apps/control-plane:
     dependencies:
       '@kubernetes/client-node':
         specifier: ^1.0.0
@@ -51,7 +51,7 @@ importers:
         specifier: ^3.1.0
         version: 3.2.4(@types/node@22.19.15)(jiti@2.6.1)(tsx@4.21.0)
 
-  operator:
+  apps/operator:
     dependencies:
       '@kubernetes/client-node':
         specifier: ^1.0.0

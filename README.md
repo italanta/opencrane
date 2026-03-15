@@ -12,7 +12,6 @@ Multi-tenant [OpenClaw](https://github.com/openclaw/openclaw) platform on Kubern
          └─────────────┬────────────┘          │        Skills Repo       │
                        │                       │   versioned AI skills    │
                        ▼                       └──────────────────────────┘
-
 ┌────────────────────────────┐   ┌──────────────────┐   ┌──────────────────┐   ┌────────────────────────────┐
 │ Cross-Repo Operator Plane  │   │     jente.oc     │   │     bob.oc       │   │    Egress Control Plane    │
 │                            │   │     OpenClaw     │   │     OpenClaw     │   │                            │

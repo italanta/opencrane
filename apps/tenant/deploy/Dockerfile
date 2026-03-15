@@ -3,7 +3,7 @@ FROM node:22-bookworm-slim
 # Slim image — Node runtime only, no OpenClaw baked in.
 # OpenClaw is installed into the per-tenant GCS bucket on first boot.
 
-COPY docker/entrypoint.sh /entrypoint.sh
+COPY apps/tenant/deploy/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # Create mount points for volumes
