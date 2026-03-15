@@ -1,0 +1,95 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: tenants.opencrane.io
+spec:
+  group: opencrane.io
+  names:
+    kind: Tenant
+    listKind: TenantList
+    plural: tenants
+    singular: tenant
+    shortNames:
+      - tn
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [displayName, email]
+              properties:
+                displayName:
+                  type: string
+                  description: Human-readable name for the tenant
+                email:
+                  type: string
+                  description: Tenant email address
+                team:
+                  type: string
+                  description: Team the tenant belongs to
+                openclawImage:
+                  type: string
+                  description: Override the default OpenClaw container image
+                resources:
+                  type: object
+                  properties:
+                    cpu:
+                      type: string
+                    memory:
+                      type: string
+                skills:
+                  type: array
+                  items:
+                    type: string
+                  description: Skill paths to mount from the shared volume
+                configOverrides:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                  description: OpenClaw config values merged into base config
+                policyRef:
+                  type: string
+                  description: Name of the AccessPolicy CR to apply
+                suspended:
+                  type: boolean
+                  default: false
+                  description: Suspend the tenant pod without deleting state
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: [Pending, Running, Suspended, Error]
+                podName:
+                  type: string
+                ingressHost:
+                  type: string
+                message:
+                  type: string
+                lastReconciled:
+                  type: string
+                  format: date-time
+      additionalPrinterColumns:
+        - name: Display Name
+          type: string
+          jsonPath: .spec.displayName
+        - name: Team
+          type: string
+          jsonPath: .spec.team
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Host
+          type: string
+          jsonPath: .status.ingressHost
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp

@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "opencrane.fullname" . }}-operator
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "opencrane.fullname" . }}-operator
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+rules:
+  # Tenant and AccessPolicy CRDs
+  - apiGroups: ["opencrane.io"]
+    resources: ["tenants", "tenants/status", "accesspolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Per-tenant resources the operator manages
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["services", "persistentvolumeclaims", "configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Cilium policies (optional, if Cilium is installed)
+  - apiGroups: ["cilium.io"]
+    resources: ["ciliumnetworkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Events for audit trail
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "opencrane.fullname" . }}-operator
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "opencrane.fullname" . }}-operator
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "opencrane.fullname" . }}-operator
+    namespace: {{ .Release.Namespace }}

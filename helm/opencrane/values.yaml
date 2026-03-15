@@ -1,0 +1,96 @@
+# OpenCrane Platform configuration
+
+# -- Operator settings
+operator:
+  image:
+    repository: ghcr.io/opencrane/operator
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  # -- Namespace to watch for Tenant CRs (empty = all namespaces)
+  watchNamespace: ""
+
+# -- Control plane settings
+controlPlane:
+  image:
+    repository: ghcr.io/opencrane/control-plane
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    port: 8080
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# -- Default tenant pod settings (can be overridden per Tenant CR)
+tenant:
+  defaultImage:
+    repository: ghcr.io/opencrane/tenant
+    tag: latest
+    pullPolicy: IfNotPresent
+  defaultResources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  pvc:
+    storageClass: ""
+    size: 1Gi
+  # -- OpenClaw gateway port inside tenant pods
+  gatewayPort: 18789
+
+# -- Ingress settings
+ingress:
+  enabled: true
+  className: nginx
+  # -- Base domain for tenant subdomains (tenant.domain)
+  domain: opencrane.local
+  annotations: {}
+  tls:
+    enabled: false
+    # -- Secret name for wildcard TLS cert (*.domain)
+    secretName: opencrane-wildcard-tls
+
+# -- Shared skills volume
+sharedSkills:
+  enabled: true
+  pvc:
+    storageClass: ""
+    # -- Must support ReadWriteMany (NFS, CephFS, etc.)
+    accessMode: ReadWriteMany
+    size: 5Gi
+
+# -- Network policy (default egress control for tenant pods)
+networkPolicy:
+  enabled: true
+  # -- Allow DNS resolution
+  allowDNS: true
+  # -- Default allowed egress domains (requires Cilium for FQDN filtering)
+  defaultAllowedDomains:
+    - api.openai.com
+    - api.anthropic.com
+  # -- CIDR-based egress rules (works with standard NetworkPolicy)
+  egressAllowCIDRs: []
+
+# -- Org-wide secrets injected into all tenant pods
+orgSecrets:
+  # -- Name of the Kubernetes Secret containing org-wide API keys
+  secretName: org-shared-secrets
+  # -- Keys to inject as env vars (key in Secret -> env var name)
+  envMappings: {}
+  #   openai-api-key: OPENAI_API_KEY
+  #   anthropic-api-key: ANTHROPIC_API_KEY

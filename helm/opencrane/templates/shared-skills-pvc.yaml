@@ -1,0 +1,17 @@
+{{- if .Values.sharedSkills.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "opencrane.fullname" . }}-shared-skills
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.sharedSkills.pvc.accessMode }}
+  {{- if .Values.sharedSkills.pvc.storageClass }}
+  storageClassName: {{ .Values.sharedSkills.pvc.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.sharedSkills.pvc.size }}
+{{- end }}

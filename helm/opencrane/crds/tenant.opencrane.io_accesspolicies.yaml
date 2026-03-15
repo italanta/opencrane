@@ -1,0 +1,96 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: accesspolicies.opencrane.io
+spec:
+  group: opencrane.io
+  names:
+    kind: AccessPolicy
+    listKind: AccessPolicyList
+    plural: accesspolicies
+    singular: accesspolicy
+    shortNames:
+      - ap
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              properties:
+                description:
+                  type: string
+                  description: Human-readable description of this policy
+                tenantSelector:
+                  type: object
+                  description: Label selector to match tenants this policy applies to
+                  properties:
+                    matchLabels:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    matchTeam:
+                      type: string
+                      description: Apply to all tenants in this team
+                domains:
+                  type: object
+                  properties:
+                    allow:
+                      type: array
+                      items:
+                        type: string
+                      description: "Allowed external domains (e.g. api.openai.com, *.salesforce.com)"
+                    deny:
+                      type: array
+                      items:
+                        type: string
+                      description: Denied domains (takes precedence over allow)
+                    defaultDeny:
+                      type: boolean
+                      default: true
+                      description: Deny all domains not explicitly allowed
+                egressRules:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      cidr:
+                        type: string
+                      ports:
+                        type: array
+                        items:
+                          type: integer
+                      protocol:
+                        type: string
+                        enum: [TCP, UDP]
+                        default: TCP
+                  description: CIDR-based egress rules for standard NetworkPolicy
+                mcpServers:
+                  type: object
+                  properties:
+                    allow:
+                      type: array
+                      items:
+                        type: string
+                      description: Allowed MCP server names
+                    deny:
+                      type: array
+                      items:
+                        type: string
+                      description: Denied MCP server names
+      additionalPrinterColumns:
+        - name: Description
+          type: string
+          jsonPath: .spec.description
+        - name: Default Deny
+          type: boolean
+          jsonPath: .spec.domains.defaultDeny
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp

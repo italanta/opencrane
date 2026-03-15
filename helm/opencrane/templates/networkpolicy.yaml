@@ -1,0 +1,39 @@
+{{- if .Values.networkPolicy.enabled }}
+# Default network policy for tenant pods.
+# The operator creates per-tenant policies from AccessPolicy CRs.
+# This policy provides baseline egress control for all tenant pods.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "opencrane.fullname" . }}-tenant-default
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: opencrane
+      app.kubernetes.io/component: tenant
+  policyTypes:
+    - Egress
+  egress:
+    {{- if .Values.networkPolicy.allowDNS }}
+    # Allow DNS resolution
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- end }}
+    # Allow HTTPS egress (domain filtering requires Cilium)
+    - ports:
+        - port: 443
+          protocol: TCP
+    {{- range .Values.networkPolicy.egressAllowCIDRs }}
+    - to:
+        - ipBlock:
+            cidr: {{ . }}
+      ports:
+        - port: 443
+          protocol: TCP
+    {{- end }}
+{{- end }}

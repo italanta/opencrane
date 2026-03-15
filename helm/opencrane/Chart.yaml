@@ -1,0 +1,12 @@
+apiVersion: v2
+name: opencrane
+description: Multi-tenant OpenClaw platform on Kubernetes
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - openclaw
+  - multi-tenant
+  - ai-gateway
+maintainers:
+  - name: OpenCrane
