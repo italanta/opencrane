@@ -35,6 +35,12 @@ export interface OperatorConfig
 
   /** Whether Crossplane manages storage resources. */
   crossplaneEnabled: boolean;
+
+  /** Minutes of inactivity before a tenant is auto-suspended (0 = disabled). */
+  idleTimeoutMinutes: number;
+
+  /** How often (in seconds) the idle-check loop runs. */
+  idleCheckIntervalSeconds: number;
 }
 
 /**
@@ -55,5 +61,7 @@ export function loadOperatorConfig(): OperatorConfig
     gcpProject: process.env.GCP_PROJECT ?? "",
     csiDriver: process.env.CSI_DRIVER ?? "",
     crossplaneEnabled: process.env.CROSSPLANE_ENABLED === "true",
+    idleTimeoutMinutes: Number(process.env.IDLE_TIMEOUT_MINUTES ?? "30"),
+    idleCheckIntervalSeconds: Number(process.env.IDLE_CHECK_INTERVAL_SECONDS ?? "60"),
   };
 }

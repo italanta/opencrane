@@ -3,13 +3,15 @@ import pino from "pino";
 
 import { loadOperatorConfig } from "./config.js";
 import { TenantOperator } from "./tenants/operator.js";
+import { IdleChecker } from "./tenants/idle-checker.js";
 import { PolicyOperator } from "./policies/operator.js";
 
 /** Root logger for the opencrane-operator process. */
 const log = pino({ name: "opencrane-operator" });
 
 /**
- * Bootstrap and start both the Tenant and Policy operator watch loops.
+ * Bootstrap and start both the Tenant and Policy operator watch loops,
+ * plus the idle-checker for auto-suspending inactive tenants.
  */
 async function main(): Promise<void>
 {
@@ -23,6 +25,10 @@ async function main(): Promise<void>
 
   const tenantOperator = new TenantOperator(kc, config, log);
   const policyOperator = new PolicyOperator(kc, config, log);
+  const idleChecker = new IdleChecker(kc, config, log);
+
+  // Start idle-checker (runs on a timer, non-blocking)
+  idleChecker.start();
 
   // Start both watchers concurrently
   await Promise.all([tenantOperator.start(), policyOperator.start()]);

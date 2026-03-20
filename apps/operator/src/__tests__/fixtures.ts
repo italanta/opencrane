@@ -17,6 +17,8 @@ export const defaultConfig: OperatorConfig = {
   gcpProject: "my-gcp-project",
   csiDriver: "gcsfuse.csi.storage.gke.io",
   crossplaneEnabled: true,
+  idleTimeoutMinutes: 30,
+  idleCheckIntervalSeconds: 60,
 };
 
 /**
