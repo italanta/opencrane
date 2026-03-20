@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 import { defaultConfig, _makeTenant } from "../__tests__/fixtures.js";
+import { TenantDomains } from "./tenant-domains.js";
 
 describe("TenantOperator", () =>
 {
@@ -18,7 +19,8 @@ describe("TenantOperator", () =>
   it("generates correct ingress host", () =>
   {
     const tenant = _makeTenant("sarah");
-    const host = `${tenant.metadata!.name}.${defaultConfig.ingressDomain}`;
+    const domains = new TenantDomains(defaultConfig.ingressDomain);
+    const host = domains.buildIngressHost(tenant.metadata!.name!);
 
     expect(host).toBe("sarah.opencrane.local");
   });

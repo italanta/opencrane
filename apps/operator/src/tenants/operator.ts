@@ -7,6 +7,7 @@ import type { OperatorConfig } from "../config.js";
 import type { Tenant, TenantStatus } from "./types.js";
 import { applyResource, deleteResource } from "../infra/k8s.js";
 import { buildBucketClaim } from "../storage/provider.js";
+import { TenantDomains } from "./tenant-domains.js";
 
 /** Kubernetes API group for OpenCrane CRDs. */
 const API_GROUP = "opencrane.io";
@@ -42,6 +43,9 @@ export class TenantOperator
   /** Operator runtime configuration loaded from environment. */
   private config: OperatorConfig;
 
+  /** Helper for tenant host and domain conventions. */
+  private tenantDomains: TenantDomains;
+
   /**
    * Create a new TenantOperator bound to the given KubeConfig.
    */
@@ -52,6 +56,7 @@ export class TenantOperator
     this.coreApi = kc.makeApiClient(k8s.CoreV1Api);
     this.watch = new k8s.Watch(kc);
     this.config = config;
+    this.tenantDomains = new TenantDomains(config.ingressDomain);
     this.log = log.child({ component: "tenant-operator" });
   }
 
@@ -171,7 +176,7 @@ export class TenantOperator
     await this._updateStatus(tenant, namespace, {
       phase: "Running",
       podName: `openclaw-${name}`,
-      ingressHost: `${name}.${this.config.ingressDomain}`,
+      ingressHost: this.tenantDomains.buildIngressHost(name),
       lastReconciled: new Date().toISOString(),
     });
   }
@@ -484,11 +489,22 @@ export class TenantOperator
 
   /**
    * Build an Ingress resource routing external traffic to the tenant service.
+   *
+   * Subdomain binding works as follows:
+   * 1. The host is derived from the Tenant name and base domain:
+   *    `{tenantName}.{INGRESS_DOMAIN}`.
+   * 2. DNS wildcard records (for example `*.example.com`) are configured
+   *    outside the operator and resolve all tenant hosts to the cluster
+   *    ingress IP.
+   * 3. This Ingress creates an HTTP host rule for that exact host and maps
+   *    `path: /` to the tenant's `openclaw-{tenantName}` Service.
+   * 4. The ingress controller receives the request, matches the Host header,
+   *    and forwards traffic only to that tenant's backend Service/Pod.
    */
   private _buildIngress(tenant: Tenant, namespace: string): k8s.V1Ingress
   {
     const name = tenant.metadata!.name!;
-    const host = `${name}.${this.config.ingressDomain}`;
+    const host = this.tenantDomains.buildIngressHost(name);
 
     return {
       apiVersion: "networking.k8s.io/v1",
