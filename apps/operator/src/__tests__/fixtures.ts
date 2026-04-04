@@ -1,3 +1,4 @@
+import type { AccessPolicy } from "../policies/types.js";
 import type { OperatorConfig } from "../config.js";
 import type { Tenant } from "../tenants/types.js";
 
@@ -35,6 +36,41 @@ export function _makeTenant(name: string, overrides?: Partial<Tenant["spec"]>): 
       displayName: name.charAt(0).toUpperCase() + name.slice(1),
       email: `${name}@example.com`,
       ...overrides,
+    },
+  };
+}
+
+/**
+ * Create a minimal AccessPolicy fixture for use in unit tests.
+ */
+export function _makeAccessPolicy(): AccessPolicy
+{
+  return {
+    apiVersion: "opencrane.io/v1alpha1",
+    kind: "AccessPolicy",
+    metadata: {
+      name: "default-egress",
+      namespace: "default",
+    },
+    spec: {
+      description: "Default tenant egress",
+      tenantSelector: {
+        matchLabels: { "opencrane.io/tenant": "jente" },
+        matchTeam: "engineering",
+      },
+      egressRules: [
+        {
+          cidr: "10.0.0.0/8",
+          ports: [443],
+          protocol: "TCP",
+        },
+      ],
+      domains: {
+        allow: ["api.openai.com", "*.anthropic.com"],
+      },
+      mcpServers: {
+        allow: ["skills"],
+      },
     },
   };
 }
