@@ -57,6 +57,33 @@ const names = users.map(user => user.name);
 const total = items.reduce((sum, item) => sum + item.price, 0);
 ```
 
+### Inline Step Comments
+
+Every function with 3 or more sequential steps must have a numbered inline comment before each step. The comment must explain **what** the step does and **why** it is necessary — not just restate the method name.
+
+```typescript
+// WRONG — no comments, reader must infer intent from method names alone
+async function provision(tenant: Tenant): Promise<void>
+{
+  await createServiceAccount(tenant);
+  await createBucket(tenant);
+  await createDeployment(tenant);
+}
+
+// CORRECT — each step is explained with context
+async function provision(tenant: Tenant): Promise<void>
+{
+  // 1. ServiceAccount — grants the pod a GCP identity for Workload Identity.
+  await createServiceAccount(tenant);
+
+  // 2. BucketClaim — requests a per-tenant GCS bucket via Crossplane.
+  await createBucket(tenant);
+
+  // 3. Deployment — runs the tenant gateway; mounts GCS volume and shared skills.
+  await createDeployment(tenant);
+}
+```
+
 ### JSDoc Documentation
 
 All declarations must have JSDoc comments:

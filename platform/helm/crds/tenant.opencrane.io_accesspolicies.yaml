@@ -16,6 +16,8 @@ spec:
     - name: v1alpha1
       served: true
       storage: true
+      subresources:
+        status: {}
       schema:
         openAPIV3Schema:
           type: object
@@ -62,6 +64,7 @@ spec:
                     properties:
                       cidr:
                         type: string
+                        pattern: '^([0-9]{1,3}[.]){3}[0-9]{1,3}/[0-9]{1,2}$'
                       ports:
                         type: array
                         items:
@@ -84,6 +87,13 @@ spec:
                       items:
                         type: string
                       description: Denied MCP server names
+            status:
+              type: object
+              properties:
+                lastReconciled:
+                  type: string
+                  format: date-time
+                  description: ISO-8601 timestamp of the last successful reconciliation
       additionalPrinterColumns:
         - name: Description
           type: string

@@ -45,5 +45,9 @@ spec:
               value: {{ .Values.operator.idleTimeoutMinutes | quote }}
             - name: IDLE_CHECK_INTERVAL_SECONDS
               value: {{ .Values.operator.idleCheckIntervalSeconds | quote }}
+            - name: GATEWAY_PORT
+              value: {{ .Values.tenant.gatewayPort | quote }}
+            - name: SHARED_SKILLS_PVC_NAME
+              value: {{ printf "%s-shared-skills" (include "opencrane.fullname" .) | quote }}
           resources:
             {{- toYaml .Values.operator.resources | nindent 12 }}

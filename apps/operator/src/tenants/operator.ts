@@ -130,6 +130,20 @@ export class TenantOperator
 
   /**
    * Reconcile all child resources for a running tenant and update status.
+   *
+   * Reconciliation is idempotent: it can be called repeatedly on the same
+   * Tenant CR and will converge to the desired state without side effects.
+   * Each child resource is applied via server-side apply, so existing
+   * resources are updated in-place and missing ones are created.
+   *
+   * The reconcile order matters: later resources depend on earlier ones.
+   * ServiceAccount must exist before the Deployment can reference it;
+   * the encryption key Secret must exist before the Deployment mounts it;
+   * the ConfigMap must exist before the Deployment reads it.
+   *
+   * On any failure the error is caught, `status.phase` is set to `"Error"`
+   * with the error message, and the error is re-thrown so the watch loop
+   * logs it and the event is not silently swallowed.
    */
   async reconcileTenant(tenant: Tenant): Promise<void>
   {
@@ -138,30 +152,61 @@ export class TenantOperator
 
     this.log.info({ name }, "reconciling tenant");
 
-    await applyResource(this.objectApi, this.resourceBuilder.buildServiceAccount(tenant, namespace), this.log);
-
-    if (this.config.storageProvider && this.config.crossplaneEnabled)
+    try
     {
-      await applyResource(
-        this.objectApi,
-        buildBucketClaim(name, namespace, this.config.bucketPrefix),
-        this.log,
-      );
+      // 1. ServiceAccount — grants the tenant pod a GCP service account identity
+      //    via Workload Identity, scoped to this tenant's GCS bucket and IAM bindings.
+      await applyResource(this.objectApi, this.resourceBuilder.buildServiceAccount(tenant, namespace), this.log);
+
+      // 2. BucketClaim — requests a per-tenant GCS bucket via Crossplane.
+      //    Skipped when cloud storage or Crossplane is not configured (PVC fallback).
+      if (this.config.storageProvider && this.config.crossplaneEnabled)
+      {
+        await applyResource(
+          this.objectApi,
+          buildBucketClaim(name, namespace, this.config.bucketPrefix),
+          this.log,
+        );
+      }
+
+      // 3. Encryption key Secret — generates a random 32-byte AES key on first reconcile
+      //    and stores it as a K8s Secret. Idempotent: existing secrets are not rotated.
+      await this._ensureEncryptionKeySecret(name, namespace);
+
+      // 4. ConfigMap — serialises the base OpenClaw JSON config merged with any
+      //    spec.configOverrides the tenant author provided.
+      await applyResource(this.objectApi, this.resourceBuilder.buildConfigMap(tenant, namespace), this.log);
+
+      // 5. Deployment — single-replica pod running the tenant's OpenClaw gateway.
+      //    Mounts the ConfigMap, encryption key, GCS volume (or PVC), and shared skills.
+      await applyResource(this.objectApi, this.resourceBuilder.buildDeployment(tenant, namespace), this.log);
+
+      // 6. Service — ClusterIP that makes the gateway reachable inside the cluster
+      //    on the configured gateway port.
+      await applyResource(this.objectApi, this.resourceBuilder.buildService(tenant, namespace), this.log);
+
+      // 7. Ingress — routes external HTTPS traffic for {tenant}.{domain} to the Service.
+      await applyResource(this.objectApi, this.resourceBuilder.buildIngress(tenant, namespace), this.log);
+
+      // 8. Status — write the observed Running state back to the Tenant CR so that
+      //    kubectl, the control-plane API, and the UI all see the current phase.
+      await this.statusWriter.patchStatus(tenant, namespace, {
+        phase: "Running",
+        podName: `openclaw-${name}`,
+        ingressHost: this.tenantDomains.buildIngressHost(name),
+        lastReconciled: new Date().toISOString(),
+      });
     }
-
-    await this._ensureEncryptionKeySecret(name, namespace);
-
-    await applyResource(this.objectApi, this.resourceBuilder.buildConfigMap(tenant, namespace), this.log);
-    await applyResource(this.objectApi, this.resourceBuilder.buildDeployment(tenant, namespace), this.log);
-    await applyResource(this.objectApi, this.resourceBuilder.buildService(tenant, namespace), this.log);
-    await applyResource(this.objectApi, this.resourceBuilder.buildIngress(tenant, namespace), this.log);
-
-    await this.statusWriter.patchStatus(tenant, namespace, {
-      phase: "Running",
-      podName: `openclaw-${name}`,
-      ingressHost: this.tenantDomains.buildIngressHost(name),
-      lastReconciled: new Date().toISOString(),
-    });
+    catch (err)
+    {
+      this.log.error({ err, name }, "reconcile failed");
+      await this.statusWriter.patchStatus(tenant, namespace, {
+        phase: "Error",
+        message: err instanceof Error ? err.message : String(err),
+        lastReconciled: new Date().toISOString(),
+      });
+      throw err;
+    }
   }
 
   /**

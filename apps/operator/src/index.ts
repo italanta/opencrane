@@ -9,6 +9,9 @@ import { PolicyOperator } from "./policies/operator.js";
 /** Root logger for the opencrane-operator process. */
 const log = pino({ name: "opencrane-operator" });
 
+/** Reference to the idle checker, set during startup for shutdown access. */
+let _idleCheckerRef: IdleChecker | null = null;
+
 /**
  * Bootstrap and start both the Tenant and Policy operator watch loops,
  * plus the idle-checker for auto-suspending inactive tenants.
@@ -28,6 +31,7 @@ async function main(): Promise<void>
   const idleChecker = new IdleChecker(kc, config, log);
 
   // Start idle-checker (runs on a timer, non-blocking)
+  _idleCheckerRef = idleChecker;
   idleChecker.start();
 
   // Start both watchers concurrently
@@ -40,6 +44,7 @@ async function main(): Promise<void>
 function _shutdown(signal: string): void
 {
   log.info({ signal }, "shutting down");
+  _idleCheckerRef?.stop();
   process.exit(0);
 }
 

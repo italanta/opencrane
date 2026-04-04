@@ -2,6 +2,48 @@
 
 Kubernetes operator that watches `Tenant` and `AccessPolicy` custom resources and creates the Kubernetes objects needed to match them.
 
+## Why this exists
+
+In Kubernetes, you describe what you *want* (a `Tenant` resource with a name, an email, a team), and something else is responsible for making reality match that description. That "something else" is an operator.
+
+Without this operator, creating a `Tenant` CR would do nothing. The CR is just a record in the Kubernetes API. The operator is the process that notices the record exists and goes off to provision all the actual infrastructure: a pod, a service, an ingress rule, a cloud storage bucket, a network policy. If any of those things drift from what the CR says — someone manually deletes the pod, the ingress gets corrupted — the operator will recreate them on the next reconcile cycle.
+
+This operator manages two domains:
+
+- **Tenant provisioning** — each `Tenant` CR results in a running OpenClaw gateway pod, isolated storage, and a public HTTPS endpoint.
+- **Policy enforcement** — each `AccessPolicy` CR results in Kubernetes `NetworkPolicy` and Cilium `CiliumNetworkPolicy` resources that control what external endpoints the tenant pod is allowed to reach.
+
+## Core concepts
+
+### What is reconciliation?
+
+Reconciliation is the core loop of any Kubernetes operator. It answers the question: *"Is the world in the state it should be? If not, make it so."*
+
+Concretely, when a `Tenant` CR is created or updated, `reconcileTenant()` is called. It does not check what already exists and run a diff. Instead it calls `applyResource()` for every child object the tenant needs — ServiceAccount, Deployment, Service, Ingress, etc. — and relies on Kubernetes server-side apply to figure out what needs to change. If the resource doesn't exist, Kubernetes creates it. If it exists and matches, nothing happens. If it exists but differs, Kubernetes updates only the changed fields.
+
+The result is **idempotence**: the function can be called ten times in a row and will always leave the cluster in the same correct state. This matters because:
+
+- The watch stream may deliver the same event twice (reconnects, restarts).
+- The operator pod may crash mid-reconcile and restart from scratch.
+- An admin may touch a CR manually, triggering a re-reconcile of an already-healthy tenant.
+
+In all of these cases, reconciliation is safe to rerun.
+
+### What is a watch loop?
+
+Rather than polling the Kubernetes API on a timer, the operator opens a persistent HTTP connection to the API server and receives a stream of events as resources change. Each event contains the type (`ADDED`, `MODIFIED`, `DELETED`) and the current state of the resource. The API server closes this stream after a server-configured timeout (typically 5–10 minutes), so the operator automatically reconnects.
+
+### Desired state vs. observed state
+
+Every Kubernetes resource has two sections:
+
+- **`spec`** — the desired state. Written by users, GitOps tooling, or the control-plane API. The operator must not overwrite this.
+- **`status`** — the observed state. Written exclusively by the operator after each reconcile. Tells users and other systems what's actually happening (`Running`, `Suspended`, `Error`).
+
+These are deliberately separate: `spec` and `status` are served from different API endpoints when `subresources: status: {}` is declared on the CRD, so neither side can accidentally clobber the other.
+
+---
+
 ## Responsibilities
 
 | Domain | What it does |

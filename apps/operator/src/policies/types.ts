@@ -47,11 +47,24 @@ export interface AccessPolicySpec
 }
 
 /**
+ * Observed status of an AccessPolicy custom resource, written by the
+ * operator after each reconciliation.
+ */
+export interface AccessPolicyStatus
+{
+  /** ISO-8601 timestamp of the last successful reconciliation. */
+  lastReconciled?: string;
+}
+
+/**
  * Full AccessPolicy custom resource, extending the base KubernetesObject
- * with a typed spec.
+ * with a typed spec and optional status.
  */
 export interface AccessPolicy extends KubernetesObject
 {
   /** Policy specification. */
   spec: AccessPolicySpec;
+
+  /** Observed state, managed by the operator. */
+  status?: AccessPolicyStatus;
 }

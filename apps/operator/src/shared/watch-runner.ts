@@ -34,6 +34,39 @@ interface WatchRunnerConfig<T>
 
 /**
  * Runs a resilient Kubernetes watch loop with automatic reconnects.
+ *
+ * ## What is a Kubernetes watch loop?
+ *
+ * The Kubernetes API server supports a `?watch=true` query parameter on list
+ * endpoints. Instead of returning a snapshot and closing, it holds the HTTP
+ * connection open and streams newline-delimited JSON events as resources
+ * change. Each event has a `type` ("ADDED", "MODIFIED", "DELETED") and the
+ * full resource body. This is how controllers react to changes in real time
+ * without polling.
+ *
+ * ## Why does it need reconnects?
+ *
+ * The watch stream is not permanent. The API server closes it after a
+ * server-defined timeout (typically 5–10 minutes, controlled by
+ * `--min-request-timeout`). Network interruptions, pod restarts, and API
+ * server upgrades also drop the connection. A production operator must detect
+ * the closed stream and re-establish it immediately, otherwise it silently
+ * stops receiving events and diverges from the desired state of the cluster.
+ *
+ * ## What this function does
+ *
+ * 1. Opens a watch stream against the given API `path`.
+ * 2. Forwards each incoming event to the caller's `onEvent` handler.
+ * 3. When the stream closes normally (no error), schedules a reconnect after
+ *    `retryDelayMs` milliseconds — the normal end-of-watch-window case.
+ * 4. When the stream closes with an error, logs the error and schedules the
+ *    same reconnect — the network-failure case.
+ * 5. When watch setup itself throws (CRD not yet registered, RBAC denied,
+ *    etc.), logs and retries with the same backoff.
+ *
+ * The result is a self-healing loop: the caller just awaits this function and
+ * relies on `onEvent` being called indefinitely, regardless of transient
+ * cluster disruptions.
  */
 export async function _RunWatchLoop<T>(config: WatchRunnerConfig<T>): Promise<void>
 {

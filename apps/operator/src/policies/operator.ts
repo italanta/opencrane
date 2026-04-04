@@ -25,6 +25,9 @@ export class PolicyOperator
   /** Client for generic Kubernetes object CRUD via server-side apply. */
   private objectApi: k8s.KubernetesObjectApi;
 
+  /** Client for patching AccessPolicy status subresource. */
+  private customApi: k8s.CustomObjectsApi;
+
   /** Watch client for streaming AccessPolicy CR events. */
   private watch: k8s.Watch;
 
@@ -43,6 +46,7 @@ export class PolicyOperator
   constructor(kc: k8s.KubeConfig, config: OperatorConfig, log: Logger)
   {
     this.objectApi = k8s.KubernetesObjectApi.makeApiClient(kc);
+    this.customApi = kc.makeApiClient(k8s.CustomObjectsApi);
     this.watch = new k8s.Watch(kc);
     this.config = config;
     this.resourceBuilder = new PolicyResourceBuilder();
@@ -130,6 +134,44 @@ export class PolicyOperator
           "could not apply CiliumNetworkPolicy (Cilium may not be installed)",
         );
       }
+    }
+
+    await this._patchPolicyStatus(policy, namespace);
+  }
+
+  /**
+   * Patch the status subresource of an AccessPolicy CR with the last reconciled timestamp.
+   *
+   * This requires a dedicated call rather than being written inline during `applyResource`
+   * because the AccessPolicy CRD declares `subresources: status: {}`. When a CRD has a
+   * status subresource, the API server splits the resource into two independent endpoints:
+   *
+   *   - Main endpoint  (.../accesspolicies/{name})        — spec writes only
+   *   - Status endpoint (.../accesspolicies/{name}/status) — status writes only
+   *
+   * Any `status` field sent to the main endpoint is silently stripped. The only way to
+   * write status is via `patchNamespacedCustomObjectStatus`, which targets the `/status`
+   * subresource path directly. This is intentional: spec is owned by users and GitOps
+   * tooling; status is owned exclusively by the operator, and the split prevents either
+   * side from accidentally overwriting the other.
+   */
+  private async _patchPolicyStatus(policy: AccessPolicy, namespace: string): Promise<void>
+  {
+    const name = policy.metadata!.name!;
+    try
+    {
+      await this.customApi.patchNamespacedCustomObjectStatus({
+        group: API_GROUP,
+        version: API_VERSION,
+        namespace,
+        plural: PLURAL,
+        name,
+        body: { status: { lastReconciled: new Date().toISOString() } },
+      });
+    }
+    catch (err)
+    {
+      this.log.warn({ err, name }, "failed to update access policy status");
     }
   }
 
