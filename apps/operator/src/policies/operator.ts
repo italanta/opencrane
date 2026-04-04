@@ -4,6 +4,8 @@ import type { Logger } from "pino";
 import type { OperatorConfig } from "../config.js";
 import type { AccessPolicy } from "./types.js";
 import { applyResource, deleteResource } from "../infra/k8s.js";
+import { _RunWatchLoop } from "../shared/watch-runner.js";
+import { PolicyResourceBuilder } from "./policy-resource-builder.js";
 
 /** Kubernetes API group for OpenCrane CRDs. */
 const API_GROUP = "opencrane.io";
@@ -32,6 +34,9 @@ export class PolicyOperator
   /** Operator runtime configuration loaded from environment. */
   private config: OperatorConfig;
 
+  /** Builder for policy-managed network resources. */
+  private resourceBuilder: PolicyResourceBuilder;
+
   /**
    * Create a new PolicyOperator bound to the given KubeConfig.
    */
@@ -40,6 +45,7 @@ export class PolicyOperator
     this.objectApi = k8s.KubernetesObjectApi.makeApiClient(kc);
     this.watch = new k8s.Watch(kc);
     this.config = config;
+    this.resourceBuilder = new PolicyResourceBuilder();
     this.log = log.child({ component: "policy-operator" });
   }
 
@@ -54,35 +60,17 @@ export class PolicyOperator
       ? `/apis/${API_GROUP}/${API_VERSION}/namespaces/${ns}/${PLURAL}`
       : `/apis/${API_GROUP}/${API_VERSION}/${PLURAL}`;
 
-    this.log.info({ path }, "starting access policy watch");
-
-    const watchLoop = async () => {
-      try {
-        await this.watch.watch(
-          path,
-          {},
-          (type: string, policy: AccessPolicy) => {
-            this.handleEvent(type, policy).catch((err) => {
-              this.log.error(
-                { err, policy: policy.metadata?.name },
-                "policy reconcile failed",
-              );
-            });
-          },
-          (err) => {
-            if (err) {
-              this.log.error({ err }, "policy watch lost, reconnecting...");
-            }
-            setTimeout(watchLoop, 5000);
-          },
-        );
-      } catch (err) {
-        this.log.error({ err }, "policy watch failed, retrying...");
-        setTimeout(watchLoop, 5000);
-      }
-    };
-
-    await watchLoop();
+    await _RunWatchLoop<AccessPolicy>({
+      watch: this.watch,
+      path,
+      log: this.log,
+      startMessage: "starting access policy watch",
+      reconnectMessage: "policy watch lost, reconnecting...",
+      failedMessage: "policy watch failed, retrying...",
+      onEvent: async (type: string, policy: AccessPolicy) => {
+        await this.handleEvent(type, policy);
+      },
+    });
   }
 
   /**
@@ -98,7 +86,8 @@ export class PolicyOperator
 
     this.log.info({ type, name }, "access policy event");
 
-    switch (type) {
+    switch (type)
+    {
       case "ADDED":
       case "MODIFIED":
         await this.reconcilePolicy(policy);
@@ -119,17 +108,22 @@ export class PolicyOperator
     const namespace = policy.metadata!.namespace ?? "default";
 
     // Build a standard Kubernetes NetworkPolicy from the AccessPolicy spec
-    if (policy.spec.egressRules?.length) {
-      const netpol = this._buildNetworkPolicy(policy, namespace);
+    if (policy.spec.egressRules?.length)
+    {
+      const netpol = this.resourceBuilder.buildNetworkPolicy(policy, namespace);
       await applyResource(this.objectApi, netpol, this.log);
     }
 
     // If Cilium is available and domain rules are specified, create CiliumNetworkPolicy
-    if (policy.spec.domains?.allow?.length) {
-      const ciliumPolicy = this._buildCiliumPolicy(policy, namespace);
-      try {
+    if (policy.spec.domains?.allow?.length)
+    {
+      const ciliumPolicy = this.resourceBuilder.buildCiliumPolicy(policy, namespace);
+      try
+      {
         await applyResource(this.objectApi, ciliumPolicy, this.log);
-      } catch (err) {
+      }
+      catch (err)
+      {
         // Cilium CRDs may not be installed — log and skip
         this.log.warn(
           { name },
@@ -169,126 +163,4 @@ export class PolicyOperator
     );
   }
 
-  /**
-   * Build a Kubernetes NetworkPolicy from the AccessPolicy egress rules,
-   * always including DNS egress as the first rule.
-   */
-  private _buildNetworkPolicy(
-    policy: AccessPolicy,
-    namespace: string,
-  ): k8s.V1NetworkPolicy
-  {
-    const name = policy.metadata!.name!;
-    const selector = this._buildPodSelector(policy);
-
-    const egressRules: k8s.V1NetworkPolicyEgressRule[] =
-      (policy.spec.egressRules ?? []).map(function (rule)
-      {
-        return {
-          to: [{ ipBlock: { cidr: rule.cidr } }],
-          ports: (rule.ports ?? [443]).map(function (port)
-          {
-            return {
-              port,
-              protocol: rule.protocol ?? "TCP",
-            };
-          }),
-        };
-      });
-
-    // Always allow DNS
-    egressRules.unshift({
-      ports: [
-        { port: 53, protocol: "UDP" },
-        { port: 53, protocol: "TCP" },
-      ],
-    });
-
-    return {
-      apiVersion: "networking.k8s.io/v1",
-      kind: "NetworkPolicy",
-      metadata: {
-        name: `opencrane-policy-${name}`,
-        namespace,
-        labels: {
-          "app.kubernetes.io/part-of": "opencrane",
-          "app.kubernetes.io/managed-by": "opencrane-operator",
-          "opencrane.io/policy": name,
-        },
-      },
-      spec: {
-        podSelector: { matchLabels: selector },
-        policyTypes: ["Egress"],
-        egress: egressRules,
-      },
-    };
-  }
-
-  /**
-   * Build a CiliumNetworkPolicy for FQDN-based egress filtering using
-   * the allowed domains from the AccessPolicy spec.
-   */
-  private _buildCiliumPolicy(
-    policy: AccessPolicy,
-    namespace: string,
-  ): k8s.KubernetesObject & Record<string, unknown>
-  {
-    const name = policy.metadata!.name!;
-    const selector = this._buildPodSelector(policy);
-    const allowedDomains = policy.spec.domains?.allow ?? [];
-
-    // CiliumNetworkPolicy for FQDN-based egress filtering
-    return {
-      apiVersion: "cilium.io/v2",
-      kind: "CiliumNetworkPolicy",
-      metadata: {
-        name: `opencrane-policy-${name}`,
-        namespace,
-        labels: {
-          "app.kubernetes.io/part-of": "opencrane",
-          "opencrane.io/policy": name,
-        },
-      },
-      spec: {
-        endpointSelector: { matchLabels: selector },
-        egress: [
-          {
-            toFQDNs: allowedDomains.map(function (domain)
-            {
-              return domain.includes("*")
-                ? { matchPattern: domain }
-                : { matchName: domain };
-            }),
-            toPorts: [
-              {
-                ports: [{ port: "443", protocol: "TCP" }],
-              },
-            ],
-          },
-        ],
-      },
-    } as k8s.KubernetesObject & Record<string, unknown>;
-  }
-
-  /**
-   * Build a pod label selector from the AccessPolicy tenant selector,
-   * always including the tenant component label as a base.
-   */
-  private _buildPodSelector(
-    policy: AccessPolicy,
-  ): Record<string, string>
-  {
-    const selector: Record<string, string> = {
-      "app.kubernetes.io/component": "tenant",
-    };
-
-    if (policy.spec.tenantSelector?.matchLabels) {
-      Object.assign(selector, policy.spec.tenantSelector.matchLabels);
-    }
-    if (policy.spec.tenantSelector?.matchTeam) {
-      selector["opencrane.io/team"] = policy.spec.tenantSelector.matchTeam;
-    }
-
-    return selector;
-  }
 }

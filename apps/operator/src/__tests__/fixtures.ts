@@ -24,18 +24,31 @@ export const defaultConfig: OperatorConfig = {
 
 /**
  * Create a minimal Tenant fixture with the given name and optional
- * spec overrides for use in unit tests.
+ * spec overrides and status properties for use in unit tests.
  */
-export function _makeTenant(name: string, overrides?: Partial<Tenant["spec"]>): Tenant
+export function _makeTenant(
+  name: string,
+  options?: {
+    suspended?: boolean;
+    phase?: "Pending" | "Running" | "Suspended" | "Error";
+    namespace?: string;
+  } & Partial<Tenant["spec"]>,
+): Tenant
 {
+  const { phase, namespace, suspended, ...specOverrides } = options ?? {};
+
   return {
     apiVersion: "opencrane.io/v1alpha1",
     kind: "Tenant",
-    metadata: { name, namespace: "default" },
+    metadata: { name, namespace: namespace ?? "default" },
     spec: {
       displayName: name.charAt(0).toUpperCase() + name.slice(1),
       email: `${name}@example.com`,
-      ...overrides,
+      suspended,
+      ...specOverrides,
+    },
+    status: {
+      phase: phase ?? "Running",
     },
   };
 }

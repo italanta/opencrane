@@ -1,36 +1,56 @@
 # @opencrane/operator
 
-Kubernetes operator that reconciles `Tenant` and `AccessPolicy` custom resources into real cluster workloads. It watches CRD events and drives every per-tenant pod to the desired state declared in the CR.
+Kubernetes operator that watches `Tenant` and `AccessPolicy` custom resources and creates the Kubernetes objects needed to match them.
 
 ## Responsibilities
 
 | Domain | What it does |
 |--------|-------------|
-| **Tenants** | Watches `Tenant` CRs; creates/updates ServiceAccount, BucketClaim, encryption-key Secret, ConfigMap, Deployment, Service, Ingress per tenant |
-| **Policies** | Watches `AccessPolicy` CRs; reconciles them into `NetworkPolicy` and (optionally) `CiliumNetworkPolicy` |
-| **Storage** | Provisions per-tenant GCS buckets via Crossplane `BucketClaim`; falls back to PVC in non-cloud environments |
-| **Infra** | Generic Kubernetes `apply`/`delete` helpers used by all reconcilers |
+| **Tenants** | Creates/updates each tenant's ServiceAccount, BucketClaim, encryption key Secret, ConfigMap, Deployment, Service, and Ingress |
+| **Policies** | Watches `AccessPolicy` CRs from the cluster API and converts them into `NetworkPolicy` and optional `CiliumNetworkPolicy` resources |
+| **Storage** | Creates per-tenant cloud buckets through Crossplane `BucketClaim`; falls back to PVC in local/non-cloud setups |
+| **Infra** | Shared watch/retry and Kubernetes apply/delete helpers used by reconcilers |
+
+## Where policies come from
+
+`AccessPolicy` resources are written to Kubernetes first, then this operator reacts to those CR events.
+
+Common sources are:
+
+1. Control-plane API route: `POST /api/policies`, `PUT /api/policies/:name`, `DELETE /api/policies/:name`
+2. Direct Kubernetes apply: `kubectl apply -f access-policy.yaml`
+
+The operator does not create policy intent itself. It only watches `opencrane.io/v1alpha1` `accesspolicies` and reconciles the matching network resources.
 
 ## Source layout
 
 ```
 src/
-├── index.ts                  # Entry point: bootstrap + signal handlers
-├── config.ts                 # OperatorConfig interface + loadOperatorConfig()
+├── index.ts                         # Entry point: bootstrap + signal handlers
+├── config.ts                        # OperatorConfig interface + loadOperatorConfig()
+├── shared/
+│   └── watch-runner.ts              # Reusable watch loop with reconnect/backoff
 ├── infra/
-│   └── k8s.ts                # applyResource, deleteResource (server-side apply)
+│   └── k8s.ts                       # applyResource, deleteResource (server-side apply)
 ├── storage/
-│   ├── provider.ts           # StorageProvider interface + buildBucketClaim
+│   ├── provider.ts                  # StorageProvider interface + buildBucketClaim
 │   └── provider.test.ts
 ├── tenants/
-│   ├── types.ts              # TenantSpec, TenantStatus, Tenant
-│   ├── operator.ts           # TenantOperator class
+│   ├── types.ts                     # TenantSpec, TenantStatus, Tenant
+│   ├── tenant-domains.ts            # Tenant hostname/domain conventions
+│   ├── tenant-resource-builder.ts   # Pure builders for tenant K8s resources
+│   ├── tenant-status-writer.ts      # Tenant status patch helper
+│   ├── tenant-cleanup.ts            # Tenant resource deletion helper
+│   ├── idle-checker.ts              # Idle auto-suspend loop
+│   ├── idle-policy.ts               # Pure idle decision helpers
+│   ├── operator.ts                  # Tenant watch orchestration + reconcile flow
 │   └── operator.test.ts
 ├── policies/
-│   ├── types.ts              # AccessPolicySpec, AccessPolicy
-│   └── operator.ts           # PolicyOperator class
+│   ├── types.ts                     # AccessPolicySpec, AccessPolicy
+│   ├── policy-resource-builder.ts   # Pure builders for policy resources
+│   └── operator.ts                  # Policy watch orchestration + reconcile flow
 └── __tests__/
-    └── fixtures.ts           # Shared test helpers: defaultConfig, _makeTenant()
+  └── fixtures.ts                  # Shared test helpers: defaultConfig, _makeTenant()
 ```
 
 ## Configuration (environment variables)

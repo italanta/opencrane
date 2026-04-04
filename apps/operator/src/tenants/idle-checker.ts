@@ -2,6 +2,7 @@ import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
 
 import type { OperatorConfig } from "../config.js";
+import { _ComputeLastActivityMs, _ListIdleCandidates, _ShouldSuspend } from "./idle-policy.js";
 import type { Tenant } from "./types.js";
 
 /** Kubernetes API group for OpenCrane CRDs. */
@@ -17,9 +18,8 @@ const PLURAL = "tenants";
  * Periodically checks running tenant deployments for inactivity and
  * auto-suspends them by patching the Tenant CR's `spec.suspended` field.
  *
- * Inactivity is determined by checking when the tenant pod last received
- * network traffic (via the Deployment's last transition time) or when
- * the Tenant was last reconciled.
+ * Inactivity is determined by using the Deployment condition transition
+ * timestamps as a proxy for recent tenant activity.
  *
  * When a request hits a suspended tenant's Ingress, the operator's watch
  * loop detects the MODIFIED event when the user (or control-plane UI)
@@ -115,19 +115,13 @@ export class IdleChecker
     const now = Date.now();
     const thresholdMs = this.config.idleTimeoutMinutes * 60 * 1000;
 
-    for (const tenant of tenants)
+    for (const candidate of _ListIdleCandidates(tenants))
     {
-      const name = tenant.metadata?.name;
-      const namespace = tenant.metadata?.namespace ?? "default";
-
-      if (!name || tenant.spec.suspended) continue;
-      if (tenant.status?.phase !== "Running") continue;
-
-      const isIdle = await this._isTenantIdle(name, namespace, now, thresholdMs);
+      const isIdle = await this._isTenantIdle(candidate.name, candidate.namespace, now, thresholdMs);
       if (isIdle)
       {
-        this.log.info({ name, namespace }, "auto-suspending idle tenant");
-        await this._suspendTenant(name, namespace);
+        this.log.info({ name: candidate.name, namespace: candidate.namespace }, "auto-suspending idle tenant");
+        await this._suspendTenant(candidate.name, candidate.namespace);
       }
     }
   }
@@ -142,19 +136,8 @@ export class IdleChecker
     try
     {
       const deployment = await this.appsApi.readNamespacedDeployment({ name: `openclaw-${name}`, namespace });
-      const conditions = deployment.status?.conditions ?? [];
-
-      let lastActivity = 0;
-      for (const condition of conditions)
-      {
-        const transitionTime = condition.lastTransitionTime
-          ? new Date(condition.lastTransitionTime as unknown as string).getTime()
-          : 0;
-        if (transitionTime > lastActivity) lastActivity = transitionTime;
-      }
-
-      if (lastActivity === 0) return false;
-      return (now - lastActivity) > thresholdMs;
+      const lastActivity = _ComputeLastActivityMs(deployment.status?.conditions);
+      return _ShouldSuspend(now, lastActivity, thresholdMs);
     }
     catch
     {
