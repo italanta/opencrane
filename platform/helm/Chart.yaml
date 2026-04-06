@@ -10,3 +10,8 @@ keywords:
   - ai-gateway
 maintainers:
   - name: OpenCrane
+dependencies:
+  - name: litellm
+    version: 0.1.0
+    repository: file://charts/litellm
+    condition: litellm.enabled

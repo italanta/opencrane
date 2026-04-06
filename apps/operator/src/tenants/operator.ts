@@ -1,5 +1,3 @@
-import { randomBytes } from "node:crypto";
-
 import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
 
@@ -9,6 +7,8 @@ import { _RunWatchLoop } from "../shared/watch-runner.js";
 import { buildBucketClaim } from "../storage/provider.js";
 import { TenantCleanup } from "./tenant-cleanup.js";
 import { TenantDomains } from "./tenant-domains.js";
+import { TenantEncryptionKeys } from "./tenant-encryption-keys.js";
+import { TenantLiteLlmKeys } from "./tenant-litellm-keys.js";
 import { TenantResourceBuilder } from "./tenant-resource-builder.js";
 import { TenantStatusWriter } from "./tenant-status-writer.js";
 import type { Tenant } from "./types.js";
@@ -58,6 +58,12 @@ export class TenantOperator
   /** Helper for patching Tenant status subresource. */
   private statusWriter: TenantStatusWriter;
 
+  /** Helper for per-tenant AES encryption key Secret lifecycle. */
+  private encryptionKeys: TenantEncryptionKeys;
+
+  /** Helper for LiteLLM virtual key provisioning and Secret creation. */
+  private liteLlmKeys: TenantLiteLlmKeys;
+
   /**
    * Create a new TenantOperator bound to the given KubeConfig.
    */
@@ -73,6 +79,8 @@ export class TenantOperator
     this.cleanup = new TenantCleanup(this.objectApi, log);
     this.statusWriter = new TenantStatusWriter(this.customApi, log);
     this.log = log.child({ component: "tenant-operator" });
+    this.encryptionKeys = new TenantEncryptionKeys(this.coreApi, this.objectApi, this.resourceBuilder, this.log);
+    this.liteLlmKeys = new TenantLiteLlmKeys(config, this.coreApi, this.objectApi, this.resourceBuilder, this.log);
   }
 
   /**
@@ -171,24 +179,28 @@ export class TenantOperator
 
       // 3. Encryption key Secret — generates a random 32-byte AES key on first reconcile
       //    and stores it as a K8s Secret. Idempotent: existing secrets are not rotated.
-      await this._ensureEncryptionKeySecret(name, namespace);
+      await this.encryptionKeys.ensureEncryptionKeySecret(name, namespace);
 
-      // 4. ConfigMap — serialises the base OpenClaw JSON config merged with any
+      // 4. LiteLLM key Secret — creates a per-tenant virtual key in LiteLLM and stores
+      //    it in a tenant Secret mounted through env var. Skipped when LiteLLM is disabled.
+      await this.liteLlmKeys.ensureLiteLlmKeySecret(tenant, namespace);
+
+      // 5. ConfigMap — serialises the base OpenClaw JSON config merged with any
       //    spec.configOverrides the tenant author provided.
       await applyResource(this.objectApi, this.resourceBuilder.buildConfigMap(tenant, namespace), this.log);
 
-      // 5. Deployment — single-replica pod running the tenant's OpenClaw gateway.
+      // 6. Deployment — single-replica pod running the tenant's OpenClaw gateway.
       //    Mounts the ConfigMap, encryption key, GCS volume (or PVC), and shared skills.
       await applyResource(this.objectApi, this.resourceBuilder.buildDeployment(tenant, namespace), this.log);
 
-      // 6. Service — ClusterIP that makes the gateway reachable inside the cluster
+      // 7. Service — ClusterIP that makes the gateway reachable inside the cluster
       //    on the configured gateway port.
       await applyResource(this.objectApi, this.resourceBuilder.buildService(tenant, namespace), this.log);
 
-      // 7. Ingress — routes external HTTPS traffic for {tenant}.{domain} to the Service.
+      // 8. Ingress — routes external HTTPS traffic for {tenant}.{domain} to the Service.
       await applyResource(this.objectApi, this.resourceBuilder.buildIngress(tenant, namespace), this.log);
 
-      // 8. Status — write the observed Running state back to the Tenant CR so that
+      // 9. Status — write the observed Running state back to the Tenant CR so that
       //    kubectl, the control-plane API, and the UI all see the current phase.
       await this.statusWriter.patchStatus(tenant, namespace, {
         phase: "Running",
@@ -245,36 +257,5 @@ export class TenantOperator
     this.log.info({ name }, "tenant cleanup complete (bucket + encryption key retained)");
   }
 
-  /**
-   * Ensure an encryption key Secret exists for the tenant.
-   */
-  private async _ensureEncryptionKeySecret(name: string, namespace: string): Promise<void>
-  {
-    const secretName = `openclaw-${name}-encryption-key`;
-
-    try
-    {
-      await this.coreApi.readNamespacedSecret({ name: secretName, namespace });
-      this.log.debug({ name, secretName }, "encryption key secret already exists");
-    }
-    catch
-    {
-      const key = randomBytes(32).toString("base64");
-      const secret: k8s.V1Secret = {
-        apiVersion: "v1",
-        kind: "Secret",
-        metadata: {
-          name: secretName,
-          namespace,
-          labels: this.resourceBuilder.buildTenantLabels(name),
-        },
-        type: "Opaque",
-        data: { key },
-      };
-
-      await applyResource(this.objectApi, secret, this.log);
-      this.log.info({ name, secretName }, "created encryption key secret");
-    }
-  }
-
 }
+

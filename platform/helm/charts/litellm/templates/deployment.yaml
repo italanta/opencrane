@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  labels:
+    app.kubernetes.io/name: litellm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: litellm
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: litellm
+    spec:
+      containers:
+        - name: litellm
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.port }}
+              name: http
+          env:
+            {{- if .Values.existingSecret }}
+            - name: LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: {{ .Values.secretKey }}
+            {{- else if .Values.masterKey }}
+            - name: LITELLM_MASTER_KEY
+              value: {{ .Values.masterKey | quote }}
+            {{- end }}
+            {{- if .Values.existingDatabaseSecret }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingDatabaseSecret }}
+                  key: {{ .Values.databaseSecretKey }}
+            {{- else if .Values.databaseUrl }}
+            - name: DATABASE_URL
+              value: {{ .Values.databaseUrl | quote }}
+            {{- end }}
+            - name: PORT
+              value: {{ .Values.service.port | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

@@ -21,6 +21,9 @@ export interface TenantSpec
   /** OpenClaw version to install (e.g. "latest", "2026.3.15"). Defaults to "latest". */
   openclawVersion?: string;
 
+  /** Optional monthly budget for the tenant's LiteLLM virtual key (USD). */
+  monthlyBudgetUsd?: number;
+
   /** Resource requests for the tenant container. */
   resources?: {
     /** CPU resource request (e.g. "500m"). */

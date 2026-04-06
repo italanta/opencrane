@@ -68,6 +68,14 @@ export class TenantResourceBuilder
           thinking: "medium",
         },
       },
+      ...(this.config.liteLlmEnabled
+        ? {
+            llmProxy: {
+              endpoint: this.config.liteLlmEndpoint,
+              apiKey: "${LITELLM_API_KEY}",
+            },
+          }
+        : {}),
     };
 
     const merged = tenant.spec.configOverrides
@@ -104,8 +112,23 @@ export class TenantResourceBuilder
       { name: "OPENCLAW_ENCRYPTION_KEY_PATH", value: "/etc/openclaw/encryption-key/key" },
       { name: "OPENCLAW_TENANT_NAME", value: name },
       { name: "OPENCLAW_VERSION", value: openclawVersion },
+      ...(this.config.liteLlmEnabled ? [{ name: "LITELLM_ENDPOINT", value: this.config.liteLlmEndpoint }] : []),
       ...(tenant.spec.team ? [{ name: "OPENCRANE_TEAM", value: tenant.spec.team }] : []),
     ];
+
+    if (this.config.liteLlmEnabled)
+    {
+      envVars.push({
+        name: "LITELLM_API_KEY",
+        valueFrom: {
+          secretKeyRef: {
+            name: `openclaw-${name}-litellm-key`,
+            key: "apiKey",
+            optional: true,
+          },
+        },
+      });
+    }
 
     const volumeMounts: k8s.V1VolumeMount[] = [
       { name: "config", mountPath: "/config", readOnly: true },

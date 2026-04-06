@@ -1,6 +1,8 @@
 export { IdleChecker } from "./idle-checker.js";
 export { TenantCleanup } from "./tenant-cleanup.js";
 export { TenantDomains } from "./tenant-domains.js";
+export { TenantEncryptionKeys } from "./tenant-encryption-keys.js";
+export { TenantLiteLlmKeys } from "./tenant-litellm-keys.js";
 export { TenantOperator } from "./operator.js";
 export { TenantResourceBuilder } from "./tenant-resource-builder.js";
 export { TenantStatusWriter } from "./tenant-status-writer.js";

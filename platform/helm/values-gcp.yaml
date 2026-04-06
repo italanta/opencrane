@@ -22,6 +22,12 @@ controlPlane:
     existingSecret: opencrane-db
     secretKey: DATABASE_URL
 
+litellm:
+  enabled: true
+  endpoint: http://litellm:4000
+  existingDatabaseSecret: opencrane-db
+  databaseSecretKey: DATABASE_URL
+
 crossplane:
   enabled: true
   provider: gcp

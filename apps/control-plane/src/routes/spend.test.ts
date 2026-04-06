@@ -1,0 +1,114 @@
+import express from "express";
+import type { Express } from "express";
+import type { PrismaClient } from "@prisma/client";
+import request from "supertest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { spendRouter } from "./spend.js";
+
+/**
+ * Build a minimal app containing only the spend route.
+ */
+function _buildSpendApp(prisma: PrismaClient): Express
+{
+  const app = express();
+  app.use(express.json());
+  app.use("/api/spend", spendRouter(prisma));
+  return app;
+}
+
+describe("spendRouter", () =>
+{
+  const originalEndpoint = process.env.LITELLM_ENDPOINT;
+  const originalMasterKey = process.env.LITELLM_MASTER_KEY;
+  const originalPathTemplate = process.env.LITELLM_SPEND_PATH_TEMPLATE;
+
+  beforeEach(() =>
+  {
+    process.env.LITELLM_ENDPOINT = "http://litellm:4000";
+    process.env.LITELLM_MASTER_KEY = "master-key";
+    process.env.LITELLM_SPEND_PATH_TEMPLATE = "/spend/tenant/{tenant}";
+  });
+
+  afterEach(() =>
+  {
+    if (originalEndpoint !== undefined)
+    {
+      process.env.LITELLM_ENDPOINT = originalEndpoint;
+    }
+    else
+    {
+      delete process.env.LITELLM_ENDPOINT;
+    }
+
+    if (originalMasterKey !== undefined)
+    {
+      process.env.LITELLM_MASTER_KEY = originalMasterKey;
+    }
+    else
+    {
+      delete process.env.LITELLM_MASTER_KEY;
+    }
+
+    if (originalPathTemplate !== undefined)
+    {
+      process.env.LITELLM_SPEND_PATH_TEMPLATE = originalPathTemplate;
+    }
+    else
+    {
+      delete process.env.LITELLM_SPEND_PATH_TEMPLATE;
+    }
+
+    vi.restoreAllMocks();
+  });
+
+  it("returns 404 when tenant does not exist", async () =>
+  {
+    const prisma = {
+      tenant: {
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
+    } as unknown as PrismaClient;
+
+    const app = _buildSpendApp(prisma);
+    const res = await request(app).get("/api/spend/missing-tenant");
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: "Tenant not found" });
+  });
+
+  it("returns normalized spend response from LiteLLM payload", async () =>
+  {
+    const prisma = {
+      tenant: {
+        findUnique: vi.fn().mockResolvedValue({ name: "jente" }),
+      },
+    } as unknown as PrismaClient;
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async function _json()
+      {
+        return {
+          total_cost: 12.5,
+          max_budget: 100,
+          top_models: [
+            { model: "gpt-4.1", total_cost: 10.2, requests: 20 },
+            { model: "gpt-4.1-mini", total_cost: 2.3, requests: 45 },
+          ],
+        };
+      },
+    }));
+
+    const app = _buildSpendApp(prisma);
+    const res = await request(app).get("/api/spend/jente");
+
+    expect(res.status).toBe(200);
+    expect(res.body.tenantName).toBe("jente");
+    expect(res.body.totalCostUsd).toBe(12.5);
+    expect(res.body.monthlyBudgetUsd).toBe(100);
+    expect(res.body.remainingBudgetUsd).toBe(87.5);
+    expect(res.body.topModels).toHaveLength(2);
+    expect(res.body.topModels[0].model).toBe("gpt-4.1");
+  });
+});

@@ -47,6 +47,9 @@ export interface CreateTenantRequest
   skills?: string[];
   /** Optional reference to an AccessPolicy by name. */
   policyRef?: string;
+
+  /** Optional monthly budget used when provisioning a LiteLLM virtual key. */
+  monthlyBudgetUsd?: number;
 }
 
 /** Response shape returned when querying tenant details. */

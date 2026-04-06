@@ -30,6 +30,18 @@ spec:
               value: {{ .Values.controlPlane.service.port | quote }}
             - name: INGRESS_DOMAIN
               value: {{ .Values.ingress.domain | quote }}
+            - name: LITELLM_ENDPOINT
+              value: {{ .Values.litellm.endpoint | quote }}
+            {{- if .Values.litellm.existingSecret }}
+            - name: LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.litellm.existingSecret }}
+                  key: {{ .Values.litellm.secretKey }}
+            {{- else if .Values.litellm.masterKey }}
+            - name: LITELLM_MASTER_KEY
+              value: {{ .Values.litellm.masterKey | quote }}
+            {{- end }}
             {{- if .Values.controlPlane.database.existingSecret }}
             - name: DATABASE_URL
               valueFrom:

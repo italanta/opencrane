@@ -20,6 +20,10 @@ export const defaultConfig: OperatorConfig = {
   crossplaneEnabled: true,
   idleTimeoutMinutes: 30,
   idleCheckIntervalSeconds: 60,
+  liteLlmEnabled: false,
+  liteLlmEndpoint: "http://litellm:4000",
+  liteLlmMasterKey: "",
+  liteLlmDefaultMonthlyBudgetUsd: 50,
 };
 
 /**

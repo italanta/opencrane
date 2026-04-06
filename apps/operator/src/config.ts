@@ -41,6 +41,18 @@ export interface OperatorConfig
 
   /** How often (in seconds) the idle-check loop runs. */
   idleCheckIntervalSeconds: number;
+
+  /** When true, tenant reconcile provisions per-tenant LiteLLM virtual keys. */
+  liteLlmEnabled: boolean;
+
+  /** Cluster-local LiteLLM base endpoint (e.g. http://litellm:4000). */
+  liteLlmEndpoint: string;
+
+  /** Master key used by the operator to call LiteLLM key-management APIs. */
+  liteLlmMasterKey: string;
+
+  /** Default monthly budget (USD) applied when tenant does not override it. */
+  liteLlmDefaultMonthlyBudgetUsd: number;
 }
 
 /**
@@ -63,5 +75,9 @@ export function loadOperatorConfig(): OperatorConfig
     crossplaneEnabled: process.env.CROSSPLANE_ENABLED === "true",
     idleTimeoutMinutes: Number(process.env.IDLE_TIMEOUT_MINUTES ?? "30"),
     idleCheckIntervalSeconds: Number(process.env.IDLE_CHECK_INTERVAL_SECONDS ?? "60"),
+    liteLlmEnabled: process.env.LITELLM_ENABLED === "true",
+    liteLlmEndpoint: process.env.LITELLM_ENDPOINT ?? "http://litellm:4000",
+    liteLlmMasterKey: process.env.LITELLM_MASTER_KEY ?? "",
+    liteLlmDefaultMonthlyBudgetUsd: Number(process.env.LITELLM_DEFAULT_MONTHLY_BUDGET_USD ?? "50"),
   };
 }

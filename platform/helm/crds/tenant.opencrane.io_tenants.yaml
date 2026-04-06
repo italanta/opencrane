@@ -44,6 +44,10 @@ spec:
                 openclawVersion:
                   type: string
                   description: OpenClaw version to install (e.g. latest, 2026.3.15). Defaults to latest.
+                monthlyBudgetUsd:
+                  type: number
+                  minimum: 0
+                  description: Monthly budget cap in USD used for LiteLLM virtual key provisioning.
                 resources:
                   type: object
                   properties:
