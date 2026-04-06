@@ -2,8 +2,7 @@ import * as k8s from "@kubernetes/client-node";
 import pino from "pino";
 
 import { loadOperatorConfig } from "./config.js";
-import { TenantOperator } from "./tenants/operator.js";
-import { IdleChecker } from "./tenants/idle-checker.js";
+import { _CreateTenantOperator, IdleChecker } from "./tenants/index.js";
 import { PolicyOperator } from "./policies/operator.js";
 
 /** Root logger for the opencrane-operator process. */
@@ -26,7 +25,7 @@ async function main(): Promise<void>
   const kc = new k8s.KubeConfig();
   kc.loadFromDefault();
 
-  const tenantOperator = new TenantOperator(kc, config, log);
+  const tenantOperator = _CreateTenantOperator(kc, config, log);
   const policyOperator = new PolicyOperator(kc, config, log);
   const idleChecker = new IdleChecker(kc, config, log);
 

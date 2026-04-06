@@ -1,6 +1,6 @@
 import type { AccessPolicy } from "../policies/types.js";
 import type { OperatorConfig } from "../config.js";
-import type { Tenant } from "../tenants/types.js";
+import type { Tenant } from "../tenants/models/tenant.interface.js";
 
 /**
  * Shared operator config fixture used across all unit test suites.

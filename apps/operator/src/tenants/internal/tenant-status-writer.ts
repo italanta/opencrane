@@ -1,7 +1,8 @@
 import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
 
-import type { Tenant, TenantStatus } from "./types.js";
+import type { Tenant } from "../models/tenant.interface.js";
+import type { TenantStatus } from "../models/tenant-status.interface.js";
 
 /** Kubernetes API group for OpenCrane CRDs. */
 const API_GROUP = "opencrane.io";

@@ -5,13 +5,13 @@ import type { OperatorConfig } from "../config.js";
 import { applyResource } from "../infra/k8s.js";
 import { _RunWatchLoop } from "../shared/watch-runner.js";
 import { buildBucketClaim } from "../storage/provider.js";
-import { TenantCleanup } from "./tenant-cleanup.js";
-import { TenantDomains } from "./tenant-domains.js";
-import { TenantEncryptionKeys } from "./tenant-encryption-keys.js";
-import { TenantLiteLlmKeys } from "./tenant-litellm-keys.js";
-import { TenantResourceBuilder } from "./tenant-resource-builder.js";
-import { TenantStatusWriter } from "./tenant-status-writer.js";
-import type { Tenant } from "./types.js";
+import { TenantCleanup } from "./internal/tenant-cleanup.js";
+import { TenantDomains } from "./internal/tenant-domains.js";
+import { TenantEncryptionKeys } from "./internal/tenant-encryption-keys.js";
+import { TenantLiteLlmKeys } from "./internal/tenant-litellm-keys.js";
+import { TenantResourceBuilder } from "./internal/tenant-resource-builder.js";
+import { TenantStatusWriter } from "./internal/tenant-status-writer.js";
+import type { Tenant } from "./models/tenant.interface.js";
 
 /** Kubernetes API group for OpenCrane CRDs. */
 const API_GROUP = "opencrane.io";
@@ -25,20 +25,18 @@ const PLURAL = "tenants";
 /**
  * Watches Tenant custom resources and reconciles the corresponding
  * Kubernetes workloads.
+ *
+ * All dependencies are injected via the constructor — use
+ * {@link _CreateTenantOperator} to assemble from a raw KubeConfig in
+ * production entry-points, and pass mocks directly in tests.
  */
 export class TenantOperator
 {
-  /** Client for managing custom object subresources (status updates). */
-  private customApi: k8s.CustomObjectsApi;
+  /** Watch client for streaming Tenant CR events. */
+  private watch: k8s.Watch;
 
   /** Client for generic Kubernetes object CRUD via server-side apply. */
   private objectApi: k8s.KubernetesObjectApi;
-
-  /** Client for core Kubernetes API operations (Secrets). */
-  private coreApi: k8s.CoreV1Api;
-
-  /** Watch client for streaming Tenant CR events. */
-  private watch: k8s.Watch;
 
   /** Scoped logger for tenant-operator messages. */
   private log: Logger;
@@ -65,22 +63,32 @@ export class TenantOperator
   private liteLlmKeys: TenantLiteLlmKeys;
 
   /**
-   * Create a new TenantOperator bound to the given KubeConfig.
+   * Create a new TenantOperator with pre-wired dependencies.
+   * Prefer {@link _CreateTenantOperator} in production entry-points.
    */
-  constructor(kc: k8s.KubeConfig, config: OperatorConfig, log: Logger)
+  constructor(
+    watch: k8s.Watch,
+    objectApi: k8s.KubernetesObjectApi,
+    log: Logger,
+    config: OperatorConfig,
+    tenantDomains: TenantDomains,
+    resourceBuilder: TenantResourceBuilder,
+    cleanup: TenantCleanup,
+    statusWriter: TenantStatusWriter,
+    encryptionKeys: TenantEncryptionKeys,
+    liteLlmKeys: TenantLiteLlmKeys,
+  )
   {
-    this.customApi = kc.makeApiClient(k8s.CustomObjectsApi);
-    this.objectApi = k8s.KubernetesObjectApi.makeApiClient(kc);
-    this.coreApi = kc.makeApiClient(k8s.CoreV1Api);
-    this.watch = new k8s.Watch(kc);
+    this.watch = watch;
+    this.objectApi = objectApi;
+    this.log = log;
     this.config = config;
-    this.tenantDomains = new TenantDomains(config.ingressDomain);
-    this.resourceBuilder = new TenantResourceBuilder(config, this.tenantDomains);
-    this.cleanup = new TenantCleanup(this.objectApi, log);
-    this.statusWriter = new TenantStatusWriter(this.customApi, log);
-    this.log = log.child({ component: "tenant-operator" });
-    this.encryptionKeys = new TenantEncryptionKeys(this.coreApi, this.objectApi, this.resourceBuilder, this.log);
-    this.liteLlmKeys = new TenantLiteLlmKeys(config, this.coreApi, this.objectApi, this.resourceBuilder, this.log);
+    this.tenantDomains = tenantDomains;
+    this.resourceBuilder = resourceBuilder;
+    this.cleanup = cleanup;
+    this.statusWriter = statusWriter;
+    this.encryptionKeys = encryptionKeys;
+    this.liteLlmKeys = liteLlmKeys;
   }
 
   /**
@@ -257,5 +265,40 @@ export class TenantOperator
     this.log.info({ name }, "tenant cleanup complete (bucket + encryption key retained)");
   }
 
+}
+
+/**
+ * Wire all dependencies from a KubeConfig and return a ready-to-start TenantOperator.
+ *
+ * This factory owns all K8s client construction so that `TenantOperator` itself
+ * only depends on the abstractions it actually needs. Use this from application
+ * entry-points; inject helpers directly in tests.
+ *
+ * @param kc - Resolved KubeConfig (cluster or in-cluster credentials).
+ * @param config - Operator runtime configuration from environment variables.
+ * @param baseLog - Root pino logger; scoped to `tenant-operator` component inside.
+ */
+export function _CreateTenantOperator(kc: k8s.KubeConfig, config: OperatorConfig, baseLog: Logger): TenantOperator
+{
+  // 1. K8s API clients — each scoped to one API group; none leak into TenantOperator directly.
+  const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
+  const objectApi = k8s.KubernetesObjectApi.makeApiClient(kc);
+  const coreApi = kc.makeApiClient(k8s.CoreV1Api);
+  const watch = new k8s.Watch(kc);
+
+  // 2. Scoped logger — child-scoped here so all tenant-operator log lines share the label.
+  const log = baseLog.child({ component: "tenant-operator" });
+
+  // 3. Pure config helpers — depend only on config values, no I/O.
+  const tenantDomains = new TenantDomains(config.ingressDomain);
+  const resourceBuilder = new TenantResourceBuilder(config, tenantDomains);
+
+  // 4. K8s helpers — each receives only the API clients it actually calls.
+  const cleanup = new TenantCleanup(objectApi, log);
+  const statusWriter = new TenantStatusWriter(customApi, log);
+  const encryptionKeys = new TenantEncryptionKeys(coreApi, objectApi, resourceBuilder, log);
+  const liteLlmKeys = new TenantLiteLlmKeys(config, coreApi, objectApi, resourceBuilder, log);
+
+  return new TenantOperator(watch, objectApi, log, config, tenantDomains, resourceBuilder, cleanup, statusWriter, encryptionKeys, liteLlmKeys);
 }
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 import { defaultConfig, _makeTenant } from "../fixtures.js";
-import { TenantDomains } from "../../tenants/tenant-domains.js";
+import { TenantDomains } from "../../tenants/internal/tenant-domains.js";
 
 describe("TenantOperator", () =>
 {

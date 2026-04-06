@@ -3,10 +3,10 @@ import { Buffer } from "node:buffer";
 import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
 
-import type { OperatorConfig } from "../config.js";
-import { applyResource } from "../infra/k8s.js";
+import type { OperatorConfig } from "../../config.js";
+import { applyResource } from "../../infra/k8s.js";
 import { TenantResourceBuilder } from "./tenant-resource-builder.js";
-import type { Tenant } from "./types.js";
+import type { Tenant } from "../models/tenant.interface.js";
 
 /**
  * Handles LiteLLM virtual key provisioning and Secret materialization

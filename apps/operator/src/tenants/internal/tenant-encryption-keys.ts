@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
 
-import { applyResource } from "../infra/k8s.js";
+import { applyResource } from "../../infra/k8s.js";
 import { TenantResourceBuilder } from "./tenant-resource-builder.js";
 
 /**

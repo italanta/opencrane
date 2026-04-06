@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { _makeTenant } from "../fixtures.js";
-import { _ComputeLastActivityMs, _ListIdleCandidates, _ShouldSuspend } from "../../tenants/idle-policy.js";
-import type { Tenant } from "../../tenants/types.js";
+import { _ComputeLastActivityMs, _ListIdleCandidates, _ShouldSuspend } from "../../tenants/internal/idle-policy.js";
+import type { Tenant } from "../../tenants/models/tenant.interface.js";
 
 describe("idle-policy", () =>
 {

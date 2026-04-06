@@ -1,6 +1,6 @@
 import type * as k8s from "@kubernetes/client-node";
 
-import type { Tenant } from "./types.js";
+import type { Tenant } from "../../models/tenant.interface.js";
 
 /** Candidate tenant for idle-suspend evaluation. */
 export interface IdleCandidate
