@@ -26,6 +26,8 @@ export class TenantStatusWriter
 
   /**
    * Create a new TenantStatusWriter.
+    * @param customApi - Kubernetes CustomObjects API client used to patch Tenant status.
+    * @param log - Root logger used to create a tenant-status-writer scoped logger.
    */
   constructor(customApi: k8s.CustomObjectsApi, log: Logger)
   {
@@ -35,12 +37,11 @@ export class TenantStatusWriter
 
   /**
    * Patch the status subresource of a Tenant CR with the given fields.
+    * @param tenant - Tenant resource whose status should be updated.
+    * @param namespace - Namespace where the Tenant resource exists.
+    * @param status - Partial status fields to merge into the current Tenant status.
    */
-  async patchStatus(
-    tenant: Tenant,
-    namespace: string,
-    status: Partial<TenantStatus>,
-  ): Promise<void>
+  async patchStatus(tenant: Tenant, namespace: string, status: Partial<TenantStatus>): Promise<void>
   {
     const name = tenant.metadata!.name!;
     try

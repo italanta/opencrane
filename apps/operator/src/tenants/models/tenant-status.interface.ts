@@ -2,10 +2,29 @@
  * Observed status of a Tenant custom resource, written by the operator
  * after each reconciliation loop.
  */
+export enum TenantStatusPhase
+{
+  /** Tenant has been created but workloads are not fully reconciled yet. */
+  Pending = "Pending",
+
+  /** Tenant workloads are provisioned and serving traffic. */
+  Running = "Running",
+
+  /** Tenant workload is intentionally scaled down to zero replicas. */
+  Suspended = "Suspended",
+
+  /** Reconciliation failed and operator recorded the latest error message. */
+  Error = "Error",
+}
+
+/**
+ * Observed status of a Tenant custom resource, written by the operator
+ * after each reconciliation loop.
+ */
 export interface TenantStatus
 {
   /** Current lifecycle phase of the tenant. */
-  phase: "Pending" | "Running" | "Suspended" | "Error";
+  phase: TenantStatusPhase;
 
   /** Name of the tenant pod managed by the deployment. */
   podName?: string;

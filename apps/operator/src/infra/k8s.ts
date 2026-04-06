@@ -4,8 +4,12 @@ import type { Logger } from "pino";
 /**
  * Apply a Kubernetes resource using server-side apply (create or update).
  * Falls back to create if the resource doesn't exist yet.
+ * 
+ * @param client - Kubernetes object API client used for patch/create operations.
+ * @param resource - Kubernetes object to apply.
+ * @param log - Logger used for apply/create lifecycle messages.
  */
-export async function applyResource<T extends k8s.KubernetesObject>(
+export async function _K8sApplyResource<T extends k8s.KubernetesObject>(
   client: k8s.KubernetesObjectApi,
   resource: T,
   log: Logger,
@@ -31,8 +35,12 @@ export async function applyResource<T extends k8s.KubernetesObject>(
 
 /**
  * Delete a Kubernetes resource, ignoring 404 (already gone).
+ * 
+ * @param client - Kubernetes object API client used for delete operations.
+ * @param resource - Kubernetes object to delete.
+ * @param log - Logger used for delete lifecycle messages.
  */
-export async function deleteResource(
+export async function _K8sDeleteResource(
   client: k8s.KubernetesObjectApi,
   resource: k8s.KubernetesObject,
   log: Logger,
@@ -57,6 +65,8 @@ export async function deleteResource(
 /**
  * Type guard that checks whether an unknown error value is a Kubernetes
  * API error carrying a numeric statusCode property.
+ * 
+ * @param err - Unknown error value to validate.
  */
 function _isK8sError(err: unknown): err is { statusCode: number }
 {

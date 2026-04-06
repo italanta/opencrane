@@ -29,7 +29,7 @@ export interface StorageProvider
  * @param bucketPrefix - Prefix for bucket naming (e.g. "opencrane")
  * @returns A Kubernetes object representing the BucketClaim CR
  */
-export function buildBucketClaim(tenantName: string, namespace: string, bucketPrefix: string): KubernetesObject
+export function _BuildGCPBucketClaim(tenantName: string, namespace: string, bucketPrefix: string): KubernetesObject
 {
   return {
     apiVersion: "storage.opencrane.io/v1alpha1",

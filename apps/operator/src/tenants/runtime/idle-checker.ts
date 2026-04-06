@@ -1,9 +1,9 @@
 import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
 
-import type { OperatorConfig } from "../../../config.js";
+import type { OperatorConfig } from "../../config.js";
 import { _ComputeLastActivityMs, _ListIdleCandidates, _ShouldSuspend } from "./idle-policy.js";
-import type { Tenant } from "../../models/tenant.interface.js";
+import type { Tenant } from "../models/tenant.interface.js";
 
 /** Kubernetes API group for OpenCrane CRDs. */
 const API_GROUP = "opencrane.io";

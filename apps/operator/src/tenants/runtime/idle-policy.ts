@@ -1,6 +1,7 @@
 import type * as k8s from "@kubernetes/client-node";
 
-import type { Tenant } from "../../models/tenant.interface.js";
+import type { Tenant } from "../models/tenant.interface.js";
+import { TenantStatusPhase } from "../models/tenant-status.interface.js";
 
 /** Candidate tenant for idle-suspend evaluation. */
 export interface IdleCandidate
@@ -20,7 +21,7 @@ export function _ListIdleCandidates(tenants: Tenant[]): IdleCandidate[]
   return tenants
     .filter((tenant) => Boolean(tenant.metadata?.name))
     .filter((tenant) => !tenant.spec.suspended)
-    .filter((tenant) => tenant.status?.phase === "Running")
+    .filter((tenant) => tenant.status?.phase === TenantStatusPhase.Running)
     .map((tenant) => ({
       name: tenant.metadata!.name!,
       namespace: tenant.metadata?.namespace ?? "default",

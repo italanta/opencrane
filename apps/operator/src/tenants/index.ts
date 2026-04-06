@@ -1,2 +1,2 @@
-export { IdleChecker } from "./internal/idle-checker.js";
+export { IdleChecker } from "./runtime/idle-checker.js";
 export { TenantOperator, _CreateTenantOperator } from "./operator.js";

@@ -4,8 +4,8 @@ import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
 
 import type { OperatorConfig } from "../../config.js";
-import { applyResource } from "../../infra/k8s.js";
-import { TenantResourceBuilder } from "./tenant-resource-builder.js";
+import { _K8sApplyResource } from "../../infra/k8s.js";
+import { _BuildTenantLabels } from "../deploy/tenant-labels.js";
 import type { Tenant } from "../models/tenant.interface.js";
 
 /**
@@ -23,9 +23,6 @@ export class TenantLiteLlmKeys
   /** Client for generic Kubernetes object CRUD via server-side apply. */
   private objectApi: k8s.KubernetesObjectApi;
 
-  /** Builder for tenant-managed Kubernetes resources. */
-  private resourceBuilder: TenantResourceBuilder;
-
   /** Scoped logger for LiteLLM key lifecycle events. */
   private log: Logger;
 
@@ -36,14 +33,12 @@ export class TenantLiteLlmKeys
     config: OperatorConfig,
     coreApi: k8s.CoreV1Api,
     objectApi: k8s.KubernetesObjectApi,
-    resourceBuilder: TenantResourceBuilder,
     log: Logger,
   )
   {
     this.config = config;
     this.coreApi = coreApi;
     this.objectApi = objectApi;
-    this.resourceBuilder = resourceBuilder;
     this.log = log;
   }
 
@@ -87,7 +82,7 @@ export class TenantLiteLlmKeys
       metadata: {
         name: secretName,
         namespace,
-        labels: this.resourceBuilder.buildTenantLabels(name),
+        labels: _BuildTenantLabels(name),
       },
       type: "Opaque",
       data: {
@@ -95,7 +90,7 @@ export class TenantLiteLlmKeys
       },
     };
 
-    await applyResource(this.objectApi, secret, this.log);
+    await _K8sApplyResource(this.objectApi, secret, this.log);
     this.log.info({ name, secretName, budget }, "created litellm virtual key secret");
   }
 

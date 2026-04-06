@@ -1,7 +1,7 @@
 import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
 
-import { deleteResource } from "../../infra/k8s.js";
+import { _K8sDeleteResource } from "../../infra/k8s.js";
 
 /**
  * Handles deletion of tenant-managed Kubernetes resources.
@@ -28,31 +28,31 @@ export class TenantCleanup
    */
   async cleanupTenant(name: string, namespace: string): Promise<void>
   {
-    await deleteResource(this.objectApi, {
+    await _K8sDeleteResource(this.objectApi, {
       apiVersion: "networking.k8s.io/v1",
       kind: "Ingress",
       metadata: { name: `openclaw-${name}`, namespace },
     }, this.log);
 
-    await deleteResource(this.objectApi, {
+    await _K8sDeleteResource(this.objectApi, {
       apiVersion: "v1",
       kind: "Service",
       metadata: { name: `openclaw-${name}`, namespace },
     }, this.log);
 
-    await deleteResource(this.objectApi, {
+    await _K8sDeleteResource(this.objectApi, {
       apiVersion: "apps/v1",
       kind: "Deployment",
       metadata: { name: `openclaw-${name}`, namespace },
     }, this.log);
 
-    await deleteResource(this.objectApi, {
+    await _K8sDeleteResource(this.objectApi, {
       apiVersion: "v1",
       kind: "ConfigMap",
       metadata: { name: `openclaw-${name}-config`, namespace },
     }, this.log);
 
-    await deleteResource(this.objectApi, {
+    await _K8sDeleteResource(this.objectApi, {
       apiVersion: "v1",
       kind: "ServiceAccount",
       metadata: { name: `openclaw-${name}`, namespace },

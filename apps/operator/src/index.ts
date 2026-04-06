@@ -1,7 +1,7 @@
 import * as k8s from "@kubernetes/client-node";
 import pino from "pino";
 
-import { loadOperatorConfig } from "./config.js";
+import { _LoadOperatorConfig } from "./config.js";
 import { _CreateTenantOperator, IdleChecker } from "./tenants/index.js";
 import { PolicyOperator } from "./policies/operator.js";
 
@@ -19,7 +19,7 @@ async function main(): Promise<void>
 {
   log.info("starting opencrane operator");
 
-  const config = loadOperatorConfig();
+  const config = _LoadOperatorConfig();
   log.info({ config }, "loaded operator config");
 
   const kc = new k8s.KubeConfig();

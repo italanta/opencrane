@@ -1,6 +1,7 @@
 import type { AccessPolicy } from "../policies/types.js";
 import type { OperatorConfig } from "../config.js";
 import type { Tenant } from "../tenants/models/tenant.interface.js";
+import { TenantStatusPhase } from "../tenants/models/tenant-status.interface.js";
 
 /**
  * Shared operator config fixture used across all unit test suites.
@@ -34,7 +35,7 @@ export function _makeTenant(
   name: string,
   options?: {
     suspended?: boolean;
-    phase?: "Pending" | "Running" | "Suspended" | "Error";
+    phase?: TenantStatusPhase;
     namespace?: string;
   } & Partial<Tenant["spec"]>,
 ): Tenant
@@ -52,7 +53,7 @@ export function _makeTenant(
       ...specOverrides,
     },
     status: {
-      phase: phase ?? "Running",
+      phase: phase ?? TenantStatusPhase.Running,
     },
   };
 }

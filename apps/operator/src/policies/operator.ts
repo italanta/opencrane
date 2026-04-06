@@ -3,8 +3,8 @@ import type { Logger } from "pino";
 
 import type { OperatorConfig } from "../config.js";
 import type { AccessPolicy } from "./types.js";
-import { applyResource, deleteResource } from "../infra/k8s.js";
-import { _RunWatchLoop } from "../shared/watch-runner.js";
+import { _K8sApplyResource, _K8sDeleteResource } from "../infra/k8s.js";
+import { _RunWatchLoop, K8sWatchEventType } from "../shared/watch-runner.js";
 import { PolicyResourceBuilder } from "./policy-resource-builder.js";
 
 /** Kubernetes API group for OpenCrane CRDs. */
@@ -71,7 +71,7 @@ export class PolicyOperator
       startMessage: "starting access policy watch",
       reconnectMessage: "policy watch lost, reconnecting...",
       failedMessage: "policy watch failed, retrying...",
-      onEvent: async (type: string, policy: AccessPolicy) => {
+      onEvent: async (type: K8sWatchEventType | string, policy: AccessPolicy) => {
         await this.handleEvent(type, policy);
       },
     });
@@ -81,7 +81,7 @@ export class PolicyOperator
    * Route a watch event to the appropriate reconciliation handler.
    */
   private async handleEvent(
-    type: string,
+    type: K8sWatchEventType | string,
     policy: AccessPolicy,
   ): Promise<void>
   {
@@ -92,11 +92,11 @@ export class PolicyOperator
 
     switch (type)
     {
-      case "ADDED":
-      case "MODIFIED":
+      case K8sWatchEventType.Added:
+      case K8sWatchEventType.Modified:
         await this.reconcilePolicy(policy);
         break;
-      case "DELETED":
+      case K8sWatchEventType.Deleted:
         await this._cleanupPolicy(policy);
         break;
     }
@@ -115,7 +115,7 @@ export class PolicyOperator
     if (policy.spec.egressRules?.length)
     {
       const netpol = this.resourceBuilder.buildNetworkPolicy(policy, namespace);
-      await applyResource(this.objectApi, netpol, this.log);
+      await _K8sApplyResource(this.objectApi, netpol, this.log);
     }
 
     // If Cilium is available and domain rules are specified, create CiliumNetworkPolicy
@@ -124,7 +124,7 @@ export class PolicyOperator
       const ciliumPolicy = this.resourceBuilder.buildCiliumPolicy(policy, namespace);
       try
       {
-        await applyResource(this.objectApi, ciliumPolicy, this.log);
+        await _K8sApplyResource(this.objectApi, ciliumPolicy, this.log);
       }
       catch (err)
       {
@@ -184,7 +184,7 @@ export class PolicyOperator
     const name = policy.metadata!.name!;
     const namespace = policy.metadata!.namespace ?? "default";
 
-    await deleteResource(
+    await _K8sDeleteResource(
       this.objectApi,
       {
         apiVersion: "networking.k8s.io/v1",
@@ -194,7 +194,7 @@ export class PolicyOperator
       this.log,
     );
 
-    await deleteResource(
+    await _K8sDeleteResource(
       this.objectApi,
       {
         apiVersion: "cilium.io/v2",

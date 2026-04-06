@@ -1,17 +1,20 @@
 import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
 
-import type { OperatorConfig } from "../config.js";
-import { applyResource } from "../infra/k8s.js";
-import { _RunWatchLoop } from "../shared/watch-runner.js";
-import { buildBucketClaim } from "../storage/provider.js";
-import { TenantCleanup } from "./internal/tenant-cleanup.js";
-import { TenantDomains } from "./internal/tenant-domains.js";
+import type { OpenClawTenantOperatorConfig } from "../config.js";
+
+import type { Tenant } from "./models/tenant.interface.js";
+import { TenantStatusPhase } from "./models/tenant-status.interface.js";
+
+import { _K8sApplyResource } from "../infra/k8s.js";
+import { _RunWatchLoop, K8sWatchEventType } from "../shared/watch-runner.js";
+import { _BuildGCPBucketClaim } from "../storage/provider.js";
+import { _BuildConfigMap, _BuildDeployment, _BuildIngress, _BuildIngressHost, _BuildService, _BuildServiceAccount } from "./deploy/index.js";
+import { TenantCleanup } from "./destroy/tenant-cleanup.js";
+
 import { TenantEncryptionKeys } from "./internal/tenant-encryption-keys.js";
 import { TenantLiteLlmKeys } from "./internal/tenant-litellm-keys.js";
-import { TenantResourceBuilder } from "./internal/tenant-resource-builder.js";
 import { TenantStatusWriter } from "./internal/tenant-status-writer.js";
-import type { Tenant } from "./models/tenant.interface.js";
 
 /** Kubernetes API group for OpenCrane CRDs. */
 const API_GROUP = "opencrane.io";
@@ -42,13 +45,7 @@ export class TenantOperator
   private log: Logger;
 
   /** Operator runtime configuration loaded from environment. */
-  private config: OperatorConfig;
-
-  /** Helper for tenant host and domain conventions. */
-  private tenantDomains: TenantDomains;
-
-  /** Builder for tenant-managed Kubernetes resources. */
-  private resourceBuilder: TenantResourceBuilder;
+  private config: OpenClawTenantOperatorConfig;
 
   /** Helper for removing tenant-owned resources during delete flows. */
   private cleanup: TenantCleanup;
@@ -66,25 +63,19 @@ export class TenantOperator
    * Create a new TenantOperator with pre-wired dependencies.
    * Prefer {@link _CreateTenantOperator} in production entry-points.
    */
-  constructor(
-    watch: k8s.Watch,
-    objectApi: k8s.KubernetesObjectApi,
-    log: Logger,
-    config: OperatorConfig,
-    tenantDomains: TenantDomains,
-    resourceBuilder: TenantResourceBuilder,
-    cleanup: TenantCleanup,
-    statusWriter: TenantStatusWriter,
-    encryptionKeys: TenantEncryptionKeys,
-    liteLlmKeys: TenantLiteLlmKeys,
-  )
+  constructor(watch: k8s.Watch,
+              objectApi: k8s.KubernetesObjectApi,
+              log: Logger,
+              config: OpenClawTenantOperatorConfig,
+              cleanup: TenantCleanup,
+              statusWriter: TenantStatusWriter,
+              encryptionKeys: TenantEncryptionKeys,
+              liteLlmKeys: TenantLiteLlmKeys)
   {
     this.watch = watch;
     this.objectApi = objectApi;
     this.log = log;
     this.config = config;
-    this.tenantDomains = tenantDomains;
-    this.resourceBuilder = resourceBuilder;
     this.cleanup = cleanup;
     this.statusWriter = statusWriter;
     this.encryptionKeys = encryptionKeys;
@@ -109,7 +100,7 @@ export class TenantOperator
       startMessage: "starting tenant watch",
       reconnectMessage: "watch connection lost, reconnecting...",
       failedMessage: "watch failed, retrying...",
-      onEvent: async (type: string, tenant: Tenant) => {
+      onEvent: async (type: K8sWatchEventType | string, tenant: Tenant) => {
         await this.handleEvent(type, tenant);
       },
     });
@@ -118,7 +109,7 @@ export class TenantOperator
   /**
    * Route a watch event to the appropriate reconciliation handler.
    */
-  private async handleEvent(type: string, tenant: Tenant): Promise<void>
+  private async handleEvent(type: K8sWatchEventType | string, tenant: Tenant): Promise<void>
   {
     const name = tenant.metadata?.name;
     if (!name) return;
@@ -127,8 +118,8 @@ export class TenantOperator
 
     switch (type)
     {
-      case "ADDED":
-      case "MODIFIED":
+      case K8sWatchEventType.Added:
+      case K8sWatchEventType.Modified:
         if (tenant.spec.suspended)
         {
           await this.suspendTenant(tenant);
@@ -138,7 +129,7 @@ export class TenantOperator
           await this.reconcileTenant(tenant);
         }
         break;
-      case "DELETED":
+      case K8sWatchEventType.Deleted:
         await this.cleanupTenant(tenant);
         break;
     }
@@ -172,15 +163,15 @@ export class TenantOperator
     {
       // 1. ServiceAccount — grants the tenant pod a GCP service account identity
       //    via Workload Identity, scoped to this tenant's GCS bucket and IAM bindings.
-      await applyResource(this.objectApi, this.resourceBuilder.buildServiceAccount(tenant, namespace), this.log);
+      await _K8sApplyResource(this.objectApi, _BuildServiceAccount(this.config, tenant, namespace), this.log);
 
       // 2. BucketClaim — requests a per-tenant GCS bucket via Crossplane.
       //    Skipped when cloud storage or Crossplane is not configured (PVC fallback).
       if (this.config.storageProvider && this.config.crossplaneEnabled)
       {
-        await applyResource(
+        await _K8sApplyResource(
           this.objectApi,
-          buildBucketClaim(name, namespace, this.config.bucketPrefix),
+          _BuildGCPBucketClaim(name, namespace, this.config.bucketPrefix),
           this.log,
         );
       }
@@ -195,25 +186,25 @@ export class TenantOperator
 
       // 5. ConfigMap — serialises the base OpenClaw JSON config merged with any
       //    spec.configOverrides the tenant author provided.
-      await applyResource(this.objectApi, this.resourceBuilder.buildConfigMap(tenant, namespace), this.log);
+      await _K8sApplyResource(this.objectApi, _BuildConfigMap(this.config, tenant, namespace), this.log);
 
       // 6. Deployment — single-replica pod running the tenant's OpenClaw gateway.
       //    Mounts the ConfigMap, encryption key, GCS volume (or PVC), and shared skills.
-      await applyResource(this.objectApi, this.resourceBuilder.buildDeployment(tenant, namespace), this.log);
+      await _K8sApplyResource(this.objectApi, _BuildDeployment(this.config, tenant, namespace), this.log);
 
       // 7. Service — ClusterIP that makes the gateway reachable inside the cluster
       //    on the configured gateway port.
-      await applyResource(this.objectApi, this.resourceBuilder.buildService(tenant, namespace), this.log);
+      await _K8sApplyResource(this.objectApi, _BuildService(this.config, tenant, namespace), this.log);
 
       // 8. Ingress — routes external HTTPS traffic for {tenant}.{domain} to the Service.
-      await applyResource(this.objectApi, this.resourceBuilder.buildIngress(tenant, namespace), this.log);
+      await _K8sApplyResource(this.objectApi, _BuildIngress(this.config, tenant, namespace), this.log);
 
       // 9. Status — write the observed Running state back to the Tenant CR so that
       //    kubectl, the control-plane API, and the UI all see the current phase.
       await this.statusWriter.patchStatus(tenant, namespace, {
-        phase: "Running",
+        phase: TenantStatusPhase.Running,
         podName: `openclaw-${name}`,
-        ingressHost: this.tenantDomains.buildIngressHost(name),
+        ingressHost: _BuildIngressHost(name, this.config.ingressDomain),
         lastReconciled: new Date().toISOString(),
       });
     }
@@ -221,7 +212,7 @@ export class TenantOperator
     {
       this.log.error({ err, name }, "reconcile failed");
       await this.statusWriter.patchStatus(tenant, namespace, {
-        phase: "Error",
+        phase: TenantStatusPhase.Error,
         message: err instanceof Error ? err.message : String(err),
         lastReconciled: new Date().toISOString(),
       });
@@ -239,12 +230,12 @@ export class TenantOperator
 
     this.log.info({ name }, "suspending tenant");
 
-    const deployment = this.resourceBuilder.buildDeployment(tenant, namespace);
+    const deployment = _BuildDeployment(this.config, tenant, namespace);
     deployment.spec!.replicas = 0;
-    await applyResource(this.objectApi, deployment, this.log);
+    await _K8sApplyResource(this.objectApi, deployment, this.log);
 
     await this.statusWriter.patchStatus(tenant, namespace, {
-      phase: "Suspended",
+      phase: TenantStatusPhase.Suspended,
       lastReconciled: new Date().toISOString(),
     });
   }
@@ -278,7 +269,7 @@ export class TenantOperator
  * @param config - Operator runtime configuration from environment variables.
  * @param baseLog - Root pino logger; scoped to `tenant-operator` component inside.
  */
-export function _CreateTenantOperator(kc: k8s.KubeConfig, config: OperatorConfig, baseLog: Logger): TenantOperator
+export function _CreateTenantOperator(kc: k8s.KubeConfig, config: OpenClawTenantOperatorConfig, baseLog: Logger): TenantOperator
 {
   // 1. K8s API clients — each scoped to one API group; none leak into TenantOperator directly.
   const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
@@ -289,16 +280,12 @@ export function _CreateTenantOperator(kc: k8s.KubeConfig, config: OperatorConfig
   // 2. Scoped logger — child-scoped here so all tenant-operator log lines share the label.
   const log = baseLog.child({ component: "tenant-operator" });
 
-  // 3. Pure config helpers — depend only on config values, no I/O.
-  const tenantDomains = new TenantDomains(config.ingressDomain);
-  const resourceBuilder = new TenantResourceBuilder(config, tenantDomains);
-
-  // 4. K8s helpers — each receives only the API clients it actually calls.
+  // 3. K8s helpers — each receives only the API clients it actually calls.
   const cleanup = new TenantCleanup(objectApi, log);
   const statusWriter = new TenantStatusWriter(customApi, log);
-  const encryptionKeys = new TenantEncryptionKeys(coreApi, objectApi, resourceBuilder, log);
-  const liteLlmKeys = new TenantLiteLlmKeys(config, coreApi, objectApi, resourceBuilder, log);
+  const encryptionKeys = new TenantEncryptionKeys(coreApi, objectApi, log);
+  const liteLlmKeys = new TenantLiteLlmKeys(config, coreApi, objectApi, log);
 
-  return new TenantOperator(watch, objectApi, log, config, tenantDomains, resourceBuilder, cleanup, statusWriter, encryptionKeys, liteLlmKeys);
+  return new TenantOperator(watch, objectApi, log, config, cleanup, statusWriter, encryptionKeys, liteLlmKeys);
 }
 

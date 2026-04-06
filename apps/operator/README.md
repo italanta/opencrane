@@ -69,7 +69,7 @@ The operator does not create policy intent itself. It only watches `opencrane.io
 ```
 src/
 ├── index.ts                         # Entry point: bootstrap + signal handlers
-├── config.ts                        # OperatorConfig interface + loadOperatorConfig()
+├── config.ts                        # OperatorConfig interface + _LoadOperatorConfig()
 ├── shared/
 │   └── watch-runner.ts              # Reusable watch loop with reconnect/backoff
 ├── infra/

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { _makeTenant } from "../fixtures.js";
-import { _ComputeLastActivityMs, _ListIdleCandidates, _ShouldSuspend } from "../../tenants/internal/idle-policy.js";
+import { TenantStatusPhase } from "../../tenants/models/tenant-status.interface.js";
+import { _ComputeLastActivityMs, _ListIdleCandidates, _ShouldSuspend } from "../../tenants/runtime/idle-policy.js";
 import type { Tenant } from "../../tenants/models/tenant.interface.js";
 
 describe("idle-policy", () =>
@@ -9,10 +10,10 @@ describe("idle-policy", () =>
   it("lists only running and non-suspended tenants", () =>
   {
     const tenants: Tenant[] = [
-      _makeTenant("active-1", { phase: "Running", suspended: false, namespace: "a" }),
-      _makeTenant("paused", { phase: "Running", suspended: true, namespace: "b" }),
-      _makeTenant("pending", { phase: "Pending", suspended: false, namespace: "c" }),
-      _makeTenant("active-2", { phase: "Running", suspended: false }),
+      _makeTenant("active-1", { phase: TenantStatusPhase.Running, suspended: false, namespace: "a" }),
+      _makeTenant("paused", { phase: TenantStatusPhase.Running, suspended: true, namespace: "b" }),
+      _makeTenant("pending", { phase: TenantStatusPhase.Pending, suspended: false, namespace: "c" }),
+      _makeTenant("active-2", { phase: TenantStatusPhase.Running, suspended: false }),
     ];
 
     const candidates = _ListIdleCandidates(tenants);

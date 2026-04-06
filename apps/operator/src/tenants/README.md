@@ -17,16 +17,28 @@ tenants/
   operator.ts      — TenantOperator class + _CreateTenantOperator factory
   index.ts         — public barrel (re-exports the three symbols above)
   README.md        — this file
-  internal/        — implementation details, not part of the public API
+  deploy/          — functional resource builders
+    1-service-account.ts
+    2-config-map.ts
+    3-deployment.ts
+    4-service.ts
+    5-ingress.ts
+    ingress-host.ts
+    tenant-labels.ts
+    readme.md
+  models/          — tenant interfaces
+    tenant.interface.ts
+    tenant-spec.interface.ts
+    tenant-status.interface.ts
+  runtime/         — runtime evaluators and long-running loops
     idle-checker.ts
     idle-policy.ts
+  destroy/         — tenant resource deletion helpers
     tenant-cleanup.ts
-    tenant-domains.ts
+  internal/        — implementation details, not part of the public API
     tenant-encryption-keys.ts
     tenant-litellm-keys.ts
-    tenant-resource-builder.ts
     tenant-status-writer.ts
-    types.ts
 ```
 
 Files under `internal/` are not exported from `index.ts`. Tests import them directly.

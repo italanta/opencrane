@@ -1,8 +1,21 @@
 import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
 
+/** Supported Kubernetes watch event types emitted for CR changes. */
+export enum K8sWatchEventType
+{
+  /** Resource was created and entered the watched set. */
+  Added = "ADDED",
+
+  /** Existing resource changed in place. */
+  Modified = "MODIFIED",
+
+  /** Resource was deleted from the watched set. */
+  Deleted = "DELETED",
+}
+
 /** Generic watch callback for CR events. */
-type WatchEventHandler<T> = (type: string, resource: T) => Promise<void>;
+type WatchEventHandler<T> = (type: K8sWatchEventType | string, resource: T) => Promise<void>;
 
 /** Configuration for the generic watch loop runner. */
 interface WatchRunnerConfig<T>
@@ -40,7 +53,7 @@ interface WatchRunnerConfig<T>
  * The Kubernetes API server supports a `?watch=true` query parameter on list
  * endpoints. Instead of returning a snapshot and closing, it holds the HTTP
  * connection open and streams newline-delimited JSON events as resources
- * change. Each event has a `type` ("ADDED", "MODIFIED", "DELETED") and the
+ * change. Each event has a `type` (`Added`, `Modified`, `Deleted`) and the
  * full resource body. This is how controllers react to changes in real time
  * without polling.
  *
@@ -80,7 +93,7 @@ export async function _RunWatchLoop<T>(config: WatchRunnerConfig<T>): Promise<vo
       await config.watch.watch(
         config.path,
         {},
-        (type: string, resource: T) => {
+        (type: K8sWatchEventType | string, resource: T) => {
           config.onEvent(type, resource).catch((err) => {
             config.log.error({ err }, "event handler failed");
           });
