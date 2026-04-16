@@ -140,4 +140,4 @@ Without `openclawVersion`, tenants install `latest` on first boot and can self-u
 
 ## License
 
-MIT
+AGPL-3.0-or-later
