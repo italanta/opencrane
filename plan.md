@@ -84,6 +84,110 @@ Ship a production-grade multi-tenant OpenClaw platform that is:
 
 **Then** proceed to Phase 2 (LiteLLM cost control).
 
+### Deferred While Starting Phase II
+
+These items are intentionally deferred so Phase II can proceed now. Track them as a backlog tied to Phase II stabilization.
+
+#### 1) Runtime hardening baseline in tenant pods
+
+Status: Not implemented yet.
+
+Scope:
+- Add pod/container `securityContext` defaults for tenant runtime.
+- Run as non-root user/group.
+- Disable privilege escalation.
+- Drop Linux capabilities.
+- Enable seccomp runtime default profile.
+- Use read-only root filesystem where compatible.
+
+Why deferred:
+- Requires runtime compatibility testing and may affect startup/update behavior.
+
+#### 2) Stronger least-privilege and file access limits
+
+Status: Partially implemented.
+
+Scope:
+- Keep writable paths to a strict allowlist (`/data/openclaw`, `/data/secrets`, temp dirs as needed).
+- Prevent accidental writes to base filesystem.
+- Verify secret mounts remain read-only and minimally scoped.
+
+Why deferred:
+- Needs app/runtime validation and migration plan for any write-path assumptions.
+
+#### 3) Enforce tool allowlist policy at runtime
+
+Status: Policy fields exist, enforcement is incomplete.
+
+Scope:
+- Enforce `mcpServers.allow/deny` from AccessPolicy in runtime behavior.
+- Add deny/audit events when blocked tools are requested.
+- Add conformance tests for allow/deny behavior.
+
+Why deferred:
+- Requires policy-to-runtime plumbing and test coverage expansion.
+
+#### 4) Tenant `policyRef` binding behavior
+
+Status: Deferred architecture decision.
+
+Scope:
+- Define exact behavior of `Tenant.spec.policyRef` relative to selector-based AccessPolicy reconciliation.
+- Implement deterministic precedence and conflict rules.
+
+Why deferred:
+- Needs product/architecture decision before code.
+
+#### 5) Tenant `skills` filtering behavior
+
+Status: Deferred architecture decision.
+
+Scope:
+- Implement per-tenant skill filtering instead of mounting all shared skills.
+- Decide mechanism: subdirectory mount, symlink subset, or alternative packaging.
+
+Why deferred:
+- Needs UX/security decision and skill distribution strategy.
+
+#### 6) Suspend logic aware of scheduled/background work
+
+Status: Not implemented yet.
+
+Scope:
+- Prevent idle suspend when background jobs are running or jobs are due soon.
+- Add a durable scheduler source of truth outside the pod.
+- Wake suspended tenant pods when scheduled work is due.
+
+Why deferred:
+- Requires scheduler contract and state model that overlaps with Phase II work.
+
+#### 7) Managed runtime awareness contract for OpenClaw
+
+Status: Not implemented yet.
+
+Scope:
+- Inject managed-cluster runtime mode env vars/config.
+- Define capability contract endpoint/payload for runtime policy awareness.
+
+Why deferred:
+- Depends on final Phase II contracts for keying, policy, and scheduling.
+
+#### Entry criteria to pick these up
+
+Start implementation when Phase II core deliverables are in place and stable:
+- Cost control path functional end-to-end.
+- Key issuance/rotation flow stable in non-prod.
+- Baseline e2e passing in CI.
+
+#### Exit criteria for this backlog
+
+These deferred improvements are complete when:
+- Hardening defaults are enforced and validated in e2e.
+- Tool policy allow/deny is enforceable and audited.
+- `policyRef` and `skills` behavior is deterministic and documented.
+- Idle/suspend behavior is safe for scheduled/background workloads.
+- Runtime managed-mode contract is documented and used by tenant runtime.
+
 ---
 
 ## Phase 1: Core Platform (Must Ship First)
@@ -246,7 +350,7 @@ opencrane-platform/
 │   ├── operator.md
 │   └── crd-reference.md
 ├── comparison.md
-└── implementation-plan.md (this file)
+└── plan.md (this file)
 ```
 
 ### Key Tasks (Phase 1)
@@ -379,9 +483,9 @@ platform/
 Before building the portal and Slack bot, decide:
 
 1. **Web Portal Stack**
-   - Should the portal be a separate Next.js app, or pages embedded in the control-plane-ui (Angular)?
-   - Should auth be OIDC (Google/company SSO) or bearer tokens from the control-plane API?
-   - Should it be deployed as a sidecar container in the same pod, or separate Deployment?
+   - Portal is embedded in the existing control-plane-ui (Angular). No separate Next.js app.
+   - Should auth be OIDC (Google/company SSO) or stay on bearer tokens from the control-plane API?
+   - Should the portal features require a new Angular route module or extend existing feature structure?
 
 2. **Tenant Provisioning Model**
    - Should self-provisioning create Tenant CRs directly (unrestricted), or require admin approval?
@@ -411,15 +515,15 @@ Before building the portal and Slack bot, decide:
 
 ### Deliverables
 
-1. **Web Portal** (new app: apps/portal/)
-   - Next.js 15 app (deployed alongside control-plane-ui or separately).
-   - Backend routes call control-plane APIs to CRUD tenants.
-   - Frontend pages:
+1. **Web Portal** (embedded in apps/control-plane-ui)
+   - Angular 20 feature modules added to the existing control-plane-ui app.
+   - API calls go through dedicated core services in `core/api/`.
+   - Feature pages:
      - **Dashboard**: List my tenants, health, spend, last reconciled.
      - **Provision**: Form (name, email, team, openclawVersion pin, policy).
      - **Tenant Detail**: Config view, logs, resource usage.
      - **Admin Panel**: List all tenants, approve pending requests, view audit log.
-   - Auth: OIDC (if GA by then) or bearer token (interim).
+   - Auth: bearer token (interim); OIDC deferred to Phase 3+ decision.
 
 2. **Control Plane Enhancement: Approval Flow (Optional)**
    - New Tenant CRD field: `spec.approvalRequired: bool`.
@@ -436,23 +540,31 @@ Before building the portal and Slack bot, decide:
 
 ```
 apps/
-├── portal/
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── layout.tsx
-│   │   │   ├── dashboard/page.tsx
-│   │   │   ├── provision/page.tsx
-│   │   │   ├── admin/page.tsx
-│   │   │   └── api/
-│   │   │       ├── tenants/route.ts     # proxy to control-plane API
-│   │   │       ├── spend/route.ts
-│   │   │       └── auth/route.ts
-│   │   └── components/
-│   │       ├── TenantForm.tsx
-│   │       ├── TenantCard.tsx
-│   │       └── SpendChart.tsx
-│   ├── package.json
-│   └── next.config.js
+├── control-plane-ui/
+│   └── src/app/
+│       ├── core/
+│       │   └── api/
+│       │       ├── tenants.service.ts
+│       │       ├── spend.service.ts
+│       │       └── policies.service.ts
+│       ├── shared/
+│       │   └── components/
+│       │       ├── tenant-form/
+│       │       ├── tenant-card/
+│       │       └── spend-chart/
+│       └── features/
+│           ├── dashboard/
+│           │   ├── dashboard.component.ts
+│           │   └── dashboard.component.html
+│           ├── provision/
+│           │   ├── provision.component.ts
+│           │   └── provision.component.html
+│           ├── tenant-detail/
+│           │   ├── tenant-detail.component.ts
+│           │   └── tenant-detail.component.html
+│           └── admin/
+│               ├── admin.component.ts
+│               └── admin.component.html
 ├── slack-bot/
 │   ├── src/
 │   │   ├── index.ts         # Slack Bolt app
@@ -472,7 +584,7 @@ apps/
 
 | Task | Owner | Effort | Dependency |
 |------|-------|--------|-----------|
-| Next.js portal scaffold + auth | Frontend | 12h | Phase 1 API |
+| Angular portal features scaffold + auth | Frontend | 12h | Phase 1 API |
 | Tenant provisioning form + dashboard | Frontend | 15h | Control Plane API |
 | Admin panel (list, approve, audit) | Frontend | 10h | Approval flow |
 | Control Plane approval flow (optional) | Backend | 8h | Phase 1 done |
@@ -659,7 +771,7 @@ This avoids rework and ensures alignment across teams.
 - [ ] Proxy optional: tenants can opt out of LiteLLM?
 
 ### Phase 3 Decisions (Complete by Week 4)
-- [ ] Portal: separate Next.js or embedded in Angular control-plane-ui?
+- [x] Portal: embedded in Angular control-plane-ui (decided — no separate Next.js app)
 - [ ] Auth: OIDC or bearer token?
 - [ ] Approval required: yes/no, and if yes, auto-approval or manual process?
 - [ ] Slack bot scope: create, status, delete only, or more commands?
