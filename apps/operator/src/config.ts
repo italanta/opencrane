@@ -79,7 +79,7 @@ export function _LoadOperatorConfig(): OpenClawTenantOperatorConfig
     idleCheckIntervalSeconds: _readEnvValue<number>("IDLE_CHECK_INTERVAL_SECONDS", "number"),
     liteLlmEnabled: _readEnvValue<boolean>("LITELLM_ENABLED", "boolean"),
     liteLlmEndpoint: _readEnvValue<string>("LITELLM_ENDPOINT", "string"),
-    liteLlmMasterKey: _readEnvValue<string>("LITELLM_MASTER_KEY", "string"),
+    liteLlmMasterKey: _readEnvValue<string>("LITELLM_MASTER_KEY", "string", false, ""),
     liteLlmDefaultMonthlyBudgetUsd: _readEnvValue<number>("LITELLM_DEFAULT_MONTHLY_BUDGET_USD", "number"),
   };
 }

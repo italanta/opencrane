@@ -22,7 +22,7 @@ tenant:
 sharedSkills:
   enabled: true
   pvc:
-    storageClass: local-path
+    storageClass: local-path-immediate
     accessMode: ReadWriteOnce
     size: 1Gi
 

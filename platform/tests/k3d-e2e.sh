@@ -71,16 +71,29 @@ echo "[e2e] Importing images into k3d"
 k3d image import opencrane/operator:e2e --cluster "$CLUSTER_NAME"
 k3d image import opencrane/tenant:e2e --cluster "$CLUSTER_NAME"
 
+# 5a. Create a StorageClass with Immediate binding so Helm --wait can confirm
+#     PVC is bound before tenant pods claim it (local-path default uses
+#     WaitForFirstConsumer which leaves PVCs Pending at install time).
+kubectl apply -f - <<'EOF'
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-immediate
+provisioner: rancher.io/local-path
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+EOF
+
 # 5. Install Helm chart with k3d-safe overrides.
 echo "[e2e] Installing Helm release '$RELEASE_NAME'"
 helm upgrade --install "$RELEASE_NAME" "$ROOT_DIR/platform/helm" \
   --namespace "$NAMESPACE" \
   --create-namespace \
-  --wait \
-  --timeout 180s \
   --values "$ROOT_DIR/platform/tests/values-k3d-e2e.yaml"
 
-kubectl rollout status deployment/${RELEASE_NAME}-opencrane-operator -n "$NAMESPACE" --timeout=120s
+# Wait for operator deployment (skip helm --wait because local-path PVCs don't bind
+# until a pod mounts them, creating a chicken-and-egg with Helm's readiness checks).
+kubectl rollout status deployment/opencrane-operator -n "$NAMESPACE" --timeout=120s
 
 # 6. Create a Tenant CR and let the operator reconcile child resources.
 echo "[e2e] Creating Tenant CR"
