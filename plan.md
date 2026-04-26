@@ -787,6 +787,37 @@ This avoids rework and ensures alignment across teams.
 
 ---
 
+## Go-Live Checklist (Deployable + Testable)
+
+This checklist is the execution bridge from current progress to a repeatable production deployment.
+
+| Item | Owner | Status | Done Criteria |
+|------|-------|--------|---------------|
+| Local baseline green (`pnpm install`, `pnpm test`, `pnpm build`) | Backend | Complete (validated 2026-04-16) | Commands pass locally after repository fixes. |
+| Local platform e2e (`pnpm test:e2e:k3d`) | Backend + QA | Not started | k3d test script passes and validates tenant reconcile resources + `status.phase=Running`. |
+| Helm chart completion (`platform/helm/templates`) | DevOps | Not started | Operator and control-plane deploy cleanly with required env/volumes/RBAC and no TODO placeholders. |
+| GCP installer smoke (`./platform/install.sh gcp` or wizard) | DevOps | Not started | Fresh GCP project deploys end-to-end; control-plane endpoint reachable; test tenant reconciles successfully. |
+| Docker image publish automation | DevOps | Not started | CI builds and pushes operator/control-plane/tenant images on main with `latest` and git-sha tags. |
+| Prisma migration rollout (`prisma migrate deploy`) | Backend | Not started | Migrations run in CI/CD and against Cloud SQL without manual intervention. |
+| CI e2e gate | QA + DevOps | Not started | CI job runs k3d e2e smoke on PR/main and blocks merge on failure. |
+| DNS + ingress verification | DevOps | Not started | Domain and TLS resolve correctly; control-plane and tenant subdomains accessible externally. |
+| Runbook + rollback docs | Backend + DevOps | Not started | Documented runbook includes install, verify, upgrade, rollback, and incident response steps. |
+
+### Go/No-Go Criteria
+
+- Go when all checklist items are complete and at least one full non-interactive GCP install succeeds in a clean project.
+- No-Go if CI e2e gate, migration rollout, or external ingress verification is missing.
+
+### Recommended Execution Order
+
+1. Stabilize local baseline and k3d e2e.
+2. Complete Helm templates and migration automation.
+3. Add CI image publish and CI e2e gate.
+4. Run GCP smoke in a clean project and validate DNS/ingress.
+5. Finalize runbook and promote to production.
+
+---
+
 ## Next Immediate Step
 
 ### Week 1: Finish Phase 1 Blockers
