@@ -1,11 +1,21 @@
-/**
- * Normalized spend payload returned by spend endpoints.
- */
-export interface SpendResponse
+/** Per-model spent and request metrics of a specific tenant */
+export interface ModelSpent
 {
-  /** Source used to build the response (`litellm` or local fallback). */
-  source: "litellm" | "local";
+  /** Model identifier reported by the upstream provider. */
+  model: string;
 
+  /** Spend in USD attributed to this model. */
+  costUsd: number;
+
+  /** Request count attributed to this model. */
+  requests: number;
+}
+
+/**
+ * LLM spent of a specific user/tenant over a defined period, with breakdowns and budget info.
+ */
+export interface UserLLMSpent
+{
   /** Tenant name the spend summary belongs to. */
   tenantName: string;
 
@@ -22,16 +32,7 @@ export interface SpendResponse
   monthlyBudgetUsd: number | null;
 
   /** Model-level spend breakdown sorted by highest cost first. */
-  topModels: Array<{
-    /** Model identifier reported by the upstream provider. */
-    model: string;
-
-    /** Spend in USD attributed to this model. */
-    costUsd: number;
-
-    /** Request count attributed to this model. */
-    requests: number;
-  }>;
+  topModels: Array<ModelSpent>;
 
   /** Raw upstream or fallback payload for debugging and diagnostics. */
   raw: unknown;

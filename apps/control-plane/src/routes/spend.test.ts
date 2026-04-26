@@ -118,40 +118,4 @@ describe("spendRouter", () =>
     expect(res.body.topModels[0].model).toBe("gpt-4.1");
   });
 
-  it("falls back to local token usage snapshot when LiteLLM is unavailable", async () =>
-  {
-    const prisma = {
-      tenant: {
-        findUnique: vi.fn().mockResolvedValue({ name: "jente" }),
-      },
-      tokenUsageSnapshot: {
-        findUnique: vi.fn().mockResolvedValue({
-          userId: "jente",
-          currency: "USD",
-          totalCost: 14.5,
-        }),
-      },
-      accountBudgetSetting: {
-        findUnique: vi.fn().mockResolvedValue({
-          userId: "jente",
-          currency: "USD",
-          ceilingAmount: 25,
-        }),
-      },
-      globalBudgetSetting: {
-        findUnique: vi.fn().mockResolvedValue(null),
-      },
-    } as unknown as PrismaClient;
-
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("connect ECONNREFUSED")));
-
-    const app = _buildSpendApp(prisma);
-    const res = await request(app).get("/api/spend/jente");
-
-    expect(res.status).toBe(200);
-    expect(res.body.source).toBe("local");
-    expect(res.body.totalCostUsd).toBe(14.5);
-    expect(res.body.monthlyBudgetUsd).toBe(25);
-    expect(res.body.remainingBudgetUsd).toBe(10.5);
-  });
 });

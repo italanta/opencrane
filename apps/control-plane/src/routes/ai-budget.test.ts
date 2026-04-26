@@ -123,45 +123,6 @@ describe("aiBudgetRouter", () =>
     expect(res.body.topModels[0].model).toBe("gpt-4.1");
   });
 
-  it("falls back to local token usage snapshot when LiteLLM is unavailable", async () =>
-  {
-    const prisma = {
-      tenant: {
-        findUnique: vi.fn().mockResolvedValue({ name: "jente" }),
-      },
-      tokenUsageSnapshot: {
-        findUnique: vi.fn().mockResolvedValue({
-          userId: "jente",
-          currency: "USD",
-          totalCost: 21.75,
-        }),
-      },
-      accountBudgetSetting: {
-        findUnique: vi.fn().mockResolvedValue({
-          userId: "jente",
-          currency: "USD",
-          ceilingAmount: 50,
-        }),
-      },
-      globalBudgetSetting: {
-        findUnique: vi.fn().mockResolvedValue(null),
-      },
-    } as unknown as PrismaClient;
-
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("connect ECONNREFUSED")));
-
-    const coreApi = {} as k8s.CoreV1Api;
-    const app = _buildAiBudgetApp(coreApi, prisma);
-    const res = await request(app).get("/api/ai-budget/jente/spend");
-
-    expect(res.status).toBe(200);
-    expect(res.body.source).toBe("local");
-    expect(res.body.endpoint).toBe("local://token-usage-snapshots");
-    expect(res.body.totalCostUsd).toBe(21.75);
-    expect(res.body.monthlyBudgetUsd).toBe(50);
-    expect(res.body.remainingBudgetUsd).toBe(28.25);
-    expect(res.body.topModels).toEqual([]);
-  });
 
   it("returns synced LiteLLM key metadata from Secret annotations", async () =>
   {

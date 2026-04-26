@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 
-import type { SpendResponse } from "./spend.interface.js";
+import type { UserLLMSpent } from "./spend.interface.js";
 
 /**
  * Shared logic for resolving tenant spend from LiteLLM with local fallback.
@@ -19,9 +19,9 @@ export class SpendLogic
   }
 
   /**
-   * Returns normalized spend data for a tenant.
+   * Returns normalized spend data for a tenant from LiteLLM.
    */
-  async getTenantSpend(tenantName: string): Promise<SpendResponse>
+  async getTenantSpend(tenantName: string): Promise<UserLLMSpent>
   {
     const endpoint = process.env.LITELLM_ENDPOINT ?? "http://litellm:4000";
     const masterKey = process.env.LITELLM_MASTER_KEY ?? "";
@@ -41,84 +41,33 @@ export class SpendLogic
     const requestPath = pathTemplate.replace("{tenant}", encodeURIComponent(tenantName));
     const requestUrl = `${endpoint}${requestPath}`;
 
-    try
-    {
-      const response = await fetch(requestUrl, {
-        method: "GET",
-        headers: {
-          "content-type": "application/json",
-          Authorization: `Bearer ${masterKey}`,
-        },
-      });
-
-      if (!response.ok)
-      {
-        throw new Error(`LiteLLM spend request failed (${response.status}): ${await response.text()}`);
-      }
-
-      const payload = await response.json() as Record<string, unknown>;
-      const totalCostUsd = _pickNumber(payload, ["total_cost", "totalCost", "cost", "spend"], 0) ?? 0;
-      const monthlyBudgetUsd = _pickNumber(payload, ["max_budget", "monthly_budget", "budget"], null);
-      const remainingBudgetUsd = monthlyBudgetUsd !== null ? Math.max(0, monthlyBudgetUsd - totalCostUsd) : null;
-      const topModels = _extractTopModels(payload);
-
-      return {
-        source: "litellm",
-        tenantName,
-        endpoint,
-        totalCostUsd,
-        remainingBudgetUsd,
-        monthlyBudgetUsd,
-        topModels,
-        raw: payload,
-      };
-    }
-    catch (err)
-    {
-      return this._buildLocalSpendFallback(tenantName, err);
-    }
-  }
-
-  /**
-   * Build fallback spend response from local database tables.
-   */
-  private async _buildLocalSpendFallback(tenantName: string, cause: unknown): Promise<SpendResponse>
-  {
-    const usage = await this.prisma.tokenUsageSnapshot.findUnique({
-      where: {
-        userId_currency: {
-          userId: tenantName,
-          currency: "USD",
-        },
+    const response = await fetch(requestUrl, {
+      method: "GET",
+      headers: {
+        "content-type": "application/json",
+        Authorization: `Bearer ${masterKey}`,
       },
     });
 
-    const accountBudget = await this.prisma.accountBudgetSetting.findUnique({ where: { userId: tenantName } });
-    const globalBudget = await this.prisma.globalBudgetSetting.findUnique({ where: { id: 1 } });
+    if (!response.ok)
+    {
+      throw new Error(`LiteLLM spend request failed (${response.status}): ${await response.text()}`);
+    }
 
-    const monthlyBudgetUsd = accountBudget && accountBudget.currency === "USD"
-      ? Number(accountBudget.ceilingAmount)
-      : globalBudget && globalBudget.currency === "USD"
-        ? Number(globalBudget.ceilingAmount)
-        : null;
-
-    const totalCostUsd = usage ? Number(usage.totalCost) : 0;
+    const payload = await response.json() as Record<string, unknown>;
+    const totalCostUsd       = _pickNumber(payload, ["total_cost", "totalCost", "cost", "spend"], 0) ?? 0;
+    const monthlyBudgetUsd   = _pickNumber(payload, ["max_budget", "monthly_budget", "budget"], null);
     const remainingBudgetUsd = monthlyBudgetUsd !== null ? Math.max(0, monthlyBudgetUsd - totalCostUsd) : null;
+    const topModels          = _extractTopModels(payload);
 
     return {
-      source: "local",
       tenantName,
-      endpoint: "local://token-usage-snapshots",
+      endpoint,
       totalCostUsd,
       remainingBudgetUsd,
       monthlyBudgetUsd,
-      topModels: [],
-      raw: {
-        reason: cause instanceof Error ? cause.message : String(cause),
-        usage,
-        accountBudget,
-        globalBudget,
-      },
+      topModels,
+      raw: payload,
     };
   }
 }
@@ -139,7 +88,7 @@ function _pickNumber(payload: Record<string, unknown>, keys: string[], fallback:
 }
 
 /** Extract a normalized top-model spend list from common LiteLLM response shapes. */
-function _extractTopModels(payload: Record<string, unknown>): SpendResponse["topModels"]
+function _extractTopModels(payload: Record<string, unknown>): UserLLMSpent["topModels"]
 {
   const source = payload.top_models ?? payload.models ?? payload.model_breakdown;
   if (!Array.isArray(source))
