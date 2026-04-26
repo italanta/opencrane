@@ -7,12 +7,36 @@ NAMESPACE="${NAMESPACE:-opencrane-system}"
 RELEASE_NAME="${RELEASE_NAME:-opencrane}"
 KEEP_CLUSTER="${KEEP_CLUSTER:-0}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-240}"
+MIN_FREE_GB="${MIN_FREE_GB:-8}"
 
 function _require_cmd()
 {
   local cmd="$1"
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "[e2e] Missing required command: $cmd"
+    exit 1
+  fi
+}
+
+function _require_docker_healthy()
+{
+  if ! docker info >/dev/null 2>&1; then
+    echo "[e2e] Docker daemon is not reachable. Start Colima/Docker and retry."
+    exit 1
+  fi
+}
+
+function _require_free_space()
+{
+  local free_kb
+  local min_free_kb
+
+  free_kb="$(df -Pk "$ROOT_DIR" | awk 'NR==2 {print $4}')"
+  min_free_kb="$(( MIN_FREE_GB * 1024 * 1024 ))"
+
+  if [[ -z "$free_kb" || "$free_kb" -lt "$min_free_kb" ]]; then
+    echo "[e2e] Insufficient free disk space for image builds."
+    echo "[e2e] Required: ${MIN_FREE_GB}GiB, Available: $(( free_kb / 1024 / 1024 ))GiB"
     exit 1
   fi
 }
@@ -53,6 +77,8 @@ _require_cmd docker
 _require_cmd kubectl
 _require_cmd helm
 _require_cmd k3d
+_require_docker_healthy
+_require_free_space
 
 # 2. Build local images so e2e does not depend on pre-published GHCR tags.
 echo "[e2e] Building operator image"
