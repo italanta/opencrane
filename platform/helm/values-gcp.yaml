@@ -1,5 +1,9 @@
 # GCP-specific value overrides for OpenCrane on GKE
 
+global:
+  # Use non-dev validation rules for cloud installs.
+  environment: prod
+
 tenant:
   storage:
     provider: gcs
@@ -25,6 +29,10 @@ controlPlane:
 litellm:
   enabled: true
   endpoint: http://litellm:4000
+  # Provide this Secret via External Secrets or pre-create it manually.
+  # Required key: LITELLM_MASTER_KEY
+  existingSecret: opencrane-litellm
+  generateMasterKey: false
   existingDatabaseSecret: opencrane-db
   databaseSecretKey: DATABASE_URL
 

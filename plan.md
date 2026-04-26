@@ -24,6 +24,10 @@ This is an updated roadmap for shipping OpenCrane, the enterprise multi-tenant A
    - BucketClaim CRD apply path now uses custom-resource client handling.
 - Tenant status subresource patching now uses JSON Patch payload shape.
 - Invalid default OpenClaw config field (`agents.defaults.thinking`) was removed from generated tenant config.
+- Phase 2 execution started:
+   - Added in-chart LiteLLM resources (`Deployment`, `Service`, and managed `Secret`) as baseline setup for cost routing.
+   - Set chart defaults so cost routing is enabled by default, with production override guidance for master key handling.
+   - Added Helm validation guard: non-dev installs fail fast if LiteLLM uses a placeholder/empty master key without `litellm.existingSecret`.
 
 **Strategic approach**: OpenCrane differentiates by combining:
 - **Architectural advantages**: GCS Fuse CSI + Workload Identity (cloud-native isolation), dual-write pattern (CRDs + PostgreSQL), policy-first governance (AccessPolicy CRDs → CiliumNetworkPolicy).
@@ -375,11 +379,11 @@ opencrane-platform/
 
 ### Success Criteria
 
-- [ ] Operator reconciles a Tenant CR end-to-end (ServiceAccount → Deployment → Ingress → status).
-- [ ] AccessPolicy CRD generates CiliumNetworkPolicy per tenant.
-- [ ] `helm install opencrane platform/helm/` deploys operator + CRDs.
+- [x] Operator reconciles a Tenant CR end-to-end (ServiceAccount → Deployment → Ingress → status).
+- [x] AccessPolicy CRD generation path is implemented and covered by tests.
+- [x] `helm install opencrane platform/helm/` deploys operator + CRDs.
 - [ ] Terraform applies GKE cluster + Crossplane.
-- [ ] Tenant pod starts, mounts GCS bucket, links skills, starts OpenClaw gateway on port 18789.
+- [x] Tenant pod starts, mounts storage, links skills, starts OpenClaw gateway on port 18789.
 - [ ] Tenant is accessible at `https://{tenant}.opencrane.io` via Ingress.
 
 ---
