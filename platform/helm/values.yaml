@@ -1,5 +1,10 @@
 # OpenCrane Platform configuration
 
+# -- Global chart settings
+global:
+  # -- Deployment environment used for Helm validations (`dev`, `staging`, `prod`).
+  environment: dev
+
 # -- Operator settings
 operator:
   image:
@@ -48,11 +53,14 @@ controlPlane:
 
 # -- LiteLLM integration settings
 litellm:
-  enabled: false
+  # -- Cost routing is enabled by default as part of platform setup.
+  enabled: true
   endpoint: http://litellm:4000
   # -- Existing Secret containing LITELLM_MASTER_KEY for operator and control-plane
   existingSecret: ""
   secretKey: LITELLM_MASTER_KEY
+  # -- Auto-generate and persist a random master key in chart-managed Secret when not using existingSecret.
+  generateMasterKey: true
   # -- Default budget used by operator when tenant does not define monthlyBudgetUsd
   defaultMonthlyBudgetUsd: 50
   image:
@@ -72,7 +80,9 @@ litellm:
   databaseUrl: ""
   existingDatabaseSecret: ""
   databaseSecretKey: DATABASE_URL
-  masterKey: ""
+  # -- Optional explicit master key override. Leave empty to auto-generate when generateMasterKey=true.
+  #    Placeholder is ignored when auto-generation is enabled.
+  masterKey: "change-me-in-production"
 
 # -- Default tenant pod settings (can be overridden per Tenant CR)
 tenant:

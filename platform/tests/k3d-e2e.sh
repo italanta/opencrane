@@ -108,6 +108,11 @@ helm upgrade --install "$RELEASE_NAME" "$ROOT_DIR/platform/helm" \
 # until a pod mounts them, creating a chicken-and-egg with Helm's readiness checks).
 kubectl rollout status deployment/opencrane-operator -n "$NAMESPACE" --timeout=120s
 
+# Wait for LiteLLM when cost routing is enabled by chart values.
+if kubectl get deployment/opencrane-litellm -n "$NAMESPACE" >/dev/null 2>&1; then
+  kubectl rollout status deployment/opencrane-litellm -n "$NAMESPACE" --timeout=120s
+fi
+
 # 6. Create a Tenant CR and let the operator reconcile child resources.
 echo "[e2e] Creating Tenant CR"
 cat <<EOF | kubectl apply -f -

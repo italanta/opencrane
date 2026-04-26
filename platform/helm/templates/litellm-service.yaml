@@ -1,0 +1,18 @@
+{{- if .Values.litellm.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: litellm
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "opencrane.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: litellm
+  ports:
+    - name: http
+      port: {{ .Values.litellm.service.port }}
+      targetPort: http
+{{- end }}

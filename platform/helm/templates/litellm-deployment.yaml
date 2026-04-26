@@ -1,0 +1,69 @@
+{{- if .Values.litellm.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "opencrane.fullname" . }}-litellm
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: litellm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "opencrane.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: litellm
+  template:
+    metadata:
+      labels:
+        {{- include "opencrane.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: litellm
+    spec:
+      containers:
+        - name: litellm
+          image: "{{ .Values.litellm.image.repository }}:{{ .Values.litellm.image.tag }}"
+          imagePullPolicy: {{ .Values.litellm.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.litellm.service.port }}
+          env:
+            - name: PORT
+              value: {{ .Values.litellm.service.port | quote }}
+            {{- if .Values.litellm.existingSecret }}
+            - name: LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.litellm.existingSecret }}
+                  key: {{ .Values.litellm.secretKey }}
+            {{- else if .Values.litellm.masterKey }}
+            - name: LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "opencrane.fullname" . }}-litellm
+                  key: {{ .Values.litellm.secretKey }}
+            {{- end }}
+            {{- if .Values.litellm.existingDatabaseSecret }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.litellm.existingDatabaseSecret }}
+                  key: {{ .Values.litellm.databaseSecretKey }}
+            {{- else if .Values.litellm.databaseUrl }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "opencrane.fullname" . }}-litellm
+                  key: {{ .Values.litellm.databaseSecretKey }}
+            {{- end }}
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.litellm.resources | nindent 12 }}
+{{- end }}

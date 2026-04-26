@@ -32,15 +32,16 @@ spec:
               value: {{ .Values.ingress.domain | quote }}
             - name: LITELLM_ENDPOINT
               value: {{ .Values.litellm.endpoint | quote }}
-            {{- if .Values.litellm.existingSecret }}
+            {{- if .Values.litellm.enabled }}
             - name: LITELLM_MASTER_KEY
               valueFrom:
                 secretKeyRef:
+                  {{- if .Values.litellm.existingSecret }}
                   name: {{ .Values.litellm.existingSecret }}
+                  {{- else }}
+                  name: {{ include "opencrane.fullname" . }}-litellm
+                  {{- end }}
                   key: {{ .Values.litellm.secretKey }}
-            {{- else if .Values.litellm.masterKey }}
-            - name: LITELLM_MASTER_KEY
-              value: {{ .Values.litellm.masterKey | quote }}
             {{- end }}
             {{- if .Values.controlPlane.database.existingSecret }}
             - name: DATABASE_URL

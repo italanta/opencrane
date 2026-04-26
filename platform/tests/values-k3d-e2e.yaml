@@ -33,3 +33,7 @@ ingress:
 
 crossplane:
   enabled: false
+
+litellm:
+  enabled: true
+  masterKey: e2e-master-key
