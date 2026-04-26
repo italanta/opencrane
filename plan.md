@@ -794,7 +794,7 @@ This checklist is the execution bridge from current progress to a repeatable pro
 | Item | Owner | Status | Done Criteria |
 |------|-------|--------|---------------|
 | Local baseline green (`pnpm install`, `pnpm test`, `pnpm build`) | Backend | Complete (validated 2026-04-16) | Commands pass locally after repository fixes. |
-| Local platform e2e (`pnpm test:e2e:k3d`) | Backend + QA | Not started | k3d test script passes and validates tenant reconcile resources + `status.phase=Running`. |
+| Local platform e2e (`pnpm test:e2e:k3d`) | Backend + QA | In Progress — Infrastructure fixed, operator bugs discovered | Helm install succeeds; operator reaches tenant reconcile but fails to apply ServiceAccount (404) + status patch (bad JSON format). Fixes: LITELLM_MASTER_KEY optional, local-path-immediate StorageClass, removed --wait. Next: fix operator resource generation and tenant status writer. |
 | Helm chart completion (`platform/helm/templates`) | DevOps | Not started | Operator and control-plane deploy cleanly with required env/volumes/RBAC and no TODO placeholders. |
 | GCP installer smoke (`./platform/install.sh gcp` or wizard) | DevOps | Not started | Fresh GCP project deploys end-to-end; control-plane endpoint reachable; test tenant reconciles successfully. |
 | Docker image publish automation | DevOps | Not started | CI builds and pushes operator/control-plane/tenant images on main with `latest` and git-sha tags. |
