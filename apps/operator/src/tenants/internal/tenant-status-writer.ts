@@ -46,14 +46,18 @@ export class TenantStatusWriter
     const name = tenant.metadata!.name!;
     try
     {
-      await this.customApi.patchNamespacedCustomObjectStatus({
-        group: API_GROUP,
-        version: API_VERSION,
-        namespace,
-        plural: PLURAL,
-        name,
-        body: { status: { ...tenant.status, ...status } },
-      });
+      // Patch the Tenant status subresource with the merged status object.
+      // The Kubernetes API server will apply a strategic merge patch.
+      await this.customApi.patchNamespacedCustomObjectStatus(
+        {
+          group: API_GROUP,
+          version: API_VERSION,
+          namespace,
+          plural: PLURAL,
+          name,
+          body: { status: { ...tenant.status, ...status } },
+        },
+      );
     }
     catch (err)
     {

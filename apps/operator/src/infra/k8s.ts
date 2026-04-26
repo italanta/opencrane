@@ -10,13 +10,14 @@ import type { Logger } from "pino";
  * @param log - Logger used for apply/create lifecycle messages.
  */
 export async function _K8sApplyResource<T extends k8s.KubernetesObject>(
-  client: k8s.KubernetesObjectApi,
+  client: any,
   resource: T,
   log: Logger,
 ): Promise<T>
 {
   const name = resource.metadata?.name;
   const kind = resource.kind;
+  const namespace = resource.metadata?.namespace;
 
   try {
     const response = await client.patch(resource);
@@ -25,6 +26,7 @@ export async function _K8sApplyResource<T extends k8s.KubernetesObject>(
   } catch (err: unknown) {
     const status = _isK8sError(err) ? err.statusCode : undefined;
     if (status === 404) {
+        // Resource doesn't exist, create it
       const response = await client.create(resource);
       log.info({ kind, name }, "resource created");
       return response as T;

@@ -38,8 +38,14 @@ export class TenantOperator
   /** Watch client for streaming Tenant CR events. */
   private watch: k8s.Watch;
 
-  /** Client for generic Kubernetes object CRUD via server-side apply. */
-  private objectApi: k8s.KubernetesObjectApi;
+  /** Client for CoreV1 resources (ServiceAccount, Secret, ConfigMap, Service). */
+  private coreApi: k8s.CoreV1Api;
+
+  /** Client for AppsV1 resources (Deployment). */
+  private appsApi: k8s.AppsV1Api;
+
+  /** Client for NetworkingV1 resources (Ingress). */
+  private networkingApi: k8s.NetworkingV1Api;
 
   /** Scoped logger for tenant-operator messages. */
   private log: Logger;
@@ -64,7 +70,9 @@ export class TenantOperator
    * Prefer {@link _CreateTenantOperator} in production entry-points.
    */
   constructor(watch: k8s.Watch,
-              objectApi: k8s.KubernetesObjectApi,
+              coreApi: k8s.CoreV1Api,
+              appsApi: k8s.AppsV1Api,
+              networkingApi: k8s.NetworkingV1Api,
               log: Logger,
               config: OpenClawTenantOperatorConfig,
               cleanup: TenantCleanup,
@@ -73,7 +81,9 @@ export class TenantOperator
               liteLlmKeys: TenantLiteLlmKeys)
   {
     this.watch = watch;
-    this.objectApi = objectApi;
+    this.coreApi = coreApi;
+    this.appsApi = appsApi;
+    this.networkingApi = networkingApi;
     this.log = log;
     this.config = config;
     this.cleanup = cleanup;
@@ -163,14 +173,14 @@ export class TenantOperator
     {
       // 1. ServiceAccount — grants the tenant pod a GCP service account identity
       //    via Workload Identity, scoped to this tenant's GCS bucket and IAM bindings.
-      await _K8sApplyResource(this.objectApi, _BuildServiceAccount(this.config, tenant, namespace), this.log);
+      await _K8sApplyResource(this.coreApi, _BuildServiceAccount(this.config, tenant, namespace), this.log);
 
       // 2. BucketClaim — requests a per-tenant GCS bucket via Crossplane.
       //    Skipped when cloud storage or Crossplane is not configured (PVC fallback).
       if (this.config.storageProvider && this.config.crossplaneEnabled)
       {
         await _K8sApplyResource(
-          this.objectApi,
+          this.coreApi,
           _BuildGCPBucketClaim(name, namespace, this.config.bucketPrefix),
           this.log,
         );
@@ -186,18 +196,18 @@ export class TenantOperator
 
       // 5. ConfigMap — serialises the base OpenClaw JSON config merged with any
       //    spec.configOverrides the tenant author provided.
-      await _K8sApplyResource(this.objectApi, _BuildConfigMap(this.config, tenant, namespace), this.log);
+      await _K8sApplyResource(this.coreApi, _BuildConfigMap(this.config, tenant, namespace), this.log);
 
       // 6. Deployment — single-replica pod running the tenant's OpenClaw gateway.
       //    Mounts the ConfigMap, encryption key, GCS volume (or PVC), and shared skills.
-      await _K8sApplyResource(this.objectApi, _BuildDeployment(this.config, tenant, namespace), this.log);
+      await _K8sApplyResource(this.appsApi, _BuildDeployment(this.config, tenant, namespace), this.log);
 
       // 7. Service — ClusterIP that makes the gateway reachable inside the cluster
       //    on the configured gateway port.
-      await _K8sApplyResource(this.objectApi, _BuildService(this.config, tenant, namespace), this.log);
+      await _K8sApplyResource(this.coreApi, _BuildService(this.config, tenant, namespace), this.log);
 
       // 8. Ingress — routes external HTTPS traffic for {tenant}.{domain} to the Service.
-      await _K8sApplyResource(this.objectApi, _BuildIngress(this.config, tenant, namespace), this.log);
+      await _K8sApplyResource(this.networkingApi, _BuildIngress(this.config, tenant, namespace), this.log);
 
       // 9. Status — write the observed Running state back to the Tenant CR so that
       //    kubectl, the control-plane API, and the UI all see the current phase.
@@ -232,7 +242,7 @@ export class TenantOperator
 
     const deployment = _BuildDeployment(this.config, tenant, namespace);
     deployment.spec!.replicas = 0;
-    await _K8sApplyResource(this.objectApi, deployment, this.log);
+    await _K8sApplyResource(this.appsApi, deployment, this.log);
 
     await this.statusWriter.patchStatus(tenant, namespace, {
       phase: TenantStatusPhase.Suspended,
@@ -275,6 +285,8 @@ export function _CreateTenantOperator(kc: k8s.KubeConfig, config: OpenClawTenant
   const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
   const objectApi = k8s.KubernetesObjectApi.makeApiClient(kc);
   const coreApi = kc.makeApiClient(k8s.CoreV1Api);
+    const appsApi = kc.makeApiClient(k8s.AppsV1Api);
+    const networkingApi = kc.makeApiClient(k8s.NetworkingV1Api);
   const watch = new k8s.Watch(kc);
 
   // 2. Scoped logger — child-scoped here so all tenant-operator log lines share the label.
@@ -286,6 +298,6 @@ export function _CreateTenantOperator(kc: k8s.KubeConfig, config: OpenClawTenant
   const encryptionKeys = new TenantEncryptionKeys(coreApi, objectApi, log);
   const liteLlmKeys = new TenantLiteLlmKeys(config, coreApi, objectApi, log);
 
-  return new TenantOperator(watch, objectApi, log, config, cleanup, statusWriter, encryptionKeys, liteLlmKeys);
+  return new TenantOperator(watch, coreApi, appsApi, networkingApi, log, config, cleanup, statusWriter, encryptionKeys, liteLlmKeys);
 }
 
