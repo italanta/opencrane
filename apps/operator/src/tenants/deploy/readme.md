@@ -11,13 +11,16 @@ Reason: the Deployment references this ServiceAccount; it must exist before pod 
 2. `_BuildConfigMap` in `2-config-map.ts`
 Reason: the Deployment mounts this config file at startup.
 
-3. `_BuildDeployment` in `3-deployment.ts`
+3. `_BuildStatePvc` in `3-state-pvc.ts`
+Reason: local-storage mode needs a per-tenant PVC before pod scheduling.
+
+4. `_BuildDeployment` in `3-deployment.ts`
 Reason: starts the tenant workload after identity, secrets, and config primitives are ready.
 
-4. `_BuildService` in `4-service.ts`
+5. `_BuildService` in `4-service.ts`
 Reason: exposes the running pod set on the gateway port.
 
-5. `_BuildIngress` in `5-ingress.ts`
+6. `_BuildIngress` in `5-ingress.ts`
 Reason: routes external host traffic to the Service once backend networking exists.
 
 ## Shared Helpers

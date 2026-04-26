@@ -13,6 +13,18 @@ This is an updated roadmap for shipping OpenCrane, the enterprise multi-tenant A
 - Control-plane UI test pipeline is now fixed (Karma/Jasmine deps + spec config + baseline spec).
 - Full workspace validation currently passes: `pnpm test` and `pnpm build`.
 
+**Live update (2026-04-26)**:
+- k3d end-to-end smoke test now passes via `platform/tests/k3d-e2e.sh`.
+- Tenant reconciliation was stabilized for local-storage mode:
+   - Added per-tenant state PVC creation before Deployment reconciliation.
+   - Added operator RBAC permissions for `persistentvolumeclaims`.
+   - Handled PVC immutability by skipping replace on `AlreadyExists` conflicts.
+- Kubernetes API client usage was corrected:
+   - Built-in resources now use typed clients (`CoreV1Api`, `AppsV1Api`, `NetworkingV1Api`).
+   - BucketClaim CRD apply path now uses custom-resource client handling.
+- Tenant status subresource patching now uses JSON Patch payload shape.
+- Invalid default OpenClaw config field (`agents.defaults.thinking`) was removed from generated tenant config.
+
 **Strategic approach**: OpenCrane differentiates by combining:
 - **Architectural advantages**: GCS Fuse CSI + Workload Identity (cloud-native isolation), dual-write pattern (CRDs + PostgreSQL), policy-first governance (AccessPolicy CRDs → CiliumNetworkPolicy).
 - **Tactical features**: Cost control (LiteLLM), self-service UX (web + Slack), fleet operations (auto-update, metrics, channel management).

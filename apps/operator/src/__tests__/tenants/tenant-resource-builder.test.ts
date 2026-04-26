@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { defaultConfig, _makeTenant } from "../fixtures.js";
-import { _BuildConfigMap, _BuildDeployment, _BuildIngress, _BuildServiceAccount } from "../../tenants/deploy/index.js";
+import { _BuildConfigMap, _BuildDeployment, _BuildIngress, _BuildServiceAccount, _BuildStatePvc } from "../../tenants/deploy/index.js";
 
 describe("TenantResourceBuilder", () =>
 {
@@ -20,7 +20,7 @@ describe("TenantResourceBuilder", () =>
   {
     const tenant = _makeTenant("cfg", {
       configOverrides: {
-        agents: { defaults: { thinking: "high" } },
+        agents: { defaults: { model: "gpt-4o" } },
       },
     });
 
@@ -28,7 +28,7 @@ describe("TenantResourceBuilder", () =>
     const payload = JSON.parse(configMap.data?.["openclaw.json"] ?? "{}");
 
     expect(configMap.metadata?.name).toBe("openclaw-cfg-config");
-    expect(payload.agents.defaults.thinking).toBe("high");
+    expect(payload.agents.defaults.model).toBe("gpt-4o");
   });
 
   it("builds Deployment with pvc fallback when no cloud storage", () =>
@@ -46,6 +46,15 @@ describe("TenantResourceBuilder", () =>
     const tenantStorage = volumes.find((v) => v.name === "tenant-storage");
 
     expect(tenantStorage?.persistentVolumeClaim?.claimName).toBe("openclaw-local-state");
+  });
+
+  it("builds state PVC for local storage fallback", () =>
+  {
+    const pvc = _BuildStatePvc("local", "default");
+
+    expect(pvc.metadata?.name).toBe("openclaw-local-state");
+    expect(pvc.spec?.accessModes).toEqual(["ReadWriteOnce"]);
+    expect(pvc.spec?.resources?.requests?.storage).toBe("1Gi");
   });
 
   it("builds Deployment with csi storage when cloud storage configured", () =>

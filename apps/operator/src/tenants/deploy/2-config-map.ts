@@ -10,16 +10,11 @@ import { _BuildTenantLabels } from "./tenant-labels.js";
 export function _BuildConfigMap(config: OperatorConfig, tenant: Tenant, namespace: string): k8s.V1ConfigMap
 {
   const name = tenant.metadata!.name!;
-  const baseConfig = {
+  const baseConfig: Record<string, unknown> = {
     gateway: {
       mode: "local",
       port: config.gatewayPort,
       bind: "lan",
-    },
-    agents: {
-      defaults: {
-        thinking: "medium",
-      },
     },
     ...(config.liteLlmEnabled
       ? {

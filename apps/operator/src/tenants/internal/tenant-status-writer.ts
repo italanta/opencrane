@@ -44,10 +44,12 @@ export class TenantStatusWriter
   async patchStatus(tenant: Tenant, namespace: string, status: Partial<TenantStatus>): Promise<void>
   {
     const name = tenant.metadata!.name!;
+    const mergedStatus = { ...tenant.status, ...status };
+
     try
     {
-      // Patch the Tenant status subresource with the merged status object.
-      // The Kubernetes API server will apply a strategic merge patch.
+      // Use JSON Patch because this client defaults to json-patch content type.
+      // "add" on an existing object member replaces its value per RFC 6902.
       await this.customApi.patchNamespacedCustomObjectStatus(
         {
           group: API_GROUP,
@@ -55,7 +57,7 @@ export class TenantStatusWriter
           namespace,
           plural: PLURAL,
           name,
-          body: { status: { ...tenant.status, ...status } },
+          body: [{ op: "add", path: "/status", value: mergedStatus }],
         },
       );
     }

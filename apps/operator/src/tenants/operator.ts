@@ -9,7 +9,7 @@ import { TenantStatusPhase } from "./models/tenant-status.interface.js";
 import { _K8sApplyResource } from "../infra/k8s.js";
 import { _RunWatchLoop, K8sWatchEventType } from "../shared/watch-runner.js";
 import { _BuildGCPBucketClaim } from "../storage/provider.js";
-import { _BuildConfigMap, _BuildDeployment, _BuildIngress, _BuildIngressHost, _BuildService, _BuildServiceAccount } from "./deploy/index.js";
+import { _BuildConfigMap, _BuildDeployment, _BuildIngress, _BuildIngressHost, _BuildService, _BuildServiceAccount, _BuildStatePvc } from "./deploy/index.js";
 import { TenantCleanup } from "./destroy/tenant-cleanup.js";
 
 import { TenantEncryptionKeys } from "./internal/tenant-encryption-keys.js";
@@ -37,6 +37,9 @@ export class TenantOperator
 {
   /** Watch client for streaming Tenant CR events. */
   private watch: k8s.Watch;
+
+  /** Client for custom resources (e.g., BucketClaim). */
+  private customApi: k8s.CustomObjectsApi;
 
   /** Client for CoreV1 resources (ServiceAccount, Secret, ConfigMap, Service). */
   private coreApi: k8s.CoreV1Api;
@@ -70,6 +73,7 @@ export class TenantOperator
    * Prefer {@link _CreateTenantOperator} in production entry-points.
    */
   constructor(watch: k8s.Watch,
+              customApi: k8s.CustomObjectsApi,
               coreApi: k8s.CoreV1Api,
               appsApi: k8s.AppsV1Api,
               networkingApi: k8s.NetworkingV1Api,
@@ -81,6 +85,7 @@ export class TenantOperator
               liteLlmKeys: TenantLiteLlmKeys)
   {
     this.watch = watch;
+    this.customApi = customApi;
     this.coreApi = coreApi;
     this.appsApi = appsApi;
     this.networkingApi = networkingApi;
@@ -180,7 +185,7 @@ export class TenantOperator
       if (this.config.storageProvider && this.config.crossplaneEnabled)
       {
         await _K8sApplyResource(
-          this.coreApi,
+          this.customApi,
           _BuildGCPBucketClaim(name, namespace, this.config.bucketPrefix),
           this.log,
         );
@@ -198,18 +203,24 @@ export class TenantOperator
       //    spec.configOverrides the tenant author provided.
       await _K8sApplyResource(this.coreApi, _BuildConfigMap(this.config, tenant, namespace), this.log);
 
-      // 6. Deployment — single-replica pod running the tenant's OpenClaw gateway.
+      // 6. Tenant state PVC — used only when cloud storage is disabled.
+      if (!this.config.storageProvider)
+      {
+        await _K8sApplyResource(this.coreApi, _BuildStatePvc(name, namespace), this.log);
+      }
+
+      // 7. Deployment — single-replica pod running the tenant's OpenClaw gateway.
       //    Mounts the ConfigMap, encryption key, GCS volume (or PVC), and shared skills.
       await _K8sApplyResource(this.appsApi, _BuildDeployment(this.config, tenant, namespace), this.log);
 
-      // 7. Service — ClusterIP that makes the gateway reachable inside the cluster
+      // 8. Service — ClusterIP that makes the gateway reachable inside the cluster
       //    on the configured gateway port.
       await _K8sApplyResource(this.coreApi, _BuildService(this.config, tenant, namespace), this.log);
 
-      // 8. Ingress — routes external HTTPS traffic for {tenant}.{domain} to the Service.
+      // 9. Ingress — routes external HTTPS traffic for {tenant}.{domain} to the Service.
       await _K8sApplyResource(this.networkingApi, _BuildIngress(this.config, tenant, namespace), this.log);
 
-      // 9. Status — write the observed Running state back to the Tenant CR so that
+      // 10. Status — write the observed Running state back to the Tenant CR so that
       //    kubectl, the control-plane API, and the UI all see the current phase.
       await this.statusWriter.patchStatus(tenant, namespace, {
         phase: TenantStatusPhase.Running,
@@ -285,8 +296,8 @@ export function _CreateTenantOperator(kc: k8s.KubeConfig, config: OpenClawTenant
   const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
   const objectApi = k8s.KubernetesObjectApi.makeApiClient(kc);
   const coreApi = kc.makeApiClient(k8s.CoreV1Api);
-    const appsApi = kc.makeApiClient(k8s.AppsV1Api);
-    const networkingApi = kc.makeApiClient(k8s.NetworkingV1Api);
+  const appsApi = kc.makeApiClient(k8s.AppsV1Api);
+  const networkingApi = kc.makeApiClient(k8s.NetworkingV1Api);
   const watch = new k8s.Watch(kc);
 
   // 2. Scoped logger — child-scoped here so all tenant-operator log lines share the label.
@@ -298,6 +309,6 @@ export function _CreateTenantOperator(kc: k8s.KubeConfig, config: OpenClawTenant
   const encryptionKeys = new TenantEncryptionKeys(coreApi, objectApi, log);
   const liteLlmKeys = new TenantLiteLlmKeys(config, coreApi, objectApi, log);
 
-  return new TenantOperator(watch, coreApi, appsApi, networkingApi, log, config, cleanup, statusWriter, encryptionKeys, liteLlmKeys);
+  return new TenantOperator(watch, customApi, coreApi, appsApi, networkingApi, log, config, cleanup, statusWriter, encryptionKeys, liteLlmKeys);
 }
 

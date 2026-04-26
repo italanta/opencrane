@@ -61,10 +61,9 @@ describe("TenantOperator", () =>
 
     const baseConfig = {
       gateway: { mode: "local", port: 18789, bind: "lan" },
-      agents: { defaults: { thinking: "medium" } },
     };
 
-    const merged = tenant.spec.configOverrides
+    const merged: Record<string, unknown> = tenant.spec.configOverrides
       ? { ...baseConfig, ...tenant.spec.configOverrides }
       : baseConfig;
 
