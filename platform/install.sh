@@ -32,6 +32,72 @@ function _require_cmd()
   fi
 }
 
+function _run_interactive_setup()
+{
+  local mode_choice=""
+  local mode=""
+
+  echo "[install] No mode provided. Starting interactive setup."
+  echo "[install] Choose install target:"
+  echo "  1) local (k3d)"
+  echo "  2) gcp (Google Cloud)"
+  read -rp "[install] Select mode [1/2, default 1]: " mode_choice
+  mode_choice="${mode_choice:-1}"
+
+  case "$mode_choice" in
+    1)
+      mode="local"
+      ;;
+    2)
+      mode="gcp"
+      ;;
+    *)
+      echo "[install] Invalid choice: $mode_choice"
+      exit 1
+      ;;
+  esac
+
+  if [[ "$mode" == "local" ]]; then
+    local cluster_name="opencrane-local"
+    local namespace="opencrane-system"
+    local keep_input="Y"
+    local keep_flag="--keep-cluster"
+
+    read -rp "[install] Cluster name [opencrane-local]: " cluster_name
+    cluster_name="${cluster_name:-opencrane-local}"
+    read -rp "[install] Namespace [opencrane-system]: " namespace
+    namespace="${namespace:-opencrane-system}"
+    read -rp "[install] Keep cluster after install? [Y/n]: " keep_input
+    keep_input="${keep_input:-Y}"
+    if [[ ! "$keep_input" =~ ^[Yy]$ ]]; then
+      keep_flag="--destroy-cluster"
+    fi
+
+    _run_local "$keep_flag" --cluster-name "$cluster_name" --namespace "$namespace"
+    return
+  fi
+
+  local project_id=""
+  local region="europe-west1"
+  local domain=""
+  local environment="dev"
+
+  # Only ask for GCP details when cloud mode is selected.
+  read -rp "[install] GCP Project ID: " project_id
+  read -rp "[install] Region [europe-west1]: " region
+  region="${region:-europe-west1}"
+  read -rp "[install] Base domain (e.g. opencrane.example.com): " domain
+  read -rp "[install] Environment [dev]: " environment
+  environment="${environment:-dev}"
+
+  if [[ -z "$project_id" || -z "$domain" ]]; then
+    echo "[install] GCP Project ID and domain are required for cloud mode."
+    exit 1
+  fi
+
+  _run_gcp --project-id "$project_id" --region "$region" --domain "$domain" --environment "$environment" --yes
+}
+
 function _run_local()
 {
   local keep_cluster="1"
@@ -147,8 +213,8 @@ function _run_gcp()
 }
 
 if [[ $# -lt 1 ]]; then
-  _usage
-  exit 1
+  _run_interactive_setup
+  exit 0
 fi
 
 mode="$1"

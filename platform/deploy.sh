@@ -7,12 +7,12 @@
 #
 # Usage:
 #   ./deploy.sh
+#   ./deploy.sh local
+#   ./deploy.sh gcp
 #
-# Prerequisites:
-#   - gcloud CLI installed
-#   - terraform >= 1.5 installed
-#   - docker installed and running
-#   - pnpm installed (for local Prisma migration generation)
+# Prerequisites (by mode):
+#   - local: docker, kubectl, helm, k3d
+#   - gcp: gcloud, terraform >= 1.5, docker, pnpm
 # =============================================================================
 
 set -euo pipefail
@@ -30,6 +30,78 @@ err()   { echo -e "${RED}[opencrane]${NC} $1" >&2; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TF_DIR="$SCRIPT_DIR/terraform"
+
+# ---- Mode selection ----
+
+DEPLOY_MODE="${1:-}"
+
+if [[ -z "$DEPLOY_MODE" ]]; then
+  if [[ -t 0 ]]; then
+    echo ""
+    echo -e "${CYAN}╔══════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║   OpenCrane Platform — Deploy Target     ║${NC}"
+    echo -e "${CYAN}╚══════════════════════════════════════════╝${NC}"
+    echo ""
+    echo "1) Local (k3d)"
+    echo "2) Cloud (GCP)"
+    read -rp "Choose [1/2, default 2]: " mode_choice
+    mode_choice="${mode_choice:-2}"
+    case "$mode_choice" in
+      1)
+        DEPLOY_MODE="local"
+        ;;
+      2)
+        DEPLOY_MODE="gcp"
+        ;;
+      *)
+        err "Invalid choice: $mode_choice"
+        exit 1
+        ;;
+    esac
+  else
+    # Preserve backwards compatibility for piped/non-interactive GCP runs.
+    DEPLOY_MODE="gcp"
+  fi
+fi
+
+case "$DEPLOY_MODE" in
+  local)
+    for cmd in docker kubectl helm k3d; do
+      if ! command -v "$cmd" &>/dev/null; then
+        err "Required command not found for local mode: $cmd"
+        exit 1
+      fi
+    done
+
+    CLUSTER_NAME="opencrane-local"
+    NAMESPACE="opencrane-system"
+    KEEP_CLUSTER="1"
+
+    read -rp "Cluster name [opencrane-local]: " CLUSTER_NAME
+    CLUSTER_NAME="${CLUSTER_NAME:-opencrane-local}"
+    read -rp "Namespace [opencrane-system]: " NAMESPACE
+    NAMESPACE="${NAMESPACE:-opencrane-system}"
+    read -rp "Keep cluster after install? [Y/n]: " KEEP_INPUT
+    KEEP_INPUT="${KEEP_INPUT:-Y}"
+    if [[ ! "$KEEP_INPUT" =~ ^[Yy]$ ]]; then
+      KEEP_CLUSTER="0"
+    fi
+
+    echo ""
+    log "Starting local install"
+    log "Cluster: $CLUSTER_NAME"
+    log "Namespace: $NAMESPACE"
+    KEEP_CLUSTER="$KEEP_CLUSTER" CLUSTER_NAME="$CLUSTER_NAME" NAMESPACE="$NAMESPACE" "$SCRIPT_DIR/tests/k3d-e2e.sh"
+    exit 0
+    ;;
+  gcp|cloud)
+    ;;
+  *)
+    err "Unknown deploy mode: $DEPLOY_MODE"
+    err "Use 'local' or 'gcp'."
+    exit 1
+    ;;
+esac
 
 # ---- Pre-flight checks ----
 

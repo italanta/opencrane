@@ -9,7 +9,7 @@ tenant:
     provider: gcs
     bucketPrefix: opencrane
     csiDriver: gcsfuse.csi.storage.gke.io
-    gcpProject: ""  # Set per environment
+    gcpProject: "replace-with-gcp-project-id"  # Set per environment
 
 sharedSkills:
   pvc:
