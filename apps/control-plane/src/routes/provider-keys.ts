@@ -3,6 +3,7 @@ import type { PrismaClient } from "@prisma/client";
 
 /**
  * Creates router for global provider API key management.
+ * 
  * @param prisma - Prisma ORM client
  * @returns Configured Express router
  */

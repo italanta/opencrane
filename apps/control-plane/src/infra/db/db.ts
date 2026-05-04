@@ -6,7 +6,7 @@ import type { Logger } from "pino";
  * @param log - Logger for query and error output
  * @returns A connected PrismaClient
  */
-export function createPrismaClient(log: Logger): PrismaClient
+export function ___CreatePrismaClient(log: Logger): PrismaClient
 {
   const prisma = new PrismaClient({
     log: [
@@ -31,7 +31,7 @@ export function createPrismaClient(log: Logger): PrismaClient
  * @param prisma - The PrismaClient instance to check
  * @returns True if the database is reachable
  */
-export async function checkDbHealth(prisma: PrismaClient): Promise<boolean>
+export async function _CheckDbHealth(prisma: PrismaClient): Promise<boolean>
 {
   try
   {

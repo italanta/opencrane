@@ -1,14 +1,15 @@
 import type { RequestHandler } from "express";
 
+const token = process.env.OPENCRANE_API_TOKEN;
+
 /**
  * Simple bearer token auth middleware.
  * Validates against the OPENCRANE_API_TOKEN env var.
- * Skips auth for the /healthz endpoint and when no token is configured (dev mode).
+ * 
+ * Skips auth for the public endpoints or when no token is configured (dev mode).
  */
-export function authMiddleware(): RequestHandler
+export function ___AuthMiddleware(): RequestHandler
 {
-  const token = process.env.OPENCRANE_API_TOKEN;
-
   return function _authHandler(req, res, next)
   {
     if (req.path === "/healthz")

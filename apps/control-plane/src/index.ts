@@ -1,23 +1,19 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import * as k8s from "@kubernetes/client-node";
+
+import pino from "pino";
+import { pinoHttp } from "pino-http";
 import express from "express";
 import type { Express } from "express";
 import type { PrismaClient } from "@prisma/client";
-import pino from "pino";
-import { pinoHttp } from "pino-http";
 
-import { createPrismaClient, checkDbHealth } from "./db.js";
-import { authMiddleware } from "./middleware/auth.js";
-import { accessTokensRouter } from "./routes/access-tokens.js";
-import { aiBudgetRouter } from "./routes/ai-budget.js";
-import { auditRouter } from "./routes/audit.js";
-import { metricsRouter } from "./routes/metrics.js";
-import { policiesRouter } from "./routes/policies.js";
-import { providerKeysRouter } from "./routes/provider-keys.js";
-import { skillsRouter } from "./routes/skills.js";
-import { tenantsRouter } from "./routes/tenants.js";
-import { tokenUsageRouter } from "./routes/token-usage.js";
+import { ___CreatePrismaClient } from "./infra/db/db.js";
+import { ___AuthMiddleware } from "./infra/middleware/auth.middleware.js";
+
+import { _RegisterRoutes } from "./routes.js";
 
 /** Application logger instance. */
 const log = pino({ name: "opencrane-control-plane" });
@@ -37,59 +33,27 @@ export function createApp(prisma: PrismaClient, customApi: k8s.CustomObjectsApi,
   // Middleware
   app.use(express.json());
   app.use(pinoHttp({ logger: log }));
-  app.use(authMiddleware());
+  app.use(___AuthMiddleware());
 
-  // Health check (before routes, includes DB connectivity)
-  app.get("/healthz", async function _healthCheck(req, res)
+  // Register API routes
+  _RegisterRoutes(app, prisma, customApi, coreApi);
+
+  const currentDirectory = dirname(fileURLToPath(import.meta.url));
+  const packageDirectory = resolve(currentDirectory, "..");
+  const uiDirectory = resolve(packageDirectory, "../control-plane-ui/dist/control-plane-ui/browser");
+  const hasUiBuild = existsSync(uiDirectory);
+
+  if (hasUiBuild)
   {
-    const dbHealthy = await checkDbHealth(prisma);
-    const status = dbHealthy ? "ok" : "degraded";
-    const statusCode = dbHealthy ? 200 : 503;
-
-    res.status(statusCode).json({ status, db: dbHealthy });
-  });
-
-  // API routes
-  // 1. Infra Management
-     // Server Management
-  app.use("/api/metrics",   metricsRouter(prisma));
-    // TODO - Investigate
-  app.use("/api/audit",     auditRouter(prisma));
-
-  // 2. Org & Tenant Management
-     // Ability to create and review tenants
-  app.use("/api/tenants",   tenantsRouter(customApi, prisma));  
-     // Set org-wide security policies
-  app.use("/api/policies",  policiesRouter(customApi, prisma));
-     // Manage spent at the org level
-  app.use("/api/ai-budget",   aiBudgetRouter(coreApi, prisma));
-  app.use("/api/token-usage", tokenUsageRouter(prisma));
-
-  // 3. Organisations & Collaboration
-     // Deploying and sharing of skills
-  app.use("/api/skills",    skillsRouter(prisma));
-  
-     // 
-  app.use("/api/access-tokens", accessTokensRouter(prisma));
-  app.use("/api/providers/keys", providerKeysRouter(prisma));
-
-  const uiCandidates = [
-    join(process.cwd(), "apps/control-plane-ui/dist/control-plane-ui/browser"),
-    join(process.cwd(), "../control-plane-ui/dist/control-plane-ui/browser"),
-  ];
-  const uiDirectory = uiCandidates.find(function _hasBuild(candidate)
-  {
-    return existsSync(candidate);
-  });
-
-  if (uiDirectory)
-  {
+    log.info({ uiDirectory }, "serving control-plane UI static assets");
     app.use(express.static(uiDirectory));
     app.get(/^(?!\/api|\/healthz).*/, function _spaFallback(req, res)
     {
       res.sendFile(join(uiDirectory, "index.html"));
     });
   }
+  else
+    log.warn({ uiDirectory }, "control-plane UI build directory not found; serving API routes only");
 
   return app;
 }
@@ -98,7 +62,7 @@ export function createApp(prisma: PrismaClient, customApi: k8s.CustomObjectsApi,
 const port = Number(process.env.PORT ?? "8080");
 
 // Initialize Prisma
-const prisma = createPrismaClient(log);
+const prisma = ___CreatePrismaClient(log);
 
 // Initialize Kubernetes client
 /** Kubernetes configuration loaded from the default context. */
