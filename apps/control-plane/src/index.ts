@@ -50,13 +50,26 @@ export function createApp(prisma: PrismaClient, customApi: k8s.CustomObjectsApi,
   });
 
   // API routes
-  app.use("/api/tenants", tenantsRouter(customApi, prisma));
-  app.use("/api/ai-budget", aiBudgetRouter(coreApi, prisma));
-  app.use("/api/skills", skillsRouter(prisma));
-  app.use("/api/policies", policiesRouter(customApi, prisma));
-  app.use("/api/audit", auditRouter(prisma));
-  app.use("/api/metrics", metricsRouter(prisma));
+  // 1. Infra Management
+     // Server Management
+  app.use("/api/metrics",   metricsRouter(prisma));
+    // TODO - Investigate
+  app.use("/api/audit",     auditRouter(prisma));
+
+  // 2. Org & Tenant Management
+     // Ability to create and review tenants
+  app.use("/api/tenants",   tenantsRouter(customApi, prisma));  
+     // Set org-wide security policies
+  app.use("/api/policies",  policiesRouter(customApi, prisma));
+     // Manage spent at the org level
+  app.use("/api/ai-budget",   aiBudgetRouter(coreApi, prisma));
   app.use("/api/token-usage", tokenUsageRouter(prisma));
+
+  // 3. Organisations & Collaboration
+     // Deploying and sharing of skills
+  app.use("/api/skills",    skillsRouter(prisma));
+  
+     // 
   app.use("/api/access-tokens", accessTokensRouter(prisma));
   app.use("/api/providers/keys", providerKeysRouter(prisma));
 
