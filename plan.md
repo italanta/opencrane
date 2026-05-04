@@ -184,6 +184,65 @@ Scope:
 Why deferred:
 - Depends on final Phase II contracts for keying, policy, and scheduling.
 
+#### 8) Dual-write consistency hardening (CRDs -> PostgreSQL projection safety)
+
+Status: Not implemented yet.
+
+Scope:
+- Add drift detection for Tenant and AccessPolicy between CRDs and PostgreSQL projection rows.
+- Add a periodic reconciliation job that reports and optionally repairs projection drift.
+- Introduce write-path safeguards (idempotency keys and retry policy for partial-failure windows).
+- Add alerting/metrics for mismatch count, reconcile lag, and repair outcomes.
+- Restrict direct PostgreSQL write access so control-plane projection writes are the only mutating path.
+
+Why deferred:
+- Requires agreement on projection ownership model (request-path dual-write vs watcher-fed projection) and production runbook decisions for auto-repair behavior.
+
+Captured analysis context (retain for implementation handoff):
+
+Current implementation snapshot:
+- Tenant and AccessPolicy mutations currently perform sequential writes in one request path: first to Kubernetes CRDs, then to PostgreSQL projection rows.
+- Read APIs for tenants and policies currently read from PostgreSQL projection tables for low-latency dashboard/API queries.
+- Operator controllers reconcile runtime resources from CRDs and update CR status, but do not backfill or repair PostgreSQL projection drift.
+- There is no continuously running projection reconciler yet for Tenant and AccessPolicy parity checks.
+
+Consistency model today:
+- This is best-effort eventual consistency, not strong consistency.
+- There is no cross-system atomic transaction boundary between Kubernetes API writes and PostgreSQL writes.
+- A partial-failure window exists whenever one side commits and the second side fails.
+
+Known divergence scenarios to design for:
+- CRD write succeeds, PostgreSQL write fails: operator converges runtime state, but dashboard/API may show stale or missing object until repaired.
+- PostgreSQL write succeeds, CRD write fails (or CRD patch is dropped): dashboard/API can show intent that operator never observed.
+- Direct/manual PostgreSQL writes bypass control-plane semantics and can permanently drift from CRD source state.
+- Retry storms or duplicate request retries can create conflicting updates without idempotency safeguards.
+
+Recommended target ownership model:
+- Keep CRDs as the source of truth for desired and observed control state.
+- Treat PostgreSQL as a projection/query store derived from CRD events.
+- Prefer single-writer semantics for projections (projector/reconciler component) over multi-writer request-path dual-write.
+
+Phased hardening plan:
+- P0 (safety visibility): add drift detector, mismatch metrics, and structured alerts without auto-repair.
+- P1 (controlled repair): add periodic reconcile job that can repair projection state from CRDs using dry-run and apply modes.
+- P2 (write-path resilience): add idempotency keys, retry/backoff policy, and bounded reconciliation lag objectives.
+- P3 (ownership simplification): migrate to watcher-fed projection writes and retire request-path PostgreSQL mutation for dual-written entities.
+
+Operational guardrails to include:
+- Database permissions: restrict direct DML access for app-facing roles; route writes through controlled service/projector identities.
+- Auditability: emit repair audit entries with before/after digests and correlation IDs.
+- Rollback safety: provide toggle to disable auto-repair and operate in detect-only mode during incidents.
+- SLOs: track projection freshness lag and mismatch counts as release gates.
+
+Non-goals for this hardening item:
+- Replacing Kubernetes operator reconciliation logic for runtime resources.
+- Changing business semantics of Tenant or AccessPolicy APIs beyond consistency guarantees.
+
+Open decisions to resolve before implementation:
+- Whether repair is one-way (CRD -> PostgreSQL only) or supports bi-directional conflict handling.
+- Whether auto-repair is enabled by default in production or staged per environment.
+- Which component owns projection writes long-term: control-plane request handlers, operator sidecar, or dedicated projector service.
+
 #### Entry criteria to pick these up
 
 Start implementation when Phase II core deliverables are in place and stable:
@@ -199,6 +258,7 @@ These deferred improvements are complete when:
 - `policyRef` and `skills` behavior is deterministic and documented.
 - Idle/suspend behavior is safe for scheduled/background workloads.
 - Runtime managed-mode contract is documented and used by tenant runtime.
+- Dual-write drift is detectable, measurable, and repairable with documented operator runbooks.
 
 ---
 
