@@ -25,21 +25,3 @@ export function ___CreatePrismaClient(log: Logger): PrismaClient
 
   return prisma;
 }
-
-/**
- * Checks database connectivity by running a trivial query.
- * @param prisma - The PrismaClient instance to check
- * @returns True if the database is reachable
- */
-export async function _CheckDbHealth(prisma: PrismaClient): Promise<boolean>
-{
-  try
-  {
-    await prisma.$queryRaw`SELECT 1`;
-    return true;
-  }
-  catch
-  {
-    return false;
-  }
-}

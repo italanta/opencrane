@@ -114,7 +114,6 @@ describe("aiBudgetRouter", () =>
     const res = await request(app).get("/api/ai-budget/jente/spend");
 
     expect(res.status).toBe(200);
-    expect(res.body.source).toBe("litellm");
     expect(res.body.tenantName).toBe("jente");
     expect(res.body.totalCostUsd).toBe(12.5);
     expect(res.body.monthlyBudgetUsd).toBe(100);

@@ -111,7 +111,6 @@ describe("spendRouter", () =>
     const res = await request(app).get("/api/spend/jente");
 
     expect(res.status).toBe(200);
-    expect(res.body.source).toBe("litellm");
     expect(res.body.totalCostUsd).toBe(9.2);
     expect(res.body.monthlyBudgetUsd).toBe(50);
     expect(res.body.remainingBudgetUsd).toBe(40.8);

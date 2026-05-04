@@ -16,7 +16,7 @@ import { tenantsRouter } from "./routes/tenants.js";
 import { tokenUsageRouter } from "./routes/token-usage.js";
 import { accessTokensRouter } from "./routes/access-tokens.js";
 
-import { _CheckDbHealth } from "./infra/db/db.js";
+import { _CheckDbHealth } from "./infra/db/healtcheck-db.js";
 
 /**
  * Registers all API routes on the given Express application instance.
@@ -54,9 +54,9 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
   app.use("/api/access-tokens",  accessTokensRouter(prisma));
   app.use("/api/providers/keys", providerKeysRouter(prisma));
 
-  // Misc
-    // Health check (before routes, includes DB connectivity)
-  app.get("/healthz", _CheckDbHealth);
+   // Misc
+   // 4. Health check — returns 200 if DB is reachable, 503 if degraded
+   app.get("/healthz", _CheckDbHealth(prisma));
 
   return app;
 }

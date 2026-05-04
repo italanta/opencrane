@@ -1,19 +1,23 @@
-import express from "express";
+import type { RequestHandler } from "express";
 import { PrismaClient } from "@prisma/client";
 
-import { _CheckDbHealth } from "./db.js";
-
 /**
- * Checks DB Health
- * 
- * @param res    - Response object to send the health status
- * @param prisma - DB connection
+ * Creates a health-check handler that verifies database connectivity.
+ * @param prisma - The PrismaClient instance to check
+ * @returns Express handler for the `/healthz` endpoint
  */
-export async function _healthCheck(_: any, res: express.Response, prisma: PrismaClient)
+export function _CheckDbHealth(prisma: PrismaClient): RequestHandler
 {
-  const dbHealthy = await _CheckDbHealth(prisma);
-  const status = dbHealthy ? "ok" : "degraded";
-  const statusCode = dbHealthy ? 200 : 503;
-
-  res.status(statusCode).json({ status, db: dbHealthy });
+  return async function _checkDbHealth(req, res)
+  {
+    try
+    {
+      await prisma.$queryRaw`SELECT 1`;
+      res.status(200).json({ status: "ok", db: true });
+    }
+    catch
+    {
+      res.status(503).json({ status: "degraded", db: false });
+    }
+  };
 }
