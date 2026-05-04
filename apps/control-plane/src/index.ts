@@ -16,7 +16,7 @@ import { ___AuthMiddleware } from "./infra/middleware/auth.middleware.js";
 import { _RegisterRoutes } from "./routes.js";
 
 /** Application logger instance. */
-const log = pino({ name: "opencrane-control-plane" });
+const log = pino({ name: "ctrl" });
 
 /**
  * Creates and configures the Express application with all middleware and routes.
