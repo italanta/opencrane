@@ -18,10 +18,14 @@ spec:
         {{- include "opencrane.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: litellm
     spec:
+      securityContext:
+        {{- toYaml .Values.litellm.podSecurityContext | nindent 8 }}
       containers:
         - name: litellm
           image: "{{ .Values.litellm.image.repository }}:{{ .Values.litellm.image.tag }}"
           imagePullPolicy: {{ .Values.litellm.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.litellm.securityContext | nindent 12 }}
           ports:
             - name: http
               containerPort: {{ .Values.litellm.service.port }}
