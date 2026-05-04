@@ -289,7 +289,7 @@ For Angular frontend work, use PrimeNG as the default component library.
 - Configure theme providers in `app.config.ts` using `providePrimeNG`.
 - Keep global visual tokens in `styles.css`; avoid ad-hoc per-page color systems.
 
-### Reusable Component Rule
+### Reusable Component Rule (Required)
 
 Always create reusable UI components before writing repeated page-level markup.
 
@@ -297,6 +297,7 @@ Always create reusable UI components before writing repeated page-level markup.
 - Feature pages under `src/app/features/**` should compose shared components and services.
 - If the same pattern appears in 2 or more places, refactor it into a shared component immediately.
 - Page components should focus on orchestration and data flow; display logic belongs in shared components.
+- Check these rules after every implementation cycle.
 
 ### Frontend Layering
 
