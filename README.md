@@ -78,15 +78,17 @@ See [**Current State** and **Roadmap**](#current-state-phase-1) below for implem
 OpenCrane is represented here as a clean operating model: a central **Control Plane** backed by **Cloud SQL + Skills Repo**, a **Cross-Repo Operator Plane**, isolated **OpenClaw tenant pods**, and an **Egress Control Plane** that enforces network and AI access guardrails.
 
 ```
-    ┌──────────────────────────┐          ┌──────────────────────────┐
-    │      Control Plane       │◄────────►│   Cloud SQL (Postgres)   │
-    │   admin.opencrane.ai     │          │   org / users / state    │
-    │   Express + Prisma       │          ├──────────────────────────┤
-    └─────────────┬────────────┘          │        Skills Repo       │
-      │                              │   versioned AI skills     │
-      ▼                              └──────────────────────────┘
+    ┌──────────────────────────┐          ┌───────────────────────────┐
+    │      Control Plane       │◄────────►│   Cloud SQL (Postgres)    │
+    │   admin.opencrane.ai     │          │   org / users / state     │
+    │   Express + Prisma       │          ├───────────────────────────┤
+    └─────────────┬────────────┘          │ Versioned AI Skills Repo  │
+                  │                       │ Tenant Managment          │
+                  │                       │ Access Control Management │
+                  │                       │ Shared Context Management │                 
+                  ▼                       └───────────────────────────┘
 ┌────────────────────────────┐   ┌──────────────────┐   ┌──────────────────┐   ┌────────────────────────────┐
-│ Cross-Repo Operator Plane  │   │     jente.oc     │   │     bob.oc       │   │    Egress Control Plane    │
+│ Cross-Repo Operator Plane  │   │     jente.oc     │   │     jane.oc      │   │    Egress Control Plane    │
 │                            │   │     OpenClaw     │   │     OpenClaw     │   │                            │
 │ - repo reconcile           │   │    (isolated)    │   │    (isolated)    │   │ - outbound policy          │
 │ - skill deployment         │   ├────────┬─────────┤   ├────────┬─────────┤   │ - proxy / allowlists       │
@@ -94,8 +96,10 @@ OpenCrane is represented here as a clean operating model: a central **Control Pl
 │ - bootstrap sync           │   │ bucket │+ Secret │   │ bucket │+ Secret │   │ - AI token access          │
 │ - rollout coordination     │   │        │ Vault   │   │ IAM    │ Vault   │   │ - audit / rate limiting    │
 │                            │   └──────────────────┘   └──────────────────┘   │ - external access control  │
-│                            │   ┌──────────────────┐                          │                            │
-│                            │   │     sara.oc      │                          │                            │
+│ - Department & Project     │                                                 │                            │
+│     documents              │                                                 │                            │
+│ - Company-Wide Agents      │   ┌──────────────────┐                          │                            │
+│                            │   │     niels.oc     │                          │                            │
 │                            │   │     OpenClaw     │                          │                            │
 │                            │   │    (isolated)    │                          │                            │
 │                            │   ├────────┬─────────┤                          │                            │
