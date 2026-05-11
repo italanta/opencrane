@@ -58,7 +58,7 @@ Each employee gets their own **private AI assistant**—an isolated OpenClaw ins
 - **Stays private**: Your conversations with the AI are stored locally in your pod's encrypted storage. OpenCrane enforces network-level policies and budget controls, but does not log or inspect conversation contents.
 - **Accesses organizational knowledge**: Uses a retrieval plugin to discover shared skills and organizational context—teams, projects, company policies—during the agentic loop, with automatic RBAC filtering based on your role.
 
-OpenCrane also runs **company-wide information gathering agents** (system services with elevated permissions) that:
+OpenCrane also runs **company-wide information gathering agents** (dedicated tenant deployments with elevated permissions) that:
 - Continuously harvest organizational knowledge from Slack, Teams, email, ticketing systems, and other company platforms
 - Index this knowledge into a centralized Org Knowledge Index
 - Make it available to all tenant assistants via retrieval plugins (role-based access)
@@ -75,65 +75,90 @@ See [**Current State** and **Roadmap**](#current-state-phase-1) below for implem
 
 ## Architecture
 
-OpenCrane consists of five core layers: a **Control Plane API** that manages tenants and policies, a **Kubernetes Operator** that reconciles tenant resources, a **Crossplane** layer that provisions cloud infrastructure, **Per-Tenant Pods** running isolated OpenClaw instances with retrieval plugins, and **Company-Wide Information Agents** that gather and index organizational knowledge.
+OpenCrane consists of six core layers: a **Control Plane API** that manages tenants, policies, and harvesting-agent tenants, a **Kubernetes Operator** that reconciles tenant resources, a **Crossplane** layer that provisions cloud infrastructure, **Per-Tenant Pods** running isolated OpenClaw instances with retrieval plugins, an **LLM Control Gateway** (LiteLLM + GuardLLM) that governs model access, and an **Org Knowledge Index** that aggregates organizational context.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                 Company-Wide Information Gathering Layer                        │
-│   Central Agents: Slack → Teams → Email → Ticketing → Index in Org Knowledge    │
-└──────────────┬─────────────────────────────────────────────────────────┬────────┘
-               │                                                         │
-    ┌──────────▼──────────┐                              ┌───────────────▼────────┐
-    │  Control Plane      │                              │  Org Knowledge Index   │
-    │  (Express.js)       │                              │  • Departments         │
-    │  • CRUD APIs        │                              │  • Projects            │
-    │  • Audit logging    │                              │  • Team hierarchy      │
-    │  • Dual-write to K8s│                              │  • Company context     │
-    │    and PostgreSQL   │                              └────────────────────────┘
-    └────────┬────────────┘
-             │
-    ┌────────▼────────────────────────────────────────────────────────┐
-    │  Kubernetes Control Plane (GKE/K8s 1.28+)                       │
-    ├────────┬────────────────────────┬─────────────────┬─────────────┤
-    │ Operator                │ Crossplane              │ RBAC        │
-    │ (Node.js)              │ (Cloud Resources)        │ & Policies  │
-    │ • Watch Tenant CRs     │ • GCS buckets            │             │
-    │ • Watch AccessPolicy   │ • IAM bindings           │             │
-    │ • Reconcile K8s        │ • Cloud SQL users        │             │
-    │   resources            │ • Service accounts       │             │
-    │ • Deploy pods          │                          │             │
-    │ • Manage networking    │                          │             │
-    └────────┬───────────────────────────┬──────────────┴─────────────┘
-             │                           │
-    ┌────────▼───────────────────────────▼──────────────────────────────┐
-    │                         Per-Tenant Pods                           │
-    │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │
-    │  │ jente.oc │  │ bob.oc   │  │niels.oc  │  │info-harvest      │   │
-    │  │ OpenClaw │  │ OpenClaw │  │ OpenClaw │  │Agent (system)    │   │
-    │  │(isolated)│  │(isolated)│  │(isolated)│  │(gathers org data)│   │
-    │  ├──────────┤  ├──────────┤  ├──────────┤  ├──────────────────┤   │
-    │  │Private:  │  │Private:  │  │Private:  │  │Private:          │   │
-    │  │• Drive   │  │• Drive   │  │• Drive   │  │• Drive           │   │
-    │  │• Secrets │  │• Secrets │  │• Secrets │  │• Secrets         │   │
-    │  │• Config  │  │• Config  │  │• Config  │  │                  │   │
-    │  ├──────────┤  ├──────────┤  ├──────────┤  │                  │   │
-    │  │Retrieval │  │Retrieval │  │Retrieval │  │                  │   │
-    │  │Plugin    │  │Plugin    │  │Plugin    │  │                  │   │
-    │  │(queries  │  │(queries  │  │(queries  │  │                  │   │
-    │  │ Org data)│  │ Org data)│  │ Org data)│  │                  │   │
-    │  └──────────┘  └──────────┘  └──────────┘  └──────────────────┘   │
-    └────────┬───────────────────────────────────────────────────────┬──┘
-             │                                                       │
-    ┌────────▼─────────────┐                        ┌────────────────▼────────┐
-    │ Shared Storage       │                        │ PostgreSQL Audit Log    │
-    │ ┌────────────────┐   │                        │ • Tenants               │
-    │ │ Shared Skills  │   │                        │ • Policies              │
-    │ │ /shared/       │   │                        │ • Skills registry       │
-    │ │ ├── org/       │   │                        │ • Token usage           │
-    │ │ └── teams/{T}/ │   │                        │ • Audit trail           │
-    │ └────────────────┘   │                        └─────────────────────────┘
-    └──────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Control Plane (Express.js)                                                  │
+│ • Tenant CRUD APIs                                                          │
+│ • Policy management                                                         │
+│ • Issues and controls assistant + harvesting tenants                        │
+│ • Configures LiteLLM and GuardLLM policy bundles                            │
+│ • Dual-write to K8s CRDs and PostgreSQL                                     │
+└──────────┬──────────────────────────────────────────────────────────────────┘
+           │
+  ┌────────┴─────────┐
+  │                  │
+  ▼                  ▼
+┌───────────────┐  ┌───────────────────────────┐
+│ K8s Operator  │  │ Crossplane                │
+│ (Node.js)     │  │ (Cloud resources)         │
+│ • Watch CRDs  │  │ • GCS buckets             │
+│ • Reconcile   │  │ • IAM bindings            │
+│ • Deploy pods │  │ • Cloud SQL users         │
+└───────┬───────┘  └───────────────────────────┘
+        │
+        ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Kubernetes Control Plane (GKE/K8s 1.28+)                                     │
+│                                                                              │
+│ Assistant Tenant Pods                                                        │
+│ ┌────────────┐  ┌────────────┐  ┌────────────┐                               │
+│ │ jente.oc   │  │ bob.oc     │  │ niels.oc   │                               │
+│ │ OpenClaw   │  │ OpenClaw   │  │ OpenClaw   │                               │
+│ │ Retrieval  │  │ Retrieval  │  │ Retrieval  │                               │
+│ │ Plugin     │  │ Plugin     │  │ Plugin     │                               │
+│ └─────┬──────┘  └─────┬──────┘  └─────┬──────┘                               │
+│       │               │               │                                      │
+│ Harvesting Tenant Pods (also tenants, elevated scoped permissions)           │
+│ ┌───────────────┐  ┌───────────────┐  ┌───────────────┐                      │
+│ │ harvest.slack │  │ harvest.teams │  │ harvest.ticket│                      │
+│ │ tenant        │  │ tenant        │  │ tenant        │                      │
+│ │ pull + index  │  │ pull + index  │  │ pull + index  │                      │
+│ └──────┬────────┘  └──────┬────────┘  └──────┬────────┘                      │
+|────────┼──────────────────┼──────────────────┼───────────────────────────────┘
+         │                  │                  │
+         │                  │                  |
+         │                  |                  |
+         └─────────┐        │                  │
+                   ▼        ▼                  ▼
+              ┌──────────────────────────────────────────┐
+              │ LLM Control Gateway (in-cluster)         │
+              │ LiteLLM + GuardLLM                       │
+              │ • Routing by tenant/model policy         │
+              │ • Guardrails and policy checks           │
+              │ • Budget/quota enforcement               │
+              │ • Usage and audit telemetry              │
+              └──────────────────┬───────────────────────┘
+                                 │
+                                 ▼
+              ┌───────────────────────────────────────────┐
+              │ LLM Providers                             │
+              │ Claude / OpenAI / OSS / self-hosted       │
+              └───────────────────────────────────────────┘
+
+┌───────────────────────────────────────────────┐
+│ Org Knowledge Index                           │
+│ (PostgreSQL + optional Vector DB)             │
+│ • Departments and hierarchy                   │
+│ • Projects and ownership                      │
+│ • Company policies                            │
+│ • Team context                                │
+│ • Harvested org data                          │
+│ • RBAC visibility rules                       │
+└───────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────┐
+│ PostgreSQL Audit Log                                 │
+│ • Tenant state                                       │
+│ • Policy changes                                     │
+│ • Skills registry                                    │
+│ • Token usage and budgets                            │
+│ • Audit trail                                        │
+└──────────────────────────────────────────────────────┘
 ```
+
+In this view, harvesting agents are modeled as tenant pods inside the same Kubernetes plane. Their harvested outputs are written to the Org Knowledge Index, while retrieval plugins read back RBAC-filtered context for assistant tenants.
 
 ### Retrieval Plugins: Extending Tenant Context
 
@@ -246,9 +271,10 @@ Personal Assistant (Tenant Pod)              Retrieval Plugin                 Or
 - **Shared skills library**: A ReadWriteMany PVC mounted read-only into all tenant pods and retrieval plugins enables org-wide and team-specific skill discovery. Skills are organized by scope: `/shared-skills/org/` and `/shared-skills/teams/{team}/`.
 - **Credentials isolation**: Encrypted emptyDir (memory-backed) for pod-local secrets + K8s Secrets for encryption keys. Org-wide secrets via External Secrets Operator + cloud provider secret management (GCP Secret Manager, etc.).
 - **Policy enforcement**: AccessPolicy CRDs define domain allowlists, network rules, and role-based access to shared resources, converted by the operator into Kubernetes NetworkPolicy and CiliumNetworkPolicy resources.
-- **Company-wide information gathering agents**: System-level agents (authenticated with elevated permissions) harvest data from organizational channels (Slack, Teams, email, ticketing systems) and index it into the Org Knowledge Index for retrieval by tenant assistants.
+- **Company-wide information gathering agents**: Tenant-style agent deployments (authenticated with elevated permissions) harvest data from organizational channels (Slack, Teams, email, ticketing systems) and index it into the Org Knowledge Index for retrieval by tenant assistants.
 - **Dual-write pattern**: Control plane writes tenant and policy state to both K8s CRDs (source of truth for reconciliation) and PostgreSQL (queryable audit store for dashboards and reporting).
-- **Cost tracking**: Per-tenant LiteLLM virtual API keys route LLM requests through a cost metering layer. Token usage and budgets are persisted in Prisma for audit and enforcement.
+- **LLM linkage and control**: All tenant and harvesting-agent LLM calls are routed through an in-cluster LiteLLM gateway with GuardLLM policy enforcement. This centralizes model routing, guardrails, and approval checks before requests reach upstream model providers.
+- **Cost tracking**: Per-tenant LiteLLM virtual API keys enforce quotas and budgets. Token usage and spend telemetry are persisted in Prisma for audit and enforcement.
 - **IaC**: Terraform for static infrastructure (GKE, Cloud SQL, VPC). Crossplane for dynamic per-tenant resources (GCS buckets, IAM bindings, cloud SQL users).
 
 ### Storage Layout
