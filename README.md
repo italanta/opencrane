@@ -78,11 +78,11 @@ See [**Current State** and **Roadmap**](#current-state-phase-1) below for implem
 OpenCrane consists of five core layers: a **Control Plane API** that manages tenants and policies, a **Kubernetes Operator** that reconciles tenant resources, a **Crossplane** layer that provisions cloud infrastructure, **Per-Tenant Pods** running isolated OpenClaw instances with retrieval plugins, and **Company-Wide Information Agents** that gather and index organizational knowledge.
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│                 Company-Wide Information Gathering Layer                         │
-│   Central Agents: Slack → Teams → Email → Ticketing → Index in Org Knowledge     │
-└──────────────┬──────────────────────────────────────────────────────────┬────────┘
-               │                                                          │
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                 Company-Wide Information Gathering Layer                        │
+│   Central Agents: Slack → Teams → Email → Ticketing → Index in Org Knowledge    │
+└──────────────┬─────────────────────────────────────────────────────────┬────────┘
+               │                                                         │
     ┌──────────▼──────────┐                              ┌───────────────▼────────┐
     │  Control Plane      │                              │  Org Knowledge Index   │
     │  (Express.js)       │                              │  • Departments         │
@@ -105,7 +105,7 @@ OpenCrane consists of five core layers: a **Control Plane API** that manages ten
     │ • Manage networking    │                          │             │
     └────────┬───────────────────────────┬──────────────┴─────────────┘
              │                           │
-    ┌────────▼────────────────────────────▼─────────────────────────────┐
+    ┌────────▼───────────────────────────▼──────────────────────────────┐
     │                         Per-Tenant Pods                           │
     │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │
     │  │ jente.oc │  │ bob.oc   │  │niels.oc  │  │info-harvest      │   │
@@ -122,8 +122,8 @@ OpenCrane consists of five core layers: a **Control Plane API** that manages ten
     │  │(queries  │  │(queries  │  │(queries  │  │                  │   │
     │  │ Org data)│  │ Org data)│  │ Org data)│  │                  │   │
     │  └──────────┘  └──────────┘  └──────────┘  └──────────────────┘   │
-    └────────┬────────────────────────────────────────────────────────┬─┘
-             │                                                        │
+    └────────┬───────────────────────────────────────────────────────┬──┘
+             │                                                       │
     ┌────────▼─────────────┐                        ┌────────────────▼────────┐
     │ Shared Storage       │                        │ PostgreSQL Audit Log    │
     │ ┌────────────────┐   │                        │ • Tenants               │
