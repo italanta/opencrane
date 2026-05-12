@@ -33,9 +33,9 @@ This is an updated roadmap for shipping OpenCrane, the enterprise multi-tenant A
 - **Architectural advantages**: GCS Fuse CSI + Workload Identity (cloud-native isolation), dual-write pattern (CRDs + PostgreSQL), policy-first governance (AccessPolicy CRDs → CiliumNetworkPolicy).
 - **Tactical features**: Cost control (LiteLLM), self-service UX (web + Slack), fleet operations (auto-update, metrics, channel management).
 
-**Next move**: Move into Phase 2 execution (LiteLLM governance and platform hardening), while keeping Phase 1 regression checks green in CI.
+**Next move**: Execute a dual-track Phase 2 (LiteLLM governance + retrieval/org-knowledge foundation), while keeping Phase 1 regression checks green in CI.
 
-**Effort**: ~286 hours over 7–8 weeks (2 engineers + 1 ops), assuming clear architecture decisions upfront.
+**Effort**: ~342 hours over 8–10 weeks (2 engineers + 1 ops), assuming clear architecture decisions upfront.
 
 ---
 
@@ -45,6 +45,48 @@ Ship a production-grade multi-tenant OpenClaw platform that is:
 1. **Architecturally differentiated**: GCS + IAM isolation, dual-write pattern, Crossplane-driven.
 2. **Feature-complete for org rollout**: Cost control (LiteLLM), self-service UI, fleet updates.
 3. **Operationally sound**: Observability, role-based access, policy-driven governance.
+
+---
+
+## README Realization Track (2026-05-12)
+
+This section translates the current README narrative into explicit delivery scope so roadmap execution and public messaging stay aligned.
+
+### Vision-to-Execution Mapping
+
+| README promise | Delivery status | Delivery phase |
+|----------------|-----------------|----------------|
+| Every employee gets an isolated assistant | Baseline in place | Phase 1 complete + hardening backlog |
+| Cost governance and budget controls | In progress | Phase 2 |
+| Retrieval plugin with RBAC-filtered org context | Foundation only today | Phase 2-3 |
+| Company-wide harvesting agents + org index | Not shipped | Phase 2-3 |
+| Self-service provisioning (web + Slack) | Not shipped | Phase 3 |
+| Fleet operations (updates, metrics, channels) | Not shipped | Phase 4 |
+
+### Steering Rule For Docs And Pitch
+
+Use three labels consistently across README/pitch/sales material:
+- **Available now**: only Phase 1 validated and currently passing capabilities.
+- **In progress**: Phase 2 deliverables under active implementation.
+- **Planned**: Phase 3+ items not yet validated in CI/e2e.
+
+No feature should move to "Available now" until success criteria are met and the go-live checklist remains green.
+
+### Delivery Workstreams Required To Realize README
+
+1. **Platform trust**: close deferred hardening, dual-write safety, and CI release gates.
+2. **Economic control**: complete LiteLLM keying/spend enforcement and budget visibility.
+3. **Organizational intelligence**: ship retrieval SDK, org index schema, and harvesting-agent MVP.
+4. **Self-service adoption**: deliver tenant provisioning UX and Slack operations flow.
+5. **Operational maturity**: canary updates, rollback safety, metrics, and channel governance.
+
+### Exit Criteria For "README Realized" (Production Narrative)
+
+- Retrieval plugin returns RBAC-filtered organization context from a live org index.
+- At least one company data source ingestion pipeline is running continuously.
+- Self-service tenant provisioning works end-to-end with auditable approval/auth path.
+- Cost policy, spend telemetry, and budget enforcement are visible per tenant.
+- Release gates (CI e2e, migration rollout, ingress verification, runbook) are green.
 
 ---
 
@@ -448,7 +490,7 @@ opencrane-platform/
 
 ---
 
-## Phase 2: Cost Control via LiteLLM
+## Phase 2: Cost Control + Retrieval Foundation
 
 ### Architecture Checkpoint: LiteLLM Integration
 
@@ -511,6 +553,21 @@ Before implementing LiteLLM, clarify:
      ```
    - Operator injects real key on reconcile.
 
+5. **Org Knowledge Index Foundation**
+   - Add initial schema and repository interfaces for organization knowledge documents and source metadata.
+   - Define tenancy and RBAC projection fields required for filtered retrieval.
+   - Add API route surface for retrieval-plugin query and health checks.
+
+6. **Retrieval Plugin SDK (MVP)**
+   - Define plugin contract for query input, tenant identity context, and filtered response payload.
+   - Implement a basic in-cluster client path from tenant runtime to control-plane retrieval endpoint.
+   - Add conformance tests for allow/deny behavior aligned with AccessPolicy constraints.
+
+7. **Harvesting Agent MVP (Single Source)**
+   - Implement one source connector (for example Slack or ticketing) with incremental sync cursoring.
+   - Write normalized documents into the org index with source provenance and timestamps.
+   - Add operational metrics (ingest lag, failures, processed docs).
+
 ### File Structure Additions
 
 ```
@@ -535,8 +592,12 @@ platform/
 | Operator: LiteLLM key generation on reconcile | Backend | 10h | LiteLLM chart deployed |
 | Control Plane: /api/spend endpoint | Backend | 8h | LiteLLM chart + schema |
 | Tenant config injection of proxy endpoint | Backend | 5h | Operator enhancement |
+| Org index schema + retrieval API surface | Backend | 14h | Phase 1 done |
+| Retrieval plugin SDK MVP + policy tests | Backend | 16h | Org index schema |
+| Harvesting agent MVP (single source connector) | Backend | 18h | Org index schema |
+| Ingest/retrieval observability + dashboards | DevOps + QA | 8h | SDK + agent MVP |
 | Tests: key generation, spend queries | QA | 10h | All code |
-| **Phase 2 Total** | | **41h** | |
+| **Phase 2 Total** | | **97h** | |
 
 ### Success Criteria
 
@@ -545,6 +606,9 @@ platform/
 - [ ] Tenant pod receives `LITELLM_API_KEY` and proxy endpoint.
 - [ ] Control Plane exposes spend endpoint; shows per-tenant usage + budget.
 - [ ] Dashboard can display "You have $X of $Y budget" per tenant.
+- [ ] Retrieval endpoint returns tenant-scoped, RBAC-filtered results from org index.
+- [ ] One harvesting connector continuously ingests documents with measurable lag/error metrics.
+- [ ] AccessPolicy allow/deny rules are enforced for retrieval access path with tests.
 
 ---
 
@@ -792,10 +856,10 @@ Before implementing updates, metrics, and self-config, clarify:
 | Phase | Effort | Timeline | Start |
 |-------|--------|----------|-------|
 | **Phase 1** (Core) | 90h | 3 weeks (2 eng + 1 ops) | Week 1 |
-| **Phase 2** (Cost control) | 41h | 1 week (parallel to Phase 1 end) | Week 2 |
+| **Phase 2** (Cost control + retrieval foundation) | 97h | 2-3 weeks (parallel to Phase 1 end) | Week 2 |
 | **Phase 3** (Self-service) | 80h | 2–3 weeks (after Phase 1) | Week 4 |
 | **Phase 4** (Maturity) | 75h | 2–3 weeks (after Phase 2) | Week 5 |
-| **Total** | **286h** | **7–8 weeks** | |
+| **Total** | **342h** | **8–10 weeks** | |
 
 ---
 
