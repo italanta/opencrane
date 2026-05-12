@@ -63,3 +63,21 @@ export interface ProviderKeyRecord
   maskedValue?: string;
   updatedAt?: string;
 }
+
+export interface AuthenticatedUser
+{
+  sub: string;
+  issuer: string;
+  email?: string;
+  emailVerified?: boolean;
+  name?: string;
+  picture?: string;
+  authenticatedAt: string;
+}
+
+export interface AuthStatusResponse
+{
+  mode: "development" | "oidc" | "token";
+  authenticated: boolean;
+  user: AuthenticatedUser | null;
+}

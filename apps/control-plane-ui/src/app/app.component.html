@@ -1,9 +1,17 @@
 <div class="layout">
   <header class="header">
-    <div>
-      <p class="kicker">OpenCrane</p>
-      <h1>Control Plane Dashboard</h1>
+    <div class="header-top">
+      <div>
+        <p class="kicker">OpenCrane</p>
+        <h1>Control Plane Dashboard</h1>
+      </div>
+
+      <div class="auth-state" *ngIf="authStatus()?.authenticated">
+        <span class="auth-user">{{ displayName() }}</span>
+        <button pButton type="button" label="Sign Out" icon="pi pi-sign-out" severity="secondary" (click)="logout()"></button>
+      </div>
     </div>
+
     <p-menubar [model]="navigation"></p-menubar>
   </header>
 

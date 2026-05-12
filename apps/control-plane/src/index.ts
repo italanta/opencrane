@@ -10,6 +10,8 @@ import express from "express";
 import type { Express } from "express";
 import type { PrismaClient } from "@prisma/client";
 
+import { ___AuthRouter } from "./infra/auth/auth.router.js";
+import { ___CreateOidcAuthService } from "./infra/auth/oidc.service.js";
 import { ___CreatePrismaClient } from "./infra/db/db.js";
 import { ___AuthMiddleware } from "./infra/middleware/auth.middleware.js";
 
@@ -29,10 +31,14 @@ const log = pino({ name: "ctrl" });
 export function createApp(prisma: PrismaClient, customApi: k8s.CustomObjectsApi, coreApi: k8s.CoreV1Api): Express
 {
   const app = express();
+  const authService = ___CreateOidcAuthService(log);
 
   // Middleware
+  app.set("trust proxy", 1);
   app.use(express.json());
   app.use(pinoHttp({ logger: log }));
+  app.use(authService.createSessionMiddleware());
+  app.use("/api/auth", ___AuthRouter(authService));
   app.use(___AuthMiddleware());
 
   // Register API routes

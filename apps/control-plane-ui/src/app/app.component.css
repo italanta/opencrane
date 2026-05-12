@@ -11,6 +11,32 @@
   margin-bottom: 1rem;
 }
 
+.header-top
+{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.auth-state
+{
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.auth-user
+{
+  padding: 0.5rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 250, 240, 0.85);
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
 .kicker
 {
   margin: 0;
@@ -37,4 +63,13 @@ h1
   border-radius: 14px;
   border: 1px solid var(--border);
   background: rgba(255, 250, 240, 0.8);
+}
+
+@media (max-width: 720px)
+{
+  .header-top
+  {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }

@@ -1,6 +1,9 @@
 import type { RequestHandler } from "express";
 
-const token = process.env.OPENCRANE_API_TOKEN;
+import { ___LoadOidcAuthConfig } from "../auth/oidc.config.js";
+
+const token = process.env.OPENCRANE_API_TOKEN?.trim() ?? "";
+const oidcConfig = ___LoadOidcAuthConfig();
 
 /**
  * Simple bearer token auth middleware.
@@ -12,7 +15,13 @@ export function ___AuthMiddleware(): RequestHandler
 {
   return function _authHandler(req, res, next)
   {
-    if (req.path === "/healthz")
+    if (req.path === "/healthz" || req.path.startsWith("/api/auth"))
+    {
+      next();
+      return;
+    }
+
+    if (oidcConfig.enabled && req.session.authUser)
     {
       next();
       return;
@@ -20,13 +29,25 @@ export function ___AuthMiddleware(): RequestHandler
 
     if (!token)
     {
-      next();
+      if (!oidcConfig.enabled)
+      {
+        next();
+        return;
+      }
+
+      res.status(401).json({ error: "Authentication required" });
       return;
     }
 
     const header = req.headers.authorization;
     if (!header?.startsWith("Bearer "))
     {
+      if (oidcConfig.enabled)
+      {
+        res.status(401).json({ error: "Authentication required" });
+        return;
+      }
+
       res.status(401).json({ error: "Missing Authorization header" });
       return;
     }
