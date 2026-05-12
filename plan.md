@@ -492,9 +492,9 @@ opencrane-platform/
 
 ## Phase 2: Cost Control + Retrieval Foundation
 
-### Architecture Checkpoint: LiteLLM Integration
+### Architecture Checkpoint: LiteLLM + Retrieval Foundation
 
-Before implementing LiteLLM, clarify:
+Before implementing Phase 2, clarify:
 
 1. **LiteLLM Deployment Model**
    - Should LiteLLM be deployed in the same namespace as the operator/control-plane, or in a separate `litellm` namespace?
@@ -520,7 +520,22 @@ Before implementing LiteLLM, clarify:
    - Should we surface LiteLLM health/errors in the control-plane API, or assume it's OK if the endpoint is reachable?
    - Should we alert if a tenant exceeds 80% of monthly budget?
 
-**Action**: Answer these, especially key generation model (sync vs. async), before writing the operator integration.
+6. **Org Knowledge Index Model**
+   - What is the minimum canonical document schema (source, owner, team/project scope, sensitivity tags, timestamps)?
+   - Which fields are mandatory to support RBAC filtering and future vector indexing?
+   - Should the initial index be PostgreSQL-only, or PostgreSQL + vector DB from day one?
+
+7. **Retrieval Authorization Model**
+   - Is AccessPolicy the sole enforcement source for retrieval allow/deny decisions?
+   - Should retrieval failures return redacted empty results or explicit authorization errors?
+   - Should retrieval access be audited at query-level, response-level, or both?
+
+8. **Harvesting Agent Scope (MVP)**
+   - Which first source connector is mandatory for MVP (Slack, ticketing, or docs)?
+   - What sync mode is required for MVP (batch pull vs near-real-time)?
+   - What ingestion lag/error SLOs should gate progression to Phase 3?
+
+**Action**: Answer these, especially key generation model, retrieval authorization behavior, and first-source connector scope, before implementation.
 
 ---
 
@@ -871,6 +886,8 @@ Before implementing updates, metrics, and self-config, clarify:
 | GCS Fuse CSI mount failures | Mount readiness check in pod init, fallback PVC if CSI unavailable |
 | Control-plane DB scaling | Postgres connection pooling, read replicas for analytics |
 | LiteLLM key generation during reconcile blocks tenant creation | Async key generation + retry loop, fallback to pre-generated key pool |
+| Retrieval returns data outside tenant scope | Enforce AccessPolicy-filtered query path, deny-by-default checks, and conformance tests for allow/deny behavior |
+| Harvesting agent ingestion drift or stale context | Cursor-based sync with checkpoints, lag/error SLO alerts, and replay-capable ingest jobs |
 | Slack bot auth expires | Token rotation via Slack renew API, operator watches for stale tokens |
 | Update rollback fails | Manual rollback instructions, `kubectl patch Tenant` to change version |
 
@@ -905,6 +922,11 @@ This avoids rework and ensures alignment across teams.
 - [ ] Spend tracking: aggregated in control-plane DB or queried real-time from LiteLLM?
 - [ ] Hard budget enforcement: LiteLLM rejects on overage or control-plane warns?
 - [ ] Proxy optional: tenants can opt out of LiteLLM?
+- [ ] Org index storage profile: PostgreSQL-only for MVP or PostgreSQL + vector store?
+- [ ] Retrieval authorization source: AccessPolicy only or hybrid with additional ACL model?
+- [ ] Retrieval failure behavior: redacted-empty vs explicit authorization errors?
+- [ ] First harvesting connector and sync mode (batch or near-real-time)?
+- [ ] Ingestion SLO thresholds required before Phase 3 starts?
 
 ### Phase 3 Decisions (Complete by Week 4)
 - [x] Portal: embedded in Angular control-plane-ui (decided — no separate Next.js app)
