@@ -13,6 +13,7 @@ export function metricsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
 {
   const router = Router();
   const namespace = process.env.NAMESPACE ?? "default";
+  const projectionDriftAlertThreshold = _ReadProjectionDriftAlertThreshold();
 
   /** Returns latest server utilization snapshot for dashboard cards. */
   router.get("/server", async function _serverMetrics(req, res)
@@ -61,6 +62,8 @@ export function metricsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
 
     // 2. Reduce the detailed findings into a metrics-friendly summary payload.
     const totalDriftCount = tenantReport.summary.driftCount + policyReport.summary.driftCount;
+    const thresholdEnabled = projectionDriftAlertThreshold > 0;
+    const thresholdExceeded = thresholdEnabled && totalDriftCount >= projectionDriftAlertThreshold;
 
     // 3. Return a timestamped snapshot that dashboards can poll directly.
     res.json({
@@ -70,6 +73,12 @@ export function metricsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
         totalDriftCount,
         resourceCount: 2,
       },
+      alert: {
+        enabled: thresholdEnabled,
+        threshold: projectionDriftAlertThreshold,
+        exceeded: thresholdExceeded,
+        state: thresholdExceeded ? "alert" : "ok",
+      },
       resources: {
         tenant: tenantReport.summary,
         accessPolicy: policyReport.summary,
@@ -78,4 +87,27 @@ export function metricsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
   });
 
   return router;
+}
+
+/**
+ * Read the optional projection-drift alert threshold from the environment.
+ * Invalid, negative, or unset values disable threshold evaluation.
+ */
+function _ReadProjectionDriftAlertThreshold(): number
+{
+  const rawValue = process.env.OPENCRANE_PROJECTION_DRIFT_ALERT_THRESHOLD?.trim() ?? "";
+
+  if (rawValue === "")
+  {
+    return 0;
+  }
+
+  const parsedValue = Number(rawValue);
+
+  if (!Number.isFinite(parsedValue) || parsedValue < 0)
+  {
+    return 0;
+  }
+
+  return Math.floor(parsedValue);
 }
