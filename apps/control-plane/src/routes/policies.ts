@@ -3,15 +3,8 @@ import { Router } from "express";
 import type { PrismaClient } from "@prisma/client";
 
 import type { CreatePolicyRequest } from "../types.js";
-
-/** Kubernetes API group for OpenCrane custom resources. */
-const API_GROUP = "opencrane.io";
-
-/** Kubernetes API version for OpenCrane custom resources. */
-const API_VERSION = "v1alpha1";
-
-/** Plural resource name for the AccessPolicy CRD. */
-const PLURAL = "accesspolicies";
+import { _DetectPolicyProjectionDrift } from "./internal/projection-drift.js";
+import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, POLICY_CRD_PLURAL } from "./internal/crd-constants.js";
 
 /**
  * Creates an Express router that exposes CRUD operations
@@ -25,6 +18,15 @@ export function policiesRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCl
 {
   const router = Router();
   const namespace = process.env.NAMESPACE ?? "default";
+
+  /**
+   * Report detect-only drift between AccessPolicy CRDs and PostgreSQL projection rows.
+   */
+  router.get("/drift", async function _getPolicyProjectionDrift(req, res)
+  {
+    const report = await _DetectPolicyProjectionDrift(customApi, prisma, namespace);
+    res.json(report);
+  });
 
   /** List all access policies from the database. */
   router.get("/", async function _listPolicies(req, res)
@@ -75,7 +77,7 @@ export function policiesRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCl
     const body = req.body as CreatePolicyRequest;
 
     const policyCr = {
-      apiVersion: `${API_GROUP}/${API_VERSION}`,
+      apiVersion: `${OPENCRANE_API_GROUP}/${OPENCRANE_API_VERSION}`,
       kind: "AccessPolicy",
       metadata: { name: body.name, namespace },
       spec: {
@@ -88,10 +90,10 @@ export function policiesRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCl
     };
 
     await customApi.createNamespacedCustomObject({
-      group: API_GROUP,
-      version: API_VERSION,
+      group: OPENCRANE_API_GROUP,
+      version: OPENCRANE_API_VERSION,
       namespace,
-      plural: PLURAL,
+      plural: POLICY_CRD_PLURAL,
       body: policyCr,
     });
 
@@ -124,10 +126,10 @@ export function policiesRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCl
     const body = req.body as Partial<CreatePolicyRequest>;
 
     await customApi.patchNamespacedCustomObject({
-      group: API_GROUP,
-      version: API_VERSION,
+      group: OPENCRANE_API_GROUP,
+      version: OPENCRANE_API_VERSION,
       namespace,
-      plural: PLURAL,
+      plural: POLICY_CRD_PLURAL,
       name,
       body: { spec: body },
     });
@@ -160,10 +162,10 @@ export function policiesRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCl
     const name = req.params.name;
 
     await customApi.deleteNamespacedCustomObject({
-      group: API_GROUP,
-      version: API_VERSION,
+      group: OPENCRANE_API_GROUP,
+      version: OPENCRANE_API_VERSION,
       namespace,
-      plural: PLURAL,
+      plural: POLICY_CRD_PLURAL,
       name,
     });
 

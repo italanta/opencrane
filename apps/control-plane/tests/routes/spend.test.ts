@@ -4,7 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { spendRouter } from "./spend.js";
+import { spendRouter } from "../../src/routes/spend.js";
 
 /** Build a minimal app containing only the spend route. */
 function _buildSpendApp(prisma: PrismaClient): Express

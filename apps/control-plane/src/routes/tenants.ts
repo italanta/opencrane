@@ -3,15 +3,8 @@ import { Router } from "express";
 import type { PrismaClient } from "@prisma/client";
 
 import type { CreateTenantRequest, TenantResponse } from "../types.js";
-
-/** Kubernetes API group for OpenCrane custom resources. */
-const API_GROUP = "opencrane.io";
-
-/** Kubernetes API version for OpenCrane custom resources. */
-const API_VERSION = "v1alpha1";
-
-/** Plural resource name for the Tenant CRD. */
-const PLURAL = "tenants";
+import { _DetectTenantProjectionDrift } from "./internal/projection-drift.js";
+import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "./internal/crd-constants.js";
 
 /**
  * Creates an Express router that exposes CRUD operations and
@@ -25,6 +18,15 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
 {
   const router = Router();
   const namespace = process.env.NAMESPACE ?? "default";
+
+  /**
+   * Report detect-only drift between Tenant CRDs and PostgreSQL projection rows.
+   */
+  router.get("/drift", async function _getTenantProjectionDrift(req, res)
+  {
+    const report = await _DetectTenantProjectionDrift(customApi, prisma, namespace);
+    res.json(report);
+  });
 
   /** List all tenants from the database. */
   router.get("/", async function _listTenants(req, res)
@@ -81,7 +83,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
     const body = req.body as CreateTenantRequest;
 
     const tenantCr = {
-      apiVersion: `${API_GROUP}/${API_VERSION}`,
+      apiVersion: `${OPENCRANE_API_GROUP}/${OPENCRANE_API_VERSION}`,
       kind: "Tenant",
       metadata: { name: body.name, namespace },
       spec: {
@@ -96,10 +98,10 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
     };
 
     await customApi.createNamespacedCustomObject({
-      group: API_GROUP,
-      version: API_VERSION,
+      group: OPENCRANE_API_GROUP,
+      version: OPENCRANE_API_VERSION,
       namespace,
-      plural: PLURAL,
+      plural: TENANT_CRD_PLURAL,
       body: tenantCr,
     });
 
@@ -143,10 +145,10 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
     };
 
     await customApi.patchNamespacedCustomObject({
-      group: API_GROUP,
-      version: API_VERSION,
+      group: OPENCRANE_API_GROUP,
+      version: OPENCRANE_API_VERSION,
       namespace,
-      plural: PLURAL,
+      plural: TENANT_CRD_PLURAL,
       name,
       body: patch,
     });
@@ -178,10 +180,10 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
     const name = req.params.name;
 
     await customApi.deleteNamespacedCustomObject({
-      group: API_GROUP,
-      version: API_VERSION,
+      group: OPENCRANE_API_GROUP,
+      version: OPENCRANE_API_VERSION,
       namespace,
-      plural: PLURAL,
+      plural: TENANT_CRD_PLURAL,
       name,
     });
 
@@ -205,10 +207,10 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
     const name = req.params.name;
 
     await customApi.patchNamespacedCustomObject({
-      group: API_GROUP,
-      version: API_VERSION,
+      group: OPENCRANE_API_GROUP,
+      version: OPENCRANE_API_VERSION,
       namespace,
-      plural: PLURAL,
+      plural: TENANT_CRD_PLURAL,
       name,
       body: { spec: { suspended: true } },
     });
@@ -236,10 +238,10 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
     const name = req.params.name;
 
     await customApi.patchNamespacedCustomObject({
-      group: API_GROUP,
-      version: API_VERSION,
+      group: OPENCRANE_API_GROUP,
+      version: OPENCRANE_API_VERSION,
       namespace,
-      plural: PLURAL,
+      plural: TENANT_CRD_PLURAL,
       name,
       body: { spec: { suspended: false } },
     });

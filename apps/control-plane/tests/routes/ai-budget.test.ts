@@ -5,7 +5,7 @@ import type { PrismaClient } from "@prisma/client";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { aiBudgetRouter } from "./ai-budget.js";
+import { aiBudgetRouter } from "../../src/routes/ai-budget.js";
 
 /** Build a minimal app containing only the AI budget route. */
 function _buildAiBudgetApp(coreApi: k8s.CoreV1Api, prisma: PrismaClient): Express
