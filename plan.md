@@ -171,111 +171,23 @@ Interpretation:
 
 ### Deferred While Starting Phase II
 
-These items are intentionally deferred so Phase II can proceed now. Track them as a backlog tied to Phase II stabilization.
+These items are intentionally deferred. They are grouped by what is actually blocking them.
 
-#### 1) Runtime hardening baseline in tenant pods
+#### Needs e2e validation only (no open decisions)
 
-Status: Partially implemented.
+These items are code-complete. The only blocker is a working k3d or GCP cluster run to confirm no hidden runtime incompatibilities.
 
-Scope:
-- Add pod/container `securityContext` defaults for tenant runtime.
-- Run as non-root user/group.
-- Disable privilege escalation.
-- Drop Linux capabilities.
-- Enable seccomp runtime default profile.
-- Use read-only root filesystem where compatible.
+**Runtime hardening baseline** — securityContext defaults, non-root user/group, dropped capabilities, seccomp, read-only root filesystem. All defaults are now injected into tenant Deployments. Unblock by running the k3d e2e with a tenant pod and verifying it starts cleanly.
 
-Why deferred:
-- Baseline hardening defaults are now injected into tenant Deployments, but compatibility still needs end-to-end runtime validation in k3d/GCP before this can be considered complete.
+**Stronger least-privilege and file access limits** — read-only root filesystem and explicit writable paths (`/data/openclaw`, `/data/secrets`, `/tmp`) are in place. Unblock alongside the hardening validation above.
 
-#### 2) Stronger least-privilege and file access limits
+#### Requires Phase 2 decisions before implementation
 
-Status: Partially implemented.
+**Suspend logic aware of scheduled/background work** — needs a durable scheduler contract and state model. Blocked on Phase 2 harvesting agent and background job decisions (see Phase 2 open decision 8).
 
-Scope:
-- Keep writable paths to a strict allowlist (`/data/openclaw`, `/data/secrets`, temp dirs as needed).
-- Prevent accidental writes to base filesystem.
-- Verify secret mounts remain read-only and minimally scoped.
+**Managed runtime awareness contract** — baseline env/config contract and policy metadata are injected. The remaining capability endpoint/payload shape depends on Phase 2 retrieval API and scheduling decisions (see Phase 2 open decisions 7 and 8).
 
-Why deferred:
-- Tenant pods now run with read-only root filesystem plus explicit writable paths for state, secrets, and `/tmp`, but runtime validation is still required to confirm no hidden write-path assumptions remain.
-
-#### 3) Enforce tool allowlist policy at runtime
-
-Status: Partially implemented.
-
-Scope:
-- Enforce `mcpServers.allow/deny` from AccessPolicy in runtime behavior.
-- Add deny/audit events when blocked tools are requested.
-- Add conformance tests for allow/deny behavior.
-
-Why deferred:
-- The tenant entrypoint now blocks shared-skill linking when the resolved MCP policy denies the `skills` server, but broader tool blocking and deny/audit behavior are still not implemented.
-
-#### 4) Tenant `skills` filtering behavior
-
-Status: Partially implemented.
-
-Scope:
-- Implement per-tenant skill filtering instead of mounting all shared skills.
-- Decide mechanism: subdirectory mount, symlink subset, or alternative packaging.
-
-Why deferred:
-- Entry-point level filtering now exists for tenants that specify `spec.skills`, but the long-term distribution and UX model is still undecided.
-
-#### 5) Suspend logic aware of scheduled/background work
-
-Status: Not implemented yet.
-
-Scope:
-- Prevent idle suspend when background jobs are running or jobs are due soon.
-- Add a durable scheduler source of truth outside the pod.
-- Wake suspended tenant pods when scheduled work is due.
-
-Why deferred:
-- Requires scheduler contract and state model that overlaps with Phase II work.
-
-#### 6) Managed runtime awareness contract for OpenClaw
-
-Status: Partially implemented.
-
-Scope:
-- Inject managed-cluster runtime mode env vars/config.
-- Define capability contract endpoint/payload for runtime policy awareness.
-
-Why deferred:
-- Baseline env/config contract is now injected into tenant pods, and resolved policy metadata is included for runtime awareness, but the broader endpoint/policy/scheduling contract still depends on Phase II decisions.
-
-#### 7) Dual-write consistency hardening (CRDs -> PostgreSQL projection safety)
-
-Status: Partially implemented.
-
-Scope:
-- Add drift detection for Tenant and AccessPolicy between CRDs and PostgreSQL projection rows.
-- Add a periodic reconciliation job that reports and optionally repairs projection drift.
-- Introduce write-path safeguards (idempotency keys and retry policy for partial-failure windows).
-- Add alerting/metrics for mismatch count, reconcile lag, and repair outcomes.
-- Restrict direct PostgreSQL write access so control-plane projection writes are the only mutating path.
-
-Why deferred:
-- Detect-only drift reporting now exists in the control-plane, but repair ownership, metrics/alerts, and long-term single-writer projection design remain open.
-
-#### Entry criteria to pick these up
-
-Start implementation when Phase II core deliverables are in place and stable:
-- Cost control path functional end-to-end.
-- Key issuance/rotation flow stable in non-prod.
-- Baseline e2e passing in CI.
-
-#### Exit criteria for this backlog
-
-These deferred improvements are complete when:
-- Hardening defaults are enforced and validated in e2e.
-- Tool policy allow/deny is enforceable and audited.
-- `skills` behavior is deterministic and documented.
-- Idle/suspend behavior is safe for scheduled/background workloads.
-- Runtime managed-mode contract is documented and used by tenant runtime.
-- Dual-write drift is detectable, measurable, and repairable with documented operator runbooks.
+**Dual-write consistency repair and metrics** — detect-only drift reporting exists. Repair mode, mismatch metrics, and alerting are blocked on the single-writer ownership decision (moved to Phase 2 deliverables). Write-path simplification (retire request-path dual-write in favour of a watcher-fed projector) is a larger architectural change tracked under Phase 3.
 
 ---
 
@@ -556,6 +468,23 @@ Phase 2 is underway. The items below are the remaining decisions still worth res
    - Write normalized documents into the org index with source provenance and timestamps.
    - Add operational metrics (ingest lag, failures, processed docs).
 
+8. **MCP Tool Allowlist Enforcement**
+   - Enforce `mcpServers.allow/deny` from the resolved AccessPolicy beyond startup-time shared-skill linking.
+   - Block or audit MCP server registration/invocation at the gateway level when a server is denied.
+   - Add deny/audit log events for blocked tool requests.
+   - Add conformance tests for allow and deny paths.
+
+9. **Tenant Skill Distribution Model**
+   - Decide long-term mechanism for per-tenant skill filtering (subdirectory mount, symlink subset, or packaged distribution).
+   - Extend beyond `spec.skills` env-var filtering to a durable, auditable per-tenant allowlist.
+   - Document the canonical UX contract for operators and tenant owners.
+
+10. **Dual-write projection repair and metrics**
+    - Add a periodic reconcile job that can repair projection state from CRDs using dry-run and apply modes.
+    - Emit mismatch count and reconcile lag as structured metrics.
+    - Add alerting when drift exceeds a configurable threshold.
+    - Decide single-writer ownership: control-plane request handlers, operator sidecar, or dedicated projector service.
+
 ### File Structure Additions
 
 ```
@@ -581,8 +510,11 @@ platform/
 | Retrieval plugin SDK MVP + policy tests | Backend | 16h | Org index schema |
 | Harvesting agent MVP (single source connector) | Backend | 18h | Org index schema |
 | Ingest/retrieval observability + dashboards | DevOps + QA | 8h | SDK + agent MVP |
+| MCP tool allowlist enforcement + audit events | Backend | 10h | Phase 1 entrypoint enforcement |
+| Tenant skill distribution model + UX contract | Backend | 8h | Phase 1 skills filtering |
+| Dual-write projection repair + mismatch metrics | Backend | 12h | Existing drift detector |
 | Tests: key generation, spend queries | QA | 10h | All code |
-| **Phase 2 Total** | | **97h** | |
+| **Phase 2 Total** | | **127h** | |
 
 ### Success Criteria
 
@@ -594,6 +526,9 @@ platform/
 - [ ] Retrieval endpoint returns tenant-scoped, RBAC-filtered results from org index.
 - [ ] One harvesting connector continuously ingests documents with measurable lag/error metrics.
 - [ ] AccessPolicy allow/deny rules are enforced for retrieval access path with tests.
+- [ ] MCP server allow/deny is enforced at gateway level, not just at startup skill linking.
+- [ ] Tenant skill distribution model is decided and implemented beyond env-var filtering.
+- [ ] Projection drift is measurable via metrics and repairable via a periodic reconcile job.
 
 ---
 
@@ -650,6 +585,11 @@ Before building the portal and Slack bot, decide:
    - New Tenant CRD field: `spec.approvalRequired: bool`.
    - New route `POST /api/tenants/approve/:name` (admin only).
    - Webhook or polling loop: if approval required, Tenant stays in Pending until approved.
+
+3. **Dual-write write-path simplification**
+   - Migrate projection writes from request-path dual-write to a watcher-fed projector component.
+   - Retire request-path PostgreSQL mutation for dual-written Tenant and AccessPolicy entities.
+   - Add idempotency keys and bounded reconciliation lag objectives.
 
 3. **Slack Bot** (apps/operator or apps/slack-bot)
    - `/opencrane create`: Slash command form, creates Tenant CR with user context.
