@@ -4,8 +4,8 @@ import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
-import { policiesRouter } from "../../src/routes/policies.js";
-import { tenantsRouter } from "../../src/routes/tenants.js";
+import { policiesRouter } from "../../routes/policies.js";
+import { tenantsRouter } from "../../routes/tenants.js";
 
 /**
  * Build a test app that mounts the tenant drift route with mocked dependencies.

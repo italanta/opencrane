@@ -4,7 +4,7 @@ import type { Express } from "express";
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import request from "supertest";
 
-import { _CheckDbHealth } from "../src/infra/db/healtcheck-db.js";
+import { _CheckDbHealth } from "../infra/db/healtcheck-db.js";
 
 /**
  * Build a minimal Express app with a mocked database health handler.
@@ -32,7 +32,7 @@ async function _buildAuthApp(): Promise<Express>
 {
   vi.resetModules();
 
-  const { ___AuthMiddleware } = await import("../src/infra/middleware/auth.middleware.js");
+  const { ___AuthMiddleware } = await import("../infra/middleware/auth.middleware.js");
   const app = express();
   app.use(express.json());
   app.use(___AuthMiddleware());

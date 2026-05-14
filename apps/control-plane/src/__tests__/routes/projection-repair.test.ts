@@ -4,8 +4,8 @@ import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
-import { tenantsRouter } from "../../src/routes/tenants.js";
-import { policiesRouter } from "../../src/routes/policies.js";
+import { tenantsRouter } from "../../routes/tenants.js";
+import { policiesRouter } from "../../routes/policies.js";
 
 /** Build a test app that mounts the tenants router with mocked dependencies. */
 function _BuildTenantRepairApp(customApi: k8s.CustomObjectsApi, prisma: PrismaClient)
