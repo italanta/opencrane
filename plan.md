@@ -29,6 +29,12 @@ This is an updated roadmap for shipping OpenCrane, the enterprise multi-tenant A
    - Set chart defaults so cost routing is enabled by default, with production override guidance for master key handling.
    - Added Helm validation guard: non-dev installs fail fast if LiteLLM uses a placeholder/empty master key without `litellm.existingSecret`.
 
+**Live update (2026-05-14)**:
+- Removed duplicate LiteLLM rendering from the Helm chart so the root chart templates are the only deployment path.
+- Added a full local k3d bootstrap path with PostgreSQL, control-plane, LiteLLM, and Prisma migrations.
+- Added a `strict` local profile to exercise prod-style Helm validation and explicit LiteLLM secret wiring locally.
+- Captured a parity checklist clarifying that local validates core stack wiring, while GCP remains the only path that exercises cloud identity, GCS/Crossplane, External Secrets, GCE ingress, and DNS.
+
 **Strategic approach**: OpenCrane differentiates by combining:
 - **Architectural advantages**: GCS Fuse CSI + Workload Identity (cloud-native isolation), dual-write pattern (CRDs + PostgreSQL), policy-first governance (AccessPolicy CRDs → CiliumNetworkPolicy).
 - **Tactical features**: Cost control (LiteLLM), self-service UX (web + Slack), fleet operations (auto-update, metrics, channel management).
@@ -137,6 +143,26 @@ No feature should move to "Available now" until success criteria are met and the
 1. Phase 1 go-live baseline is complete and validated with build + k3d smoke test.
 2. The k3d smoke script now includes Docker health and free-disk preflight checks to reduce false failures.
 3. Remaining work should be tracked under Phase 2+ hardening and production rollout tasks, not Phase 1 blockers.
+
+### Local vs GCP Parity Checklist (2026-05-14)
+
+| Capability | Local `default` | Local `strict` | GCP deploy |
+|------------|-----------------|-------------------|------------|
+| Operator + control-plane + LiteLLM + PostgreSQL | ✅ | ✅ | ✅ |
+| Prisma migration job | ✅ | ✅ | ✅ |
+| Production-style LiteLLM validation rules | ❌ | ✅ | ✅ |
+| Explicit `opencrane-litellm` Secret control flow | ❌ | ✅ | ✅ |
+| In-cluster database secret (`opencrane-db`) | ✅ | ✅ | ✅ |
+| Tenant PVC fallback flow | ✅ | ✅ | ❌ |
+| Workload Identity annotation path | ❌ | ❌ | ✅ |
+| Crossplane `BucketClaim` provisioning | ❌ | ❌ | ✅ |
+| External Secrets / Secret Manager path | ❌ | ❌ | ✅ |
+| GCE ingress + static IP + DNS wiring | ❌ | ❌ | ✅ |
+
+Interpretation:
+- Local `default` is the fastest end-to-end developer stack.
+- Local `strict` is the preferred parity check for core app wiring and stricter chart validation.
+- GCP is still the only environment that validates cloud-native identity, storage, ingress, and secret-management integrations.
 
 ### Deferred While Starting Phase II
 

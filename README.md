@@ -208,6 +208,19 @@ pnpm build
 pnpm test
 ```
 
+### Local Deployment
+
+```bash
+# Default local stack: operator + control-plane + LiteLLM + in-cluster PostgreSQL
+./platform/install.sh local
+
+# Strict local stack: same core workloads, but with prod-style Helm validation
+# and an explicit LiteLLM master-key Secret matching the GCP control flow.
+./platform/install.sh local --profile strict
+```
+
+The `strict` profile does not emulate GCP-only capabilities such as Workload Identity, GCS/Crossplane bucket provisioning, External Secrets, GCE ingress, or Cloud DNS. It is intended to validate the same core application wiring and stricter production-style chart inputs locally.
+
 ### GCP Deployment
 
 ```bash

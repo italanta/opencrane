@@ -124,6 +124,7 @@ if [[ "$mode" == "local" ]]; then
 
   _prompt "Cluster name"    "opencrane-local"   CLUSTER_NAME
   _prompt "Namespace"       "opencrane-system"  NAMESPACE
+  _prompt "Local profile (default/strict)" "default" LOCAL_PROFILE
 
   echo ""
   printf "  ${BOLD}Keep cluster after install?${NC} ${DIM}[Y/n]${NC}: "
@@ -193,6 +194,7 @@ if [[ "$mode" == "local" ]]; then
   _summary_row "Mode"           "local (k3d)"
   _summary_row "Cluster name"   "$CLUSTER_NAME"
   _summary_row "Namespace"      "$NAMESPACE"
+  _summary_row "Profile"        "$LOCAL_PROFILE"
   _summary_row "Keep cluster"   "$keep_label"
   _summary_row "Script"         "platform/tests/k3d-local.sh"
 else
@@ -224,6 +226,7 @@ if [[ "$mode" == "local" ]]; then
   KEEP_CLUSTER="$KEEP_CLUSTER" \
   CLUSTER_NAME="$CLUSTER_NAME" \
   NAMESPACE="$NAMESPACE" \
+  LOCAL_PROFILE="$LOCAL_PROFILE" \
     "$SCRIPT_DIR/tests/k3d-local.sh"
 else
   printf "%s\n%s\n%s\n%s\nY\n" \

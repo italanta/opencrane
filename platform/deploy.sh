@@ -75,11 +75,14 @@ case "$DEPLOY_MODE" in
     CLUSTER_NAME="opencrane-local"
     NAMESPACE="opencrane-system"
     KEEP_CLUSTER="1"
+    LOCAL_PROFILE="default"
 
     read -rp "Cluster name [opencrane-local]: " CLUSTER_NAME
     CLUSTER_NAME="${CLUSTER_NAME:-opencrane-local}"
     read -rp "Namespace [opencrane-system]: " NAMESPACE
     NAMESPACE="${NAMESPACE:-opencrane-system}"
+    read -rp "Local profile [default/strict, default default]: " LOCAL_PROFILE
+    LOCAL_PROFILE="${LOCAL_PROFILE:-default}"
     read -rp "Keep cluster after install? [Y/n]: " KEEP_INPUT
     KEEP_INPUT="${KEEP_INPUT:-Y}"
     if [[ ! "$KEEP_INPUT" =~ ^[Yy]$ ]]; then
@@ -90,7 +93,8 @@ case "$DEPLOY_MODE" in
     log "Starting local full-stack install"
     log "Cluster: $CLUSTER_NAME"
     log "Namespace: $NAMESPACE"
-    KEEP_CLUSTER="$KEEP_CLUSTER" CLUSTER_NAME="$CLUSTER_NAME" NAMESPACE="$NAMESPACE" "$SCRIPT_DIR/tests/k3d-local.sh"
+    log "Profile: $LOCAL_PROFILE"
+    KEEP_CLUSTER="$KEEP_CLUSTER" CLUSTER_NAME="$CLUSTER_NAME" NAMESPACE="$NAMESPACE" LOCAL_PROFILE="$LOCAL_PROFILE" "$SCRIPT_DIR/tests/k3d-local.sh"
     exit 0
     ;;
   gcp|cloud)

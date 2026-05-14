@@ -1,9 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: litellm-config
-  labels:
-    app.kubernetes.io/name: litellm
-data:
-  model-list.json: |
-    []

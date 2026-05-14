@@ -10,15 +10,17 @@ function _usage()
 OpenCrane Phase 1 installer
 
 Usage:
-  ./platform/install.sh local [--keep-cluster] [--cluster-name NAME] [--namespace NS]
+  ./platform/install.sh local [--keep-cluster] [--cluster-name NAME] [--namespace NS] [--profile PROFILE]
   ./platform/install.sh gcp [--project-id ID] [--region REGION] [--domain DOMAIN] [--environment ENV] [--yes]
 
 Examples:
   ./platform/install.sh local --keep-cluster
+  ./platform/install.sh local --profile strict
   ./platform/install.sh gcp --project-id my-gcp-project --domain opencrane.example.com --yes
 
 Notes:
   - local mode uses k3d + Helm full-stack install and keeps cluster by default.
+  - local profiles: `default` (fast dev) and `strict` (prod-like validation + explicit LiteLLM secret flow).
   - gcp mode delegates to ./platform/deploy.sh (interactive unless --yes with all required flags).
 EOF
 }
@@ -60,6 +62,7 @@ function _run_interactive_setup()
   if [[ "$mode" == "local" ]]; then
     local cluster_name="opencrane-local"
     local namespace="opencrane-system"
+    local profile="default"
     local keep_input="Y"
     local keep_flag="--keep-cluster"
 
@@ -67,13 +70,15 @@ function _run_interactive_setup()
     cluster_name="${cluster_name:-opencrane-local}"
     read -rp "[install] Namespace [opencrane-system]: " namespace
     namespace="${namespace:-opencrane-system}"
+    read -rp "[install] Local profile [default/strict, default default]: " profile
+    profile="${profile:-default}"
     read -rp "[install] Keep cluster after install? [Y/n]: " keep_input
     keep_input="${keep_input:-Y}"
     if [[ ! "$keep_input" =~ ^[Yy]$ ]]; then
       keep_flag="--destroy-cluster"
     fi
 
-    _run_local "$keep_flag" --cluster-name "$cluster_name" --namespace "$namespace"
+    _run_local "$keep_flag" --cluster-name "$cluster_name" --namespace "$namespace" --profile "$profile"
     return
   fi
 
@@ -103,6 +108,7 @@ function _run_local()
   local keep_cluster="1"
   local cluster_name="opencrane-local"
   local namespace="opencrane-system"
+  local profile="${LOCAL_PROFILE:-default}"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -120,6 +126,10 @@ function _run_local()
         ;;
       --namespace)
         namespace="$2"
+        shift 2
+        ;;
+      --profile)
+        profile="$2"
         shift 2
         ;;
       -h|--help)
@@ -140,9 +150,9 @@ function _run_local()
   _require_cmd k3d
 
   echo "[install] Running local full-stack install on k3d..."
-  KEEP_CLUSTER="$keep_cluster" CLUSTER_NAME="$cluster_name" NAMESPACE="$namespace" "$ROOT_DIR/platform/tests/k3d-local.sh"
+  KEEP_CLUSTER="$keep_cluster" CLUSTER_NAME="$cluster_name" NAMESPACE="$namespace" LOCAL_PROFILE="$profile" "$ROOT_DIR/platform/tests/k3d-local.sh"
   echo "[install] Local install complete."
-  echo "[install] Cluster: $cluster_name, Namespace: $namespace"
+  echo "[install] Cluster: $cluster_name, Namespace: $namespace, Profile: $profile"
 }
 
 function _run_gcp()

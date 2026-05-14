@@ -1,6 +1,0 @@
-apiVersion: v2
-name: litellm
-description: LiteLLM in-cluster proxy for OpenCrane
-version: 0.1.0
-appVersion: "0.1.0"
-type: application

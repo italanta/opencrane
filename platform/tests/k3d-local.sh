@@ -6,11 +6,13 @@ CLUSTER_NAME="${CLUSTER_NAME:-opencrane-local}"
 NAMESPACE="${NAMESPACE:-opencrane-system}"
 RELEASE_NAME="${RELEASE_NAME:-opencrane}"
 KEEP_CLUSTER="${KEEP_CLUSTER:-1}"
+LOCAL_PROFILE="${LOCAL_PROFILE:-default}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-300}"
 MIN_FREE_GB="${MIN_FREE_GB:-12}"
 DB_RELEASE_NAME="${DB_RELEASE_NAME:-opencrane-db}"
 DB_SECRET_NAME="${DB_SECRET_NAME:-opencrane-db}"
 DB_PASSWORD="${DB_PASSWORD:-opencrane-local-password}"
+LITELLM_SECRET_NAME="${LITELLM_SECRET_NAME:-opencrane-litellm}"
 LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY:-opencrane-local-master-key}"
 
 function _require_cmd()
@@ -70,7 +72,26 @@ function _wait_for_job()
   kubectl wait --for=condition=complete "job/$job_name" -n "$NAMESPACE" --timeout="${TIMEOUT_SECONDS}s"
 }
 
+function _resolve_values_file()
+{
+  case "$LOCAL_PROFILE" in
+    default)
+      echo "$ROOT_DIR/platform/tests/values-k3d-local.yaml"
+      ;;
+    strict)
+      echo "$ROOT_DIR/platform/tests/values-k3d-strict.yaml"
+      ;;
+    *)
+      echo "[local] Unknown LOCAL_PROFILE: $LOCAL_PROFILE"
+      echo "[local] Supported profiles: default, strict"
+      exit 1
+      ;;
+  esac
+}
+
 trap _cleanup EXIT
+
+VALUES_FILE="$(_resolve_values_file)"
 
 # 1. Pre-flight — fail fast when required CLIs are missing.
 _require_cmd docker
@@ -101,6 +122,8 @@ k3d image import opencrane/operator:local --cluster "$CLUSTER_NAME"
 k3d image import opencrane/tenant:local --cluster "$CLUSTER_NAME"
 k3d image import opencrane/control-plane:local --cluster "$CLUSTER_NAME"
 
+echo "[local] Using profile '$LOCAL_PROFILE' with values '$VALUES_FILE'"
+
 # 5. Install in-cluster PostgreSQL and publish the DATABASE_URL secret expected by the chart.
 echo "[local] Installing PostgreSQL release '$DB_RELEASE_NAME'"
 helm upgrade --install "$DB_RELEASE_NAME" oci://registry-1.docker.io/bitnamicharts/postgresql \
@@ -122,15 +145,39 @@ kubectl create secret generic "$DB_SECRET_NAME" \
   --dry-run=client \
   -o yaml | kubectl apply -f -
 
-# 6. Install the OpenCrane chart with local-safe overrides wired to the in-cluster database.
+if [[ "$LOCAL_PROFILE" == "strict" ]]; then
+  kubectl create secret generic "$LITELLM_SECRET_NAME" \
+    -n "$NAMESPACE" \
+    --from-literal=LITELLM_MASTER_KEY="$LITELLM_MASTER_KEY" \
+    --dry-run=client \
+    -o yaml | kubectl apply -f -
+fi
+
+# 6. Install the OpenCrane chart with local-strict overrides wired to the in-cluster database.
 echo "[local] Installing Helm release '$RELEASE_NAME'"
-helm upgrade --install "$RELEASE_NAME" "$ROOT_DIR/platform/helm" \
-  --namespace "$NAMESPACE" \
-  --create-namespace \
-  --values "$ROOT_DIR/platform/tests/values-k3d-local.yaml" \
-  --set controlPlane.database.existingSecret="$DB_SECRET_NAME" \
-  --set litellm.existingDatabaseSecret="$DB_SECRET_NAME" \
-  --set-string litellm.masterKey="$LITELLM_MASTER_KEY"
+helm_args=(
+  upgrade
+  --install
+  "$RELEASE_NAME"
+  "$ROOT_DIR/platform/helm"
+  --namespace
+  "$NAMESPACE"
+  --create-namespace
+  --values
+  "$VALUES_FILE"
+  --set
+  "controlPlane.database.existingSecret=$DB_SECRET_NAME"
+  --set
+  "litellm.existingDatabaseSecret=$DB_SECRET_NAME"
+)
+
+if [[ "$LOCAL_PROFILE" == "strict" ]]; then
+  helm_args+=(--set "litellm.existingSecret=$LITELLM_SECRET_NAME")
+else
+  helm_args+=(--set-string "litellm.masterKey=$LITELLM_MASTER_KEY")
+fi
+
+helm "${helm_args[@]}"
 
 # 7. Run schema migrations so the control-plane and LiteLLM share an initialized database.
 echo "[local] Running Prisma migrations"
