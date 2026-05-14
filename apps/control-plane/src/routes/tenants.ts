@@ -4,6 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 
 import type { CreateTenantRequest, TenantResponse } from "../types.js";
 import { _DetectTenantProjectionDrift } from "./internal/projection-drift.js";
+import { _RepairTenantProjection } from "./internal/projection-repair.js";
 import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "./internal/crd-constants.js";
 
 /**
@@ -25,6 +26,17 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
   router.get("/drift", async function _getTenantProjectionDrift(req, res)
   {
     const report = await _DetectTenantProjectionDrift(customApi, prisma, namespace);
+    res.json(report);
+  });
+
+  /**
+   * Repair Tenant projection rows from CRD source of truth.
+   * Defaults to dry-run; pass ?dryRun=false to apply writes.
+   */
+  router.post("/repair", async function _postTenantProjectionRepair(req, res)
+  {
+    const dryRun = req.query["dryRun"] !== "false";
+    const report = await _RepairTenantProjection(customApi, prisma, namespace, dryRun);
     res.json(report);
   });
 

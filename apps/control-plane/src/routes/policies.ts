@@ -4,6 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 
 import type { CreatePolicyRequest } from "../types.js";
 import { _DetectPolicyProjectionDrift } from "./internal/projection-drift.js";
+import { _RepairPolicyProjection } from "./internal/projection-repair.js";
 import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, POLICY_CRD_PLURAL } from "./internal/crd-constants.js";
 
 /**
@@ -25,6 +26,17 @@ export function policiesRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCl
   router.get("/drift", async function _getPolicyProjectionDrift(req, res)
   {
     const report = await _DetectPolicyProjectionDrift(customApi, prisma, namespace);
+    res.json(report);
+  });
+
+  /**
+   * Repair AccessPolicy projection rows from CRD source of truth.
+   * Defaults to dry-run; pass ?dryRun=false to apply writes.
+   */
+  router.post("/repair", async function _postPolicyProjectionRepair(req, res)
+  {
+    const dryRun = req.query["dryRun"] !== "false";
+    const report = await _RepairPolicyProjection(customApi, prisma, namespace, dryRun);
     res.json(report);
   });
 

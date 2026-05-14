@@ -38,6 +38,7 @@ This is an updated roadmap for shipping OpenCrane, the enterprise multi-tenant A
 - Added detect-only drift reporting for Tenant and AccessPolicy CRDs versus PostgreSQL projection rows in the control-plane as the first P0 dual-write visibility slice.
 - Published resolved AccessPolicy MCP allow/deny data into the tenant managed-runtime contract so runtime enforcement can consume concrete policy inputs instead of only a policy name.
 - Enforced the managed-runtime MCP policy in the tenant entrypoint for shared skills, so a denied `skills` server now prevents org/team skill linking at startup.
+- Implemented projection repair for Tenant and AccessPolicy rows: `POST /tenants/repair` and `POST /policies/repair` read CRDs as source of truth and upsert drifted PostgreSQL rows; dry-run by default, apply on `?dryRun=false`.
 
 **Strategic approach**: OpenCrane differentiates by combining:
 - **Architectural advantages**: GCS Fuse CSI + Workload Identity (cloud-native isolation), dual-write pattern (CRDs + PostgreSQL), policy-first governance (AccessPolicy CRDs → CiliumNetworkPolicy).
@@ -480,10 +481,10 @@ Phase 2 is underway. The items below are the remaining decisions still worth res
    - Document the canonical UX contract for operators and tenant owners.
 
 10. **Dual-write projection repair and metrics**
-    - Add a periodic reconcile job that can repair projection state from CRDs using dry-run and apply modes.
-    - Emit mismatch count and reconcile lag as structured metrics.
-    - Add alerting when drift exceeds a configurable threshold.
-    - Decide single-writer ownership: control-plane request handlers, operator sidecar, or dedicated projector service.
+    - ✅ Repair routes implemented: `POST /tenants/repair` and `POST /policies/repair` with dry-run default.
+    - Emit mismatch count and reconcile lag as structured metrics (still open).
+    - Add alerting when drift exceeds a configurable threshold (still open).
+    - Decide single-writer ownership: control-plane request handlers, operator sidecar, or dedicated projector service (still open).
 
 ### File Structure Additions
 
@@ -529,6 +530,7 @@ platform/
 - [ ] MCP server allow/deny is enforced at gateway level, not just at startup skill linking.
 - [ ] Tenant skill distribution model is decided and implemented beyond env-var filtering.
 - [ ] Projection drift is measurable via metrics and repairable via a periodic reconcile job.
+- [x] Projection repair is available on demand via `POST /tenants/repair` and `POST /policies/repair`.
 
 ---
 
