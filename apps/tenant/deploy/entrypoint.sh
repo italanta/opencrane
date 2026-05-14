@@ -9,6 +9,20 @@ CONFIG_SOURCE="/config/openclaw.json"
 SKILLS_DIR="$STATE_DIR/agents/main/skills"
 OPENCLAW_VERSION="${OPENCLAW_VERSION:-latest}"
 
+function _skill_is_enabled()
+{
+  local skill_name="$1"
+
+  if [ "${OPENCRANE_ALLOWED_SKILLS+set}" != "set" ]; then
+    return 0
+  fi
+
+  case ",${OPENCRANE_ALLOWED_SKILLS}," in
+    *",${skill_name},"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # Ensure GCS-backed directory structure
 mkdir -p "$STATE_DIR/agents/main/agent" "$SKILLS_DIR" \
          "$STATE_DIR/sessions" "$STATE_DIR/uploads" "$STATE_DIR/knowledge" \
@@ -16,6 +30,9 @@ mkdir -p "$STATE_DIR/agents/main/agent" "$SKILLS_DIR" \
 
 # Ensure pod-local secrets dir (emptyDir, Memory-backed)
 mkdir -p "$SECRETS_DIR"
+
+# Ensure temporary writable paths exist when the root filesystem is read-only.
+mkdir -p /tmp/opencrane-home /tmp/npm-cache
 
 # Install or verify OpenClaw runtime on persistent storage
 OPENCLAW_BIN="$RUNTIME_DIR/node_modules/.bin/openclaw"
@@ -40,6 +57,9 @@ fi
 if [ -d "$SHARED_SKILLS/org" ]; then
   for skill_dir in "$SHARED_SKILLS/org"/*/; do
     skill_name=$(basename "$skill_dir")
+    if ! _skill_is_enabled "$skill_name"; then
+      continue
+    fi
     target="$SKILLS_DIR/$skill_name"
     if [ ! -e "$target" ]; then
       ln -sf "$skill_dir" "$target"
@@ -52,6 +72,9 @@ fi
 if [ -n "${OPENCRANE_TEAM:-}" ] && [ -d "$SHARED_SKILLS/teams/$OPENCRANE_TEAM" ]; then
   for skill_dir in "$SHARED_SKILLS/teams/$OPENCRANE_TEAM"/*/; do
     skill_name=$(basename "$skill_dir")
+    if ! _skill_is_enabled "$skill_name"; then
+      continue
+    fi
     target="$SKILLS_DIR/$skill_name"
     if [ ! -e "$target" ]; then
       ln -sf "$skill_dir" "$target"

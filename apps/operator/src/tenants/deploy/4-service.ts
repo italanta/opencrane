@@ -5,7 +5,11 @@ import type { Tenant } from "../models/tenant.interface.js";
 import { _BuildTenantLabels } from "./tenant-labels.js";
 
 /**
- * Build a ClusterIP Service exposing the tenant gateway port.
+ * Build the stable in-cluster Service for the tenant gateway.
+ *
+ * The Service gives the tenant Deployment a predictable DNS name so Ingress
+ * rules and any cluster-local callers can target the tenant without coupling
+ * to pod IPs or rollout churn.
  */
 export function _BuildService(config: OperatorConfig, tenant: Tenant, namespace: string): k8s.V1Service
 {

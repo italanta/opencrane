@@ -6,7 +6,11 @@ import { _BuildIngressHost } from "./ingress-host.js";
 import { _BuildTenantLabels } from "./tenant-labels.js";
 
 /**
- * Build an Ingress resource routing external traffic to the tenant service.
+ * Build the tenant Ingress that exposes the gateway on its assigned hostname.
+ *
+ * The generated Ingress bridges the tenant's external subdomain to the
+ * cluster-local `openclaw-{tenant}` Service while preserving the platform's
+ * configured ingress class for the target environment.
  */
 export function _BuildIngress(config: OperatorConfig, tenant: Tenant, namespace: string): k8s.V1Ingress
 {

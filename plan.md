@@ -170,7 +170,7 @@ These items are intentionally deferred so Phase II can proceed now. Track them a
 
 #### 1) Runtime hardening baseline in tenant pods
 
-Status: Not implemented yet.
+Status: Partially implemented.
 
 Scope:
 - Add pod/container `securityContext` defaults for tenant runtime.
@@ -181,7 +181,7 @@ Scope:
 - Use read-only root filesystem where compatible.
 
 Why deferred:
-- Requires runtime compatibility testing and may affect startup/update behavior.
+- Baseline hardening defaults are now injected into tenant Deployments, but compatibility still needs end-to-end runtime validation in k3d/GCP before this can be considered complete.
 
 #### 2) Stronger least-privilege and file access limits
 
@@ -193,7 +193,7 @@ Scope:
 - Verify secret mounts remain read-only and minimally scoped.
 
 Why deferred:
-- Needs app/runtime validation and migration plan for any write-path assumptions.
+- Tenant pods now run with read-only root filesystem plus explicit writable paths for state, secrets, and `/tmp`, but runtime validation is still required to confirm no hidden write-path assumptions remain.
 
 #### 3) Enforce tool allowlist policy at runtime
 
@@ -220,14 +220,14 @@ Why deferred:
 
 #### 5) Tenant `skills` filtering behavior
 
-Status: Deferred architecture decision.
+Status: Partially implemented.
 
 Scope:
 - Implement per-tenant skill filtering instead of mounting all shared skills.
 - Decide mechanism: subdirectory mount, symlink subset, or alternative packaging.
 
 Why deferred:
-- Needs UX/security decision and skill distribution strategy.
+- Entry-point level filtering now exists for tenants that specify `spec.skills`, but the long-term distribution and UX model is still undecided.
 
 #### 6) Suspend logic aware of scheduled/background work
 
@@ -243,14 +243,14 @@ Why deferred:
 
 #### 7) Managed runtime awareness contract for OpenClaw
 
-Status: Not implemented yet.
+Status: Partially implemented.
 
 Scope:
 - Inject managed-cluster runtime mode env vars/config.
 - Define capability contract endpoint/payload for runtime policy awareness.
 
 Why deferred:
-- Depends on final Phase II contracts for keying, policy, and scheduling.
+- Baseline env/config contract is now injected into tenant pods, but the broader endpoint/policy/scheduling contract still depends on Phase II decisions.
 
 #### 8) Dual-write consistency hardening (CRDs -> PostgreSQL projection safety)
 
