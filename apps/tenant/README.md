@@ -8,12 +8,13 @@ The per-tenant OpenClaw runtime pod. This is a slim Node container — OpenClaw 
 Pod starts
   └── entrypoint.sh
         1. Mount points exist: /data/openclaw (GCS), /data/secrets (emptyDir), /shared-skills, /config
-        2. Check $RUNTIME_DIR/node_modules/.bin/openclaw
+        2. Load /config/opencrane-managed-runtime.json so MCP policy can influence runtime startup behavior
+        3. Check $RUNTIME_DIR/node_modules/.bin/openclaw
            └── not found → npm install openclaw@$OPENCLAW_VERSION into GCS bucket
            └── found     → reuse existing install (fast restart)
-        3. Copy /config/openclaw.json to state dir if not already present
-        4. Symlink /shared-skills/{org,team} into state dir
-        5. exec openclaw gateway run --bind lan --port 18789
+        4. Copy /config/openclaw.json to state dir if not already present
+        5. Symlink /shared-skills/{org,team} into state dir only when the resolved MCP policy allows the `skills` server
+        6. exec openclaw gateway run --bind lan --port 18789
 ```
 
 ## Storage layout (inside the pod)
@@ -41,6 +42,8 @@ Pod starts
 | `OPENCRANE_RUNTIME_CONTRACT_PATH` | Path to the managed-runtime contract JSON (`/config/opencrane-managed-runtime.json`) |
 | `OPENCRANE_ALLOWED_SKILLS` | Optional comma-separated allowlist of shared skills derived from `Tenant.spec.skills` |
 | `OPENCRANE_POLICY_REF` | Optional policy reference carried from `Tenant.spec.policyRef` for runtime awareness |
+| `OPENCRANE_ALLOWED_MCP_SERVERS` | Derived at startup from the managed-runtime contract and used to gate runtime features such as shared skills |
+| `OPENCRANE_DENIED_MCP_SERVERS` | Derived at startup from the managed-runtime contract and used to block runtime features such as shared skills |
 
 ## Self-updating OpenClaw
 
@@ -63,6 +66,16 @@ Tenant pods now run with:
 - read-only root filesystem with explicit writable paths for `/data/openclaw`, `/data/secrets`, and `/tmp`
 
 This is the baseline hardening layer only. It still needs end-to-end runtime validation in both local and GCP installs.
+
+## Managed runtime policy behavior
+
+The tenant entrypoint now reads `opencrane-managed-runtime.json` before startup and applies the resolved MCP policy to shared-skill linking.
+
+Today this means:
+- when the `skills` MCP server is denied, org and team shared skills are not linked into the tenant runtime
+- when the `skills` MCP server is allowed or no MCP policy is enforced, existing shared-skill linking behavior is preserved
+
+This is only the first enforcement slice. Broader MCP tool blocking and deny/audit events are still deferred.
 
 ## Files
 

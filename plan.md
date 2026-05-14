@@ -37,6 +37,7 @@ This is an updated roadmap for shipping OpenCrane, the enterprise multi-tenant A
 - Implemented deterministic tenant `policyRef` precedence in the operator: explicit `policyRef` wins, then single selector match, then configured default, with conflict and missing-policy error states written to Tenant status.
 - Added detect-only drift reporting for Tenant and AccessPolicy CRDs versus PostgreSQL projection rows in the control-plane as the first P0 dual-write visibility slice.
 - Published resolved AccessPolicy MCP allow/deny data into the tenant managed-runtime contract so runtime enforcement can consume concrete policy inputs instead of only a policy name.
+- Enforced the managed-runtime MCP policy in the tenant entrypoint for shared skills, so a denied `skills` server now prevents org/team skill linking at startup.
 
 **Strategic approach**: OpenCrane differentiates by combining:
 - **Architectural advantages**: GCS Fuse CSI + Workload Identity (cloud-native isolation), dual-write pattern (CRDs + PostgreSQL), policy-first governance (AccessPolicy CRDs → CiliumNetworkPolicy).
@@ -201,7 +202,7 @@ Why deferred:
 
 #### 3) Enforce tool allowlist policy at runtime
 
-Status: Runtime policy plumbing exists, enforcement is incomplete.
+Status: Partially implemented.
 
 Scope:
 - Enforce `mcpServers.allow/deny` from AccessPolicy in runtime behavior.
@@ -209,7 +210,7 @@ Scope:
 - Add conformance tests for allow/deny behavior.
 
 Why deferred:
-- Resolved MCP policy data is now published into the tenant managed-runtime contract, but the runtime still does not actively block or audit denied tool use.
+- The tenant entrypoint now blocks shared-skill linking when the resolved MCP policy denies the `skills` server, but broader tool blocking and deny/audit behavior are still not implemented.
 
 #### 4) Tenant `skills` filtering behavior
 
@@ -259,51 +260,6 @@ Scope:
 Why deferred:
 - Detect-only drift reporting now exists in the control-plane, but repair ownership, metrics/alerts, and long-term single-writer projection design remain open.
 
-Captured analysis context (retain for implementation handoff):
-
-Current implementation snapshot:
-- Tenant and AccessPolicy mutations currently perform sequential writes in one request path: first to Kubernetes CRDs, then to PostgreSQL projection rows.
-- Read APIs for tenants and policies currently read from PostgreSQL projection tables for low-latency dashboard/API queries.
-- Operator controllers reconcile runtime resources from CRDs and update CR status, but do not backfill or repair PostgreSQL projection drift.
-- Detect-only drift report endpoints now exist for Tenant and AccessPolicy parity checks, but there is still no continuously running projection reconciler or repair loop.
-
-Consistency model today:
-- This is best-effort eventual consistency, not strong consistency.
-- There is no cross-system atomic transaction boundary between Kubernetes API writes and PostgreSQL writes.
-- A partial-failure window exists whenever one side commits and the second side fails.
-
-Known divergence scenarios to design for:
-- CRD write succeeds, PostgreSQL write fails: operator converges runtime state, but dashboard/API may show stale or missing object until repaired.
-- PostgreSQL write succeeds, CRD write fails (or CRD patch is dropped): dashboard/API can show intent that operator never observed.
-- Direct/manual PostgreSQL writes bypass control-plane semantics and can permanently drift from CRD source state.
-- Retry storms or duplicate request retries can create conflicting updates without idempotency safeguards.
-
-Recommended target ownership model:
-- Keep CRDs as the source of truth for desired and observed control state.
-- Treat PostgreSQL as a projection/query store derived from CRD events.
-- Prefer single-writer semantics for projections (projector/reconciler component) over multi-writer request-path dual-write.
-
-Phased hardening plan:
-- P0 (safety visibility): drift detector implemented; mismatch metrics and structured alerts still open.
-- P1 (controlled repair): add periodic reconcile job that can repair projection state from CRDs using dry-run and apply modes.
-- P2 (write-path resilience): add idempotency keys, retry/backoff policy, and bounded reconciliation lag objectives.
-- P3 (ownership simplification): migrate to watcher-fed projection writes and retire request-path PostgreSQL mutation for dual-written entities.
-
-Operational guardrails to include:
-- Database permissions: restrict direct DML access for app-facing roles; route writes through controlled service/projector identities.
-- Auditability: emit repair audit entries with before/after digests and correlation IDs.
-- Rollback safety: provide toggle to disable auto-repair and operate in detect-only mode during incidents.
-- SLOs: track projection freshness lag and mismatch counts as release gates.
-
-Non-goals for this hardening item:
-- Replacing Kubernetes operator reconciliation logic for runtime resources.
-- Changing business semantics of Tenant or AccessPolicy APIs beyond consistency guarantees.
-
-Open decisions to resolve before implementation:
-- Whether repair is one-way (CRD -> PostgreSQL only) or supports bi-directional conflict handling.
-- Whether auto-repair is enabled by default in production or staged per environment.
-- Which component owns projection writes long-term: control-plane request handlers, operator sidecar, or dedicated projector service.
-
 #### Entry criteria to pick these up
 
 Start implementation when Phase II core deliverables are in place and stable:
@@ -316,7 +272,7 @@ Start implementation when Phase II core deliverables are in place and stable:
 These deferred improvements are complete when:
 - Hardening defaults are enforced and validated in e2e.
 - Tool policy allow/deny is enforceable and audited.
-- `policyRef` and `skills` behavior is deterministic and documented.
+- `skills` behavior is deterministic and documented.
 - Idle/suspend behavior is safe for scheduled/background workloads.
 - Runtime managed-mode contract is documented and used by tenant runtime.
 - Dual-write drift is detectable, measurable, and repairable with documented operator runbooks.
