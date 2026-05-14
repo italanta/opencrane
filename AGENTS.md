@@ -21,6 +21,28 @@ This file is the canonical agent instruction file for the repository.
 - When a roadmap item changes state due to code, validation, or a discovered blocker, update `plan.md` in the same work cycle.
 - Do not leave completed or partially implemented backlog items stale in `plan.md` after landing the corresponding code.
 
+## Commit Messages
+
+- Always end each work cycle with a suggested commit message.
+- Commit messages must start with a [gitmoji](https://gitmoji.dev/) emoji that matches the primary intent of the change.
+- Use imperative mood for the subject line (e.g. `add`, `fix`, `update`, not `added` or `adding`).
+- Keep the subject line under 72 characters.
+- If the change touches multiple concerns, list them as bullet points in the body.
+
+Common gitmoji prefixes:
+| Intent | Emoji |
+|--------|-------|
+| New feature | ✨ |
+| Bug fix | 🐛 |
+| Refactor (no behavior change) | ♻️ |
+| Documentation | 📝 |
+| Tests | ✅ |
+| Configuration / tooling | 🔧 |
+| Performance | ⚡️ |
+| Security | 🔒️ |
+| Work in progress | 🚧 |
+| Remove code or files | 🔥 |
+
 ## TypeScript Coding Guidelines
 
 ### Bracket Placement
