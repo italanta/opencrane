@@ -18,7 +18,7 @@ Examples:
   ./platform/install.sh gcp --project-id my-gcp-project --domain opencrane.example.com --yes
 
 Notes:
-  - local mode uses k3d + Helm smoke install and keeps cluster by default.
+  - local mode uses k3d + Helm full-stack install and keeps cluster by default.
   - gcp mode delegates to ./platform/deploy.sh (interactive unless --yes with all required flags).
 EOF
 }
@@ -139,8 +139,8 @@ function _run_local()
   _require_cmd helm
   _require_cmd k3d
 
-  echo "[install] Running local Phase 1 install on k3d..."
-  KEEP_CLUSTER="$keep_cluster" CLUSTER_NAME="$cluster_name" NAMESPACE="$namespace" "$ROOT_DIR/platform/tests/k3d-e2e.sh"
+  echo "[install] Running local full-stack install on k3d..."
+  KEEP_CLUSTER="$keep_cluster" CLUSTER_NAME="$cluster_name" NAMESPACE="$namespace" "$ROOT_DIR/platform/tests/k3d-local.sh"
   echo "[install] Local install complete."
   echo "[install] Cluster: $cluster_name, Namespace: $namespace"
 }

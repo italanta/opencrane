@@ -1,0 +1,48 @@
+operator:
+  image:
+    repository: opencrane/operator
+    tag: local
+    pullPolicy: IfNotPresent
+  watchNamespace: opencrane-system
+
+controlPlane:
+  image:
+    repository: opencrane/control-plane
+    tag: local
+    pullPolicy: IfNotPresent
+  replicas: 1
+
+tenant:
+  defaultImage:
+    repository: opencrane/tenant
+    tag: local
+    pullPolicy: IfNotPresent
+  storage:
+    provider: ""
+    bucketPrefix: ""
+    csiDriver: ""
+    gcpProject: ""
+
+sharedSkills:
+  enabled: true
+  pvc:
+    storageClass: local-path
+    accessMode: ReadWriteOnce
+    size: 1Gi
+
+ingress:
+  enabled: true
+  className: nginx
+  domain: opencrane.local
+
+crossplane:
+  enabled: false
+
+externalSecrets:
+  enabled: false
+
+litellm:
+  enabled: true
+  generateMasterKey: false
+  image:
+    pullPolicy: IfNotPresent

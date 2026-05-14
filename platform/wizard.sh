@@ -97,7 +97,7 @@ echo -e "${DIM}  Press Enter to accept defaults shown in [brackets].${NC}"
 _step "Step 1 of 4 — Install target"
 
 echo -e "  Where do you want to install OpenCrane?\n"
-echo -e "  ${BOLD}1)${NC} Local   — k3d cluster on this machine (development / smoke test)"
+echo -e "  ${BOLD}1)${NC} Local   — k3d cluster on this machine (development / full stack)"
 echo -e "  ${BOLD}2)${NC} GCP     — Google Cloud (production / staging)"
 echo ""
 printf "  ${BOLD}Choose [1/2]${NC}: "
@@ -194,7 +194,7 @@ if [[ "$mode" == "local" ]]; then
   _summary_row "Cluster name"   "$CLUSTER_NAME"
   _summary_row "Namespace"      "$NAMESPACE"
   _summary_row "Keep cluster"   "$keep_label"
-  _summary_row "Script"         "platform/tests/k3d-e2e.sh"
+  _summary_row "Script"         "platform/tests/k3d-local.sh"
 else
   _summary_row "Mode"           "GCP"
   _summary_row "Project ID"     "$PROJECT_ID"
@@ -224,7 +224,7 @@ if [[ "$mode" == "local" ]]; then
   KEEP_CLUSTER="$KEEP_CLUSTER" \
   CLUSTER_NAME="$CLUSTER_NAME" \
   NAMESPACE="$NAMESPACE" \
-    "$SCRIPT_DIR/tests/k3d-e2e.sh"
+    "$SCRIPT_DIR/tests/k3d-local.sh"
 else
   printf "%s\n%s\n%s\n%s\nY\n" \
     "$PROJECT_ID" "$REGION" "$DOMAIN" "$ENVIRONMENT" \

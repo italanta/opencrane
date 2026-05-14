@@ -2,8 +2,7 @@
 # =============================================================================
 # OpenCrane Platform — GCP Bootstrap Script
 #
-# Interactive script that sets up gcloud, builds + pushes Docker images,
-# runs Prisma migrations, and deploys the full platform via Terraform.
+# Interactive script that deploys a local k3d stack or a full GCP environment.
 #
 # Usage:
 #   ./deploy.sh
@@ -88,10 +87,10 @@ case "$DEPLOY_MODE" in
     fi
 
     echo ""
-    log "Starting local install"
+    log "Starting local full-stack install"
     log "Cluster: $CLUSTER_NAME"
     log "Namespace: $NAMESPACE"
-    KEEP_CLUSTER="$KEEP_CLUSTER" CLUSTER_NAME="$CLUSTER_NAME" NAMESPACE="$NAMESPACE" "$SCRIPT_DIR/tests/k3d-e2e.sh"
+    KEEP_CLUSTER="$KEEP_CLUSTER" CLUSTER_NAME="$CLUSTER_NAME" NAMESPACE="$NAMESPACE" "$SCRIPT_DIR/tests/k3d-local.sh"
     exit 0
     ;;
   gcp|cloud)
