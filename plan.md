@@ -330,37 +330,35 @@ These deferred improvements are complete when:
 
 ---
 
-## Phase 1: Core Platform (Must Ship First)
+## Phase 1: Core Platform (Shipped Baseline)
 
-### Architecture Checkpoint: Phase 1 Decisions
+### Architecture Retrospective: Phase 1 Decisions
 
-Before finalizing Phase 1 templates and tests, answer these questions:
+These decisions are now effectively locked in by the current implementation and should be treated as the Phase 1 baseline unless a later phase explicitly revisits them.
 
 1. **Helm Chart Structure**
-   - Should the Helm chart include optional subchart dependencies (LiteLLM, Prometheus) from the start, or keep Phase 1 minimal and add subcharts in Phase 2/4?
-   - Should we support both "all-in-one" (with bundled PostgreSQL for dev) and "production" (external Cloud SQL) profiles, or assume external DB only?
+   - The main OpenCrane chart owns LiteLLM deployment directly; there is no longer a separate LiteLLM subchart.
+   - PostgreSQL is consumed via `DATABASE_URL` Secret wiring in the chart, while local and GCP installers can provision the backing database outside the chart.
 
 2. **Operator Deployment**
-   - Should the operator pod run as non-root from day 1, with read-only root FS and dropped Linux capabilities?
-   - Should the operator use leader election (for HA multi-replica setup) or single-replica in Phase 1?
-   - Should we include RBAC binding for Workload Identity annotation of the operator pod's ServiceAccount?
+   - Operator deployment is single-replica in the current baseline.
+   - RBAC and env wiring for storage provider, ingress, LiteLLM, and idle reconciliation are part of the shipped chart baseline.
+   - Runtime hardening beyond the current baseline remains a deferred hardening item, not a Phase 1 blocker.
 
 3. **Tenant Pod Isolation**
-   - Should GCS Fuse CSI be required, or do we provide a PVC fallback for local/non-GCP clusters?
-   - Should the tenant pod run as non-root (uid 1000) by default?
-   - Should NetworkPolicy be enforced at creation time (operator creates default-deny + allow from operator/shared services) or is that a later phase?
+   - GCP path uses GCS/Workload Identity/Crossplane when enabled.
+   - Local path uses PVC fallback and now has both `default` and `strict` profiles for validation.
+   - Baseline network policy is created by chart install; richer policy enforcement remains operator/policy work.
 
 4. **Control Plane Deployment**
-   - Should the control-plane pod(s) expose `/metrics` for Prometheus, or leave that to Phase 4?
-   - Should the control-plane assume Cloud SQL is the sole DB, or provide Helm option for local PostgreSQL?
-   - Should API auth be OIDC (via external provider) or stick with bearer token until Phase 3 UX?
+   - Control-plane remains on the current API/auth baseline, with bearer-token and OIDC evolution deferred to later product phases.
+   - Local and GCP both use PostgreSQL-backed deployment flows; local now provisions an in-cluster database for full-stack bring-up.
 
 5. **Terraform & IaC**
-   - Should Terraform create the GCP service account for Workload Identity, or assume it's pre-created?
-   - Should Terraform deploy Crossplane and the GCP provider, or just create the GKE cluster and assume Crossplane is installed separately?
-   - Should we include Terraform for the artifact registry image push, or handle that in the CI/CD pipeline?
+   - Terraform owns GCP infrastructure provisioning, including GKE, Crossplane bootstrap, Artifact Registry, in-cluster PostgreSQL install, app deploy, and DNS.
+   - Local full-stack install is handled by the k3d bootstrap script, not Terraform.
 
-**Action**: Answer these questions before task assignment. They determine which templates to fill in first.
+**Action**: Treat Phase 1 as closed. Any remaining changes here should be tracked as hardening, parity, or Phase 2+ work rather than reopening Phase 1 design questions.
 
 ---
 
@@ -378,11 +376,11 @@ Before finalizing Phase 1 templates and tests, answer these questions:
    - Watches AccessPolicy CRD; reconciles CiliumNetworkPolicy per tenant.
    - Status writer patches Tenant.status with phase, ingress host, last reconciled.
 
-2. **Helm Chart** (charts/opencrane/)
+2. **Helm Chart** (platform/helm/)
    - Values for all components: operator, control-plane, shared skills PVC, CRDs.
    - Namespace creation, RBAC (operator ClusterRole, control-plane Role).
    - CRD templates (Tenant, AccessPolicy, BucketClaim).
-   - Conditional subchart for internal PostgreSQL (for dev) or external (for prod).
+   - Database integration via `DATABASE_URL` Secret wiring, with installer-specific database provisioning outside the chart.
 
 3. **Terraform Modules** (terraform/modules/)
    - `gke/`: GKE cluster, node pool, workload identity setup.
@@ -518,14 +516,14 @@ opencrane-platform/
 
 ## Phase 2: Cost Control + Retrieval Foundation
 
-### Architecture Checkpoint: LiteLLM + Retrieval Foundation
+### Open Decisions For Remaining Phase 2 Work
 
-Before implementing Phase 2, clarify:
+Phase 2 is underway. The items below are the remaining decisions still worth resolving before broadening the implementation surface further.
 
 1. **LiteLLM Deployment Model**
    - Should LiteLLM be deployed in the same namespace as the operator/control-plane, or in a separate `litellm` namespace?
-   - Should we use the official LiteLLM Helm chart as a dependency, or create a minimal custom chart?
-   - Should LiteLLM's database be Cloud SQL (shared with control-plane) or a separate instance?
+   - Should LiteLLM continue sharing the platform PostgreSQL, or move to a dedicated database later?
+   - What configuration contract should remain chart-managed versus installer-managed?
 
 2. **Virtual Key Generation**
    - Who initiates virtual key creation? Operator during Tenant reconcile, or pre-generated in a pool?
@@ -561,17 +559,17 @@ Before implementing Phase 2, clarify:
    - What sync mode is required for MVP (batch pull vs near-real-time)?
    - What ingestion lag/error SLOs should gate progression to Phase 3?
 
-**Action**: Answer these, especially key generation model, retrieval authorization behavior, and first-source connector scope, before implementation.
+**Action**: Prioritize key generation lifecycle, retrieval authorization behavior, org index shape, and first-source connector scope before expanding the Phase 2 surface.
 
 ---
 
 ### Deliverables
 
-1. **LiteLLM Helm Subchart** (platform/helm/charts/litellm/)
-   - Uses official LiteLLM Helm chart as dependency or custom minimal chart.
-   - Deployment with `LITELLM_MASTER_KEY`, `LITELLM_DATABASE_URL` (Cloud SQL).
-   - Service on `litellm:4000` (in-cluster).
-   - ConfigMap for model routing rules.
+1. **LiteLLM Platform Integration**
+   - Maintain the root-chart LiteLLM deployment path.
+   - Keep `LITELLM_MASTER_KEY` and database wiring explicit through secrets/values.
+   - Maintain `litellm:4000` as the in-cluster endpoint unless Phase 2 decisions change the topology.
+   - Evolve routing/config shape without reintroducing duplicate chart ownership.
 
 2. **Operator Enhancement: Virtual Key Generation**
    - On Tenant reconcile: call `POST http://litellm:4000/key/generate` with tenant name and monthly budget.
@@ -614,22 +612,19 @@ Before implementing Phase 2, clarify:
 ```
 platform/
 ├── helm/
-│   ├── charts/litellm/
-│   │   ├── Chart.yaml
-│   │   ├── values.yaml
-│   │   ├── templates/
-│   │   │   ├── deployment.yaml
-│   │   │   ├── service.yaml
-│   │   │   └── configmap.yaml
-│   │   └── README.md
-│   └── Chart.yaml  # add litellm as dependency
+│   ├── templates/
+│   │   ├── litellm-deployment.yaml
+│   │   ├── litellm-service.yaml
+│   │   ├── litellm-secret.yaml
+│   │   └── validate-config.yaml
+│   └── Chart.yaml
 ```
 
 ### Key Tasks (Phase 2)
 
 | Task | Owner | Effort | Dependency |
 |------|-------|--------|-----------|
-| LiteLLM Helm subchart | DevOps | 8h | Phase 1 done |
+| LiteLLM chart integration hardening | DevOps | 8h | Phase 1 done |
 | Operator: LiteLLM key generation on reconcile | Backend | 10h | LiteLLM chart deployed |
 | Control Plane: /api/spend endpoint | Backend | 8h | LiteLLM chart + schema |
 | Tenant config injection of proxy endpoint | Backend | 5h | Operator enhancement |
@@ -642,7 +637,7 @@ platform/
 
 ### Success Criteria
 
-- [ ] Helm chart deploys LiteLLM with Cloud SQL.
+- [ ] Helm chart deploys LiteLLM through the root chart with shared PostgreSQL integration.
 - [ ] On Tenant CR creation, operator creates a LiteLLM virtual key with monthly budget.
 - [ ] Tenant pod receives `LITELLM_API_KEY` and proxy endpoint.
 - [ ] Control Plane exposes spend endpoint; shows per-tenant usage + budget.
@@ -934,13 +929,12 @@ This avoids rework and ensures alignment across teams.
 
 ## Phase-by-Phase Decisions Needed
 
-### Phase 1 Decisions (Complete by Week 1)
-- [ ] Helm chart structure: all-in-one (bundled Postgres) or production-only (external Cloud SQL)?
-- [ ] Operator HA: single-replica or leader election multi-replica?
-- [ ] Operator security: non-root, read-only FS, dropped caps from day 1?
-- [ ] Tenant isolation: GCS Fuse required or PVC fallback?
-- [ ] NetworkPolicy: enforced at creation or later phase?
-- [ ] Terraform scope: manage service accounts, Crossplane, artifact registry?
+### Phase 1 Decisions (Closed)
+- [x] Helm chart owns LiteLLM directly; no separate subchart remains.
+- [x] Operator baseline is single-replica.
+- [x] Tenant isolation supports both GCS/Crossplane and PVC fallback.
+- [x] Local full-stack install supports PostgreSQL-backed bring-up.
+- [ ] Deferred hardening decisions remain open under the hardening backlog, not Phase 1.
 
 ### Phase 2 Decisions (Complete by Week 3)
 - [ ] LiteLLM namespace: same as operator or separate?
@@ -978,12 +972,13 @@ This checklist is the execution bridge from current progress to a repeatable pro
 | Item | Owner | Status | Done Criteria |
 |------|-------|--------|---------------|
 | Local baseline green (`pnpm install`, `pnpm test`, `pnpm build`) | Backend | Complete (validated 2026-04-16) | Commands pass locally after repository fixes. |
-| Local platform e2e (`pnpm test:e2e:k3d`) | Backend + QA | In Progress — Infrastructure fixed, operator bugs discovered | Helm install succeeds; operator reaches tenant reconcile but fails to apply ServiceAccount (404) + status patch (bad JSON format). Fixes: LITELLM_MASTER_KEY optional, local-path-immediate StorageClass, removed --wait. Next: fix operator resource generation and tenant status writer. |
-| Helm chart completion (`platform/helm/templates`) | DevOps | Not started | Operator and control-plane deploy cleanly with required env/volumes/RBAC and no TODO placeholders. |
-| GCP installer smoke (`./platform/install.sh gcp` or wizard) | DevOps | Not started | Fresh GCP project deploys end-to-end; control-plane endpoint reachable; test tenant reconciles successfully. |
-| Docker image publish automation | DevOps | Not started | CI builds and pushes operator/control-plane/tenant images on main with `latest` and git-sha tags. |
-| Prisma migration rollout (`prisma migrate deploy`) | Backend | Not started | Migrations run in CI/CD and against Cloud SQL without manual intervention. |
-| CI e2e gate | QA + DevOps | Not started | CI job runs k3d e2e smoke on PR/main and blocks merge on failure. |
+| Local platform e2e (`platform/tests/k3d-e2e.sh`) | Backend + QA | Complete (validated 2026-04-26) | Helm install succeeds; tenant reconcile smoke test passes in k3d. |
+| Local full-stack bootstrap (`platform/tests/k3d-local.sh`) | Backend + DevOps | Complete (validated 2026-05-14 at script/render level) | Local path provisions PostgreSQL, control-plane, LiteLLM, migrations, and supports `default` + `strict` profiles. |
+| Helm chart completion (`platform/helm/templates`) | DevOps | Complete for Phase 1 baseline | Operator and control-plane deploy cleanly with required env/volumes/RBAC for the current baseline. |
+| GCP installer smoke (`./platform/install.sh gcp` or wizard) | DevOps | Not yet revalidated against latest parity changes | Fresh GCP project deploys end-to-end; control-plane endpoint reachable; test tenant reconciles successfully. |
+| Docker image publish automation | DevOps | Complete | CI builds/tests/e2e and publishes images on `main`. |
+| Prisma migration rollout (`prisma migrate deploy`) | Backend | Complete baseline | Migrations are committed and installer paths include migration execution. |
+| CI e2e gate | QA + DevOps | Complete baseline | CI runs the k3d smoke path and blocks regressions for the validated baseline. |
 | DNS + ingress verification | DevOps | Not started | Domain and TLS resolve correctly; control-plane and tenant subdomains accessible externally. |
 | Runbook + rollback docs | Backend + DevOps | Not started | Documented runbook includes install, verify, upgrade, rollback, and incident response steps. |
 
@@ -1004,45 +999,29 @@ This checklist is the execution bridge from current progress to a repeatable pro
 
 ## Next Immediate Step
 
-### Week 1: Finish Phase 1 Blockers
+### Phase 2 Execution Focus
 
-**Prerequisite:** Answer Phase 1 checkpoint questions above.
+**Priority now:** advance the still-open Phase 2 work while keeping the validated Phase 1 baseline and local/GCP parity checks green.
 
 **Concrete tasks:**
-1. **Audit Helm templates** (platform/helm/templates/):
-   - Is `operator-deployment.yaml` fully configured (image, env vars, mount points, RBAC ref)?
-   - Is `control-plane-deployment.yaml` complete (container, volumes, service discovery)?
-   - Are CRD manifests present (crds/tenant.opencrane.io_tenants.yaml, etc.)?
-   - What's missing and needs to be filled in?
+1. **LiteLLM governance completion**
+   - Finalize key generation lifecycle and rotation behavior.
+   - Complete spend and budget enforcement semantics.
+   - Revalidate GCP installer flow against the current LiteLLM and database wiring.
 
-2. **Docker build + publish pipeline:**
-   - Create GitHub Actions workflow (or similar) to:
-     - Build `operator`, `control-plane`, `tenant` images on every push to main.
-     - Push to ghcr.io/opencrane-platform/[image]:latest and :[git-sha].
-   - Document how to test locally (docker build -f apps/operator/deploy/Dockerfile).
+2. **Retrieval foundation**
+   - Lock the org knowledge schema for RBAC-filtered retrieval.
+   - Define and implement the retrieval plugin SDK contract.
+   - Add conformance tests for AccessPolicy-driven allow/deny behavior.
 
-3. **Verify Prisma migrations:**
-   - Do migration files exist in `apps/control-plane/prisma/migrations/`?
-   - Can they run on Cloud SQL? (Test locally with `prisma migrate deploy`.)
-   - Are they tracked in git?
+3. **Harvesting-agent MVP**
+   - Pick the first source connector.
+   - Implement incremental ingestion into the org index.
+   - Add ingest lag/failure visibility.
 
-4. **Verify tenant entrypoint:**
-   - Does `apps/tenant/deploy/entrypoint.sh` handle:
-     - Detecting OPENCLAW_VERSION from env?
-     - Mounting GCS bucket at `/data/openclaw/`?
-     - Linking org/team skills from shared PVC?
-     - Starting OpenClaw gateway on port 18789?
-   - Any gaps to fill?
+4. **Operational trust follow-through**
+   - Add a runbook and rollback documentation.
+   - Re-run a clean GCP smoke install.
+   - Keep CI build/test/e2e gates green as Phase 2 expands.
 
-5. **k3d integration test:**
-   - Clone the repo locally.
-   - Run `helm install opencrane platform/helm/ -f values-dev.yaml` on k3d.
-   - Create a sample Tenant CR: `kubectl apply -f - <<EOF ... EOF`.
-   - Verify operator reconciles (check `kubectl logs -l app=opencrane-operator`).
-   - Verify tenant pod starts (check `kubectl logs -l tenant=sample-name`).
-   - Verify Ingress is created and accessible.
-   - Document findings + blockers.
-
-**Outcome:** Phase 1 is shippable (all templates complete, images published, tests passing).
-
-**Then:** Proceed to Phase 2 once Phase 1 questions are answered and blockers resolved.
+**Outcome:** Phase 2 moves from baseline plumbing to a coherent, validated cost-control plus retrieval foundation without reopening closed Phase 1 decisions.
