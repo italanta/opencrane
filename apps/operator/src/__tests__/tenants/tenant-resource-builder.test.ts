@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { defaultConfig, _makeTenant } from "../fixtures.js";
+import { defaultConfig, _makeAccessPolicy, _makeTenant } from "../fixtures.js";
 import { _BuildConfigMap, _BuildDeployment, _BuildIngress, _BuildServiceAccount, _BuildStatePvc } from "../../tenants/deploy/index.js";
 
 describe("TenantResourceBuilder", () =>
@@ -32,6 +32,22 @@ describe("TenantResourceBuilder", () =>
     expect(payload.agents.defaults.model).toBe("gpt-4o");
     expect(runtimeContract.mode).toBe("managed");
     expect(runtimeContract.tenant.name).toBe("cfg");
+  });
+
+  it("publishes effective MCP policy details in the managed runtime contract", () =>
+  {
+    const tenant = _makeTenant("jente", {
+      team: "engineering",
+      policyRef: "default-egress",
+    });
+
+    const policy = _makeAccessPolicy();
+    const configMap = _BuildConfigMap(defaultConfig, tenant, "default", policy);
+    const runtimeContract = JSON.parse(configMap.data?.["opencrane-managed-runtime.json"] ?? "{}");
+
+    expect(runtimeContract.policy.effectiveRef).toBe("default-egress");
+    expect(runtimeContract.policy.mcpServers).toEqual({ allow: ["skills"] });
+    expect(runtimeContract.capabilities.mcpPolicyEnforced).toBe(true);
   });
 
   it("builds Deployment with pvc fallback when no cloud storage", () =>

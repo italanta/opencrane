@@ -34,6 +34,8 @@ This is an updated roadmap for shipping OpenCrane, the enterprise multi-tenant A
 - Added a full local k3d bootstrap path with PostgreSQL, control-plane, LiteLLM, and Prisma migrations.
 - Added a `strict` local profile to exercise prod-style Helm validation and explicit LiteLLM secret wiring locally.
 - Captured a parity checklist clarifying that local validates core stack wiring, while GCP remains the only path that exercises cloud identity, GCS/Crossplane, External Secrets, GCE ingress, and DNS.
+- Implemented deterministic tenant `policyRef` precedence in the operator: explicit `policyRef` wins, then single selector match, then configured default, with conflict and missing-policy error states written to Tenant status.
+- Added detect-only drift reporting for Tenant and AccessPolicy CRDs versus PostgreSQL projection rows in the control-plane as the first P0 dual-write visibility slice.
 
 **Strategic approach**: OpenCrane differentiates by combining:
 - **Architectural advantages**: GCS Fuse CSI + Workload Identity (cloud-native isolation), dual-write pattern (CRDs + PostgreSQL), policy-first governance (AccessPolicy CRDs → CiliumNetworkPolicy).
@@ -209,14 +211,15 @@ Why deferred:
 
 #### 4) Tenant `policyRef` binding behavior
 
-Status: Deferred architecture decision.
+Status: Partially implemented.
 
 Scope:
 - Define exact behavior of `Tenant.spec.policyRef` relative to selector-based AccessPolicy reconciliation.
 - Implement deterministic precedence and conflict rules.
+- Document the effective-policy behavior surfaced in Tenant status and make downstream runtime enforcement consume the resolved policy.
 
 Why deferred:
-- Needs product/architecture decision before code.
+- Deterministic precedence is now implemented in the operator, but broader runtime enforcement and user-facing documentation still need to catch up.
 
 #### 5) Tenant `skills` filtering behavior
 
@@ -254,7 +257,7 @@ Why deferred:
 
 #### 8) Dual-write consistency hardening (CRDs -> PostgreSQL projection safety)
 
-Status: Not implemented yet.
+Status: Partially implemented.
 
 Scope:
 - Add drift detection for Tenant and AccessPolicy between CRDs and PostgreSQL projection rows.
@@ -264,7 +267,7 @@ Scope:
 - Restrict direct PostgreSQL write access so control-plane projection writes are the only mutating path.
 
 Why deferred:
-- Requires agreement on projection ownership model (request-path dual-write vs watcher-fed projection) and production runbook decisions for auto-repair behavior.
+- Detect-only drift reporting now exists in the control-plane, but repair ownership, metrics/alerts, and long-term single-writer projection design remain open.
 
 Captured analysis context (retain for implementation handoff):
 
@@ -272,7 +275,7 @@ Current implementation snapshot:
 - Tenant and AccessPolicy mutations currently perform sequential writes in one request path: first to Kubernetes CRDs, then to PostgreSQL projection rows.
 - Read APIs for tenants and policies currently read from PostgreSQL projection tables for low-latency dashboard/API queries.
 - Operator controllers reconcile runtime resources from CRDs and update CR status, but do not backfill or repair PostgreSQL projection drift.
-- There is no continuously running projection reconciler yet for Tenant and AccessPolicy parity checks.
+- Detect-only drift report endpoints now exist for Tenant and AccessPolicy parity checks, but there is still no continuously running projection reconciler or repair loop.
 
 Consistency model today:
 - This is best-effort eventual consistency, not strong consistency.
@@ -291,7 +294,7 @@ Recommended target ownership model:
 - Prefer single-writer semantics for projections (projector/reconciler component) over multi-writer request-path dual-write.
 
 Phased hardening plan:
-- P0 (safety visibility): add drift detector, mismatch metrics, and structured alerts without auto-repair.
+- P0 (safety visibility): drift detector implemented; mismatch metrics and structured alerts still open.
 - P1 (controlled repair): add periodic reconcile job that can repair projection state from CRDs using dry-run and apply modes.
 - P2 (write-path resilience): add idempotency keys, retry/backoff policy, and bounded reconciliation lag objectives.
 - P3 (ownership simplification): migrate to watcher-fed projection writes and retire request-path PostgreSQL mutation for dual-written entities.

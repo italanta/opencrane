@@ -47,7 +47,7 @@ export async function _ResolveTenantPolicy(customApi: k8s.CustomObjectsApi, conf
     }
 
     return {
-      effectivePolicyRef: tenant.spec.policyRef,
+      effectivePolicy: explicitPolicy,
       source: "policyRef",
       state: TenantPolicyResolutionState.Resolved,
       message: `policyRef '${tenant.spec.policyRef}' resolved`,
@@ -84,7 +84,7 @@ export async function _ResolveTenantPolicy(customApi: k8s.CustomObjectsApi, conf
   {
     const matchName = selectorMatches[0].metadata?.name;
     return {
-      effectivePolicyRef: matchName,
+      effectivePolicy: selectorMatches[0],
       source: "selector",
       state: TenantPolicyResolutionState.Resolved,
       message: `selector policy '${matchName}' resolved`,
@@ -105,7 +105,7 @@ export async function _ResolveTenantPolicy(customApi: k8s.CustomObjectsApi, conf
     }
 
     return {
-      effectivePolicyRef: config.defaultTenantPolicyRef,
+      effectivePolicy: defaultPolicy,
       source: "default",
       state: TenantPolicyResolutionState.Resolved,
       message: `default policy '${config.defaultTenantPolicyRef}' resolved`,

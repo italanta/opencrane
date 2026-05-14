@@ -1,6 +1,7 @@
 import type * as k8s from "@kubernetes/client-node";
 
 import type { OperatorConfig } from "../../config.js";
+import type { AccessPolicy } from "../../policies/types.js";
 import type { Tenant } from "../models/tenant.interface.js";
 import { _BuildTenantLabels } from "./tenant-labels.js";
 
@@ -15,7 +16,7 @@ import { _BuildTenantLabels } from "./tenant-labels.js";
  *   description of the platform context it is running under so later runtime
  *   behavior can key off a stable contract instead of inferred env vars.
  */
-export function _BuildConfigMap(config: OperatorConfig, tenant: Tenant, namespace: string): k8s.V1ConfigMap
+export function _BuildConfigMap(config: OperatorConfig, tenant: Tenant, namespace: string, effectivePolicy?: AccessPolicy): k8s.V1ConfigMap
 {
   const name = tenant.metadata!.name!;
 
@@ -49,6 +50,10 @@ export function _BuildConfigMap(config: OperatorConfig, tenant: Tenant, namespac
       policyRef: tenant.spec.policyRef ?? null,
       requestedSkills: tenant.spec.skills ?? [],
     },
+    policy: {
+      effectiveRef: effectivePolicy?.metadata?.name ?? tenant.spec.policyRef ?? null,
+      mcpServers: effectivePolicy?.spec.mcpServers ?? null,
+    },
     capabilities: {
       liteLlmProxy: config.liteLlmEnabled,
       sharedSkills: true,
@@ -56,7 +61,7 @@ export function _BuildConfigMap(config: OperatorConfig, tenant: Tenant, namespac
       persistentState: true,
       ephemeralSecrets: true,
       autoSuspend: config.idleTimeoutMinutes > 0,
-      mcpPolicyEnforced: false,
+      mcpPolicyEnforced: effectivePolicy?.spec.mcpServers !== undefined,
     },
   };
 

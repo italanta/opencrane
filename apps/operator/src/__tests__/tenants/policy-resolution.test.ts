@@ -46,7 +46,7 @@ describe("_ResolveTenantPolicy", function ()
 
     const result = await _ResolveTenantPolicy(_makeCustomApi(policies), defaultConfig, tenant, "default");
 
-    expect(result.effectivePolicyRef).toBe("explicit-policy");
+    expect(result.effectivePolicy?.metadata?.name).toBe("explicit-policy");
     expect(result.source).toBe("policyRef");
     expect(result.state).toBe(TenantPolicyResolutionState.Resolved);
   });
@@ -70,7 +70,7 @@ describe("_ResolveTenantPolicy", function ()
 
     const result = await _ResolveTenantPolicy(_makeCustomApi(policies), defaultConfig, tenant, "default");
 
-    expect(result.effectivePolicyRef).toBe("selector-policy");
+    expect(result.effectivePolicy?.metadata?.name).toBe("selector-policy");
     expect(result.source).toBe("selector");
     expect(result.state).toBe(TenantPolicyResolutionState.Resolved);
   });
@@ -104,7 +104,7 @@ describe("_ResolveTenantPolicy", function ()
       "default",
     );
 
-    expect(result.effectivePolicyRef).toBe("default-policy");
+    expect(result.effectivePolicy?.metadata?.name).toBe("default-policy");
     expect(result.source).toBe("default");
     expect(result.state).toBe(TenantPolicyResolutionState.Resolved);
   });

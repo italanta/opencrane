@@ -1,10 +1,11 @@
+import type { AccessPolicy } from "../../policies/types.js";
 import { TenantPolicyResolutionState } from "../models/tenant-status.interface.js";
 
 /** Result payload for deterministic tenant policy resolution. */
 export interface TenantPolicyResolutionResult
 {
-  /** Effective policy name applied to the tenant, when one is found. */
-  effectivePolicyRef?: string;
+  /** Effective policy resource resolved for this tenant, when one is found. */
+  effectivePolicy?: AccessPolicy;
 
   /** Resolution source used to pick the effective policy. */
   source: "policyRef" | "selector" | "default" | "none";

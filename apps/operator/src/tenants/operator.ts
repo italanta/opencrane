@@ -172,6 +172,7 @@ export class TenantOperator
       // 0. Effective policy — resolve policyRef deterministically so runtime behavior
       //    is predictable even when selectors or default policies are configured.
       const policyResolution = await _ResolveTenantPolicy(this.customApi, this.config, tenant, namespace);
+      const effectivePolicyRef = policyResolution.effectivePolicy?.metadata?.name;
       if (policyResolution.state === TenantPolicyResolutionState.PolicyNotFound
         || policyResolution.state === TenantPolicyResolutionState.PolicyConflict
         || policyResolution.state === TenantPolicyResolutionState.DefaultPolicyNotFound)
@@ -179,7 +180,7 @@ export class TenantOperator
         await this.statusWriter.patchStatus(tenant, namespace, {
           phase: TenantStatusPhase.Error,
           message: policyResolution.message,
-          effectivePolicyRef: policyResolution.effectivePolicyRef,
+          effectivePolicyRef,
           policyResolutionSource: policyResolution.source,
           policyResolutionState: policyResolution.state,
           lastReconciled: new Date().toISOString(),
@@ -191,7 +192,7 @@ export class TenantOperator
         ...tenant,
         spec: {
           ...tenant.spec,
-          policyRef: policyResolution.effectivePolicyRef,
+          policyRef: effectivePolicyRef,
         },
       };
 
@@ -220,7 +221,7 @@ export class TenantOperator
 
       // 5. ConfigMap — serialises the base OpenClaw JSON config merged with any
       //    spec.configOverrides the tenant author provided.
-      await _K8sApplyResource(this.coreApi, _BuildConfigMap(this.config, effectiveTenant, namespace), this.log);
+      await _K8sApplyResource(this.coreApi, _BuildConfigMap(this.config, effectiveTenant, namespace, policyResolution.effectivePolicy), this.log);
 
       // 6. Tenant state PVC — used only when cloud storage is disabled.
       if (!this.config.storageProvider)
@@ -245,7 +246,7 @@ export class TenantOperator
         phase: TenantStatusPhase.Running,
         podName: `openclaw-${name}`,
         ingressHost: _BuildIngressHost(name, this.config.ingressDomain),
-        effectivePolicyRef: policyResolution.effectivePolicyRef,
+        effectivePolicyRef,
         policyResolutionSource: policyResolution.source,
         policyResolutionState: policyResolution.state,
         lastReconciled: new Date().toISOString(),
