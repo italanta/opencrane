@@ -39,6 +39,7 @@ This is an updated roadmap for shipping OpenCrane, the enterprise multi-tenant A
 - Published resolved AccessPolicy MCP allow/deny data into the tenant managed-runtime contract so runtime enforcement can consume concrete policy inputs instead of only a policy name.
 - Enforced the managed-runtime MCP policy in the tenant entrypoint for shared skills, so a denied `skills` server now prevents org/team skill linking at startup.
 - Implemented projection repair for Tenant and AccessPolicy rows: `POST /tenants/repair` and `POST /policies/repair` read CRDs as source of truth and upsert drifted PostgreSQL rows; dry-run by default, apply on `?dryRun=false`.
+- Added `GET /api/metrics/projection-drift` so dashboards can poll detect-only Tenant and AccessPolicy mismatch counts from the existing drift detector.
 
 **Strategic approach**: OpenCrane differentiates by combining:
 - **Architectural advantages**: GCS Fuse CSI + Workload Identity (cloud-native isolation), dual-write pattern (CRDs + PostgreSQL), policy-first governance (AccessPolicy CRDs → CiliumNetworkPolicy).
@@ -188,7 +189,7 @@ These items are code-complete. The only blocker is a working k3d or GCP cluster 
 
 **Managed runtime awareness contract** — baseline env/config contract and policy metadata are injected. The remaining capability endpoint/payload shape depends on Phase 2 retrieval API and scheduling decisions (see Phase 2 open decisions 7 and 8).
 
-**Dual-write consistency repair and metrics** — detect-only drift reporting exists. Repair mode, mismatch metrics, and alerting are blocked on the single-writer ownership decision (moved to Phase 2 deliverables). Write-path simplification (retire request-path dual-write in favour of a watcher-fed projector) is a larger architectural change tracked under Phase 3.
+**Dual-write alerting and single-writer ownership** — detect-only drift reporting, on-demand repair, and mismatch metrics now exist. Remaining work is alert thresholding and deciding the long-term single-writer owner (control-plane request handlers, operator sidecar, or dedicated projector service). Write-path simplification (retire request-path dual-write in favour of a watcher-fed projector) is a larger architectural change tracked under Phase 3.
 
 ---
 
@@ -482,7 +483,8 @@ Phase 2 is underway. The items below are the remaining decisions still worth res
 
 10. **Dual-write projection repair and metrics**
     - ✅ Repair routes implemented: `POST /tenants/repair` and `POST /policies/repair` with dry-run default.
-    - Emit mismatch count and reconcile lag as structured metrics (still open).
+   - ✅ Mismatch count metrics implemented via `GET /api/metrics/projection-drift` for Tenant and AccessPolicy projections.
+   - Emit reconcile lag as a structured metric (still open).
     - Add alerting when drift exceeds a configurable threshold (still open).
     - Decide single-writer ownership: control-plane request handlers, operator sidecar, or dedicated projector service (still open).
 
@@ -529,7 +531,7 @@ platform/
 - [ ] AccessPolicy allow/deny rules are enforced for retrieval access path with tests.
 - [ ] MCP server allow/deny is enforced at gateway level, not just at startup skill linking.
 - [ ] Tenant skill distribution model is decided and implemented beyond env-var filtering.
-- [ ] Projection drift is measurable via metrics and repairable via a periodic reconcile job.
+- [ ] Projection drift is measurable via metrics and repairable via a periodic reconcile job; periodic automation remains open.
 - [x] Projection repair is available on demand via `POST /tenants/repair` and `POST /policies/repair`.
 
 ---

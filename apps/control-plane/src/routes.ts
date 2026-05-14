@@ -33,7 +33,7 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
   // API routes
   // 1. Infra Management
      // Server Management
-  app.use("/api/metrics",   metricsRouter(prisma));
+   app.use("/api/metrics",   metricsRouter(customApi, prisma));
     // TODO - Investigate
   app.use("/api/audit",     auditRouter(prisma));
 
