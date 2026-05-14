@@ -15,6 +15,12 @@ This file is the canonical agent instruction file for the repository.
 - Build single package: `pnpm --filter @opencrane/operator build`
 - Test single package: `pnpm --filter @opencrane/control-plane test`
 
+## Planning Discipline
+
+- Keep `plan.md` updated as implementation progresses.
+- When a roadmap item changes state due to code, validation, or a discovered blocker, update `plan.md` in the same work cycle.
+- Do not leave completed or partially implemented backlog items stale in `plan.md` after landing the corresponding code.
+
 ## TypeScript Coding Guidelines
 
 ### Bracket Placement

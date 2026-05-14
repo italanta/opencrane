@@ -36,6 +36,7 @@ This is an updated roadmap for shipping OpenCrane, the enterprise multi-tenant A
 - Captured a parity checklist clarifying that local validates core stack wiring, while GCP remains the only path that exercises cloud identity, GCS/Crossplane, External Secrets, GCE ingress, and DNS.
 - Implemented deterministic tenant `policyRef` precedence in the operator: explicit `policyRef` wins, then single selector match, then configured default, with conflict and missing-policy error states written to Tenant status.
 - Added detect-only drift reporting for Tenant and AccessPolicy CRDs versus PostgreSQL projection rows in the control-plane as the first P0 dual-write visibility slice.
+- Published resolved AccessPolicy MCP allow/deny data into the tenant managed-runtime contract so runtime enforcement can consume concrete policy inputs instead of only a policy name.
 
 **Strategic approach**: OpenCrane differentiates by combining:
 - **Architectural advantages**: GCS Fuse CSI + Workload Identity (cloud-native isolation), dual-write pattern (CRDs + PostgreSQL), policy-first governance (AccessPolicy CRDs → CiliumNetworkPolicy).
@@ -144,7 +145,8 @@ No feature should move to "Available now" until success criteria are met and the
 
 1. Phase 1 go-live baseline is complete and validated with build + k3d smoke test.
 2. The k3d smoke script now includes Docker health and free-disk preflight checks to reduce false failures.
-3. Remaining work should be tracked under Phase 2+ hardening and production rollout tasks, not Phase 1 blockers.
+3. Deterministic tenant `policyRef` resolution is complete in the operator: explicit `policyRef` wins, then single selector match, then configured default, with conflict and missing-policy errors surfaced in Tenant status.
+4. Remaining work should be tracked under Phase 2+ hardening and production rollout tasks, not Phase 1 blockers.
 
 ### Local vs GCP Parity Checklist (2026-05-14)
 
@@ -199,7 +201,7 @@ Why deferred:
 
 #### 3) Enforce tool allowlist policy at runtime
 
-Status: Policy fields exist, enforcement is incomplete.
+Status: Runtime policy plumbing exists, enforcement is incomplete.
 
 Scope:
 - Enforce `mcpServers.allow/deny` from AccessPolicy in runtime behavior.
@@ -207,21 +209,9 @@ Scope:
 - Add conformance tests for allow/deny behavior.
 
 Why deferred:
-- Requires policy-to-runtime plumbing and test coverage expansion.
+- Resolved MCP policy data is now published into the tenant managed-runtime contract, but the runtime still does not actively block or audit denied tool use.
 
-#### 4) Tenant `policyRef` binding behavior
-
-Status: Partially implemented.
-
-Scope:
-- Define exact behavior of `Tenant.spec.policyRef` relative to selector-based AccessPolicy reconciliation.
-- Implement deterministic precedence and conflict rules.
-- Document the effective-policy behavior surfaced in Tenant status and make downstream runtime enforcement consume the resolved policy.
-
-Why deferred:
-- Deterministic precedence is now implemented in the operator, but broader runtime enforcement and user-facing documentation still need to catch up.
-
-#### 5) Tenant `skills` filtering behavior
+#### 4) Tenant `skills` filtering behavior
 
 Status: Partially implemented.
 
@@ -232,7 +222,7 @@ Scope:
 Why deferred:
 - Entry-point level filtering now exists for tenants that specify `spec.skills`, but the long-term distribution and UX model is still undecided.
 
-#### 6) Suspend logic aware of scheduled/background work
+#### 5) Suspend logic aware of scheduled/background work
 
 Status: Not implemented yet.
 
@@ -244,7 +234,7 @@ Scope:
 Why deferred:
 - Requires scheduler contract and state model that overlaps with Phase II work.
 
-#### 7) Managed runtime awareness contract for OpenClaw
+#### 6) Managed runtime awareness contract for OpenClaw
 
 Status: Partially implemented.
 
@@ -253,9 +243,9 @@ Scope:
 - Define capability contract endpoint/payload for runtime policy awareness.
 
 Why deferred:
-- Baseline env/config contract is now injected into tenant pods, but the broader endpoint/policy/scheduling contract still depends on Phase II decisions.
+- Baseline env/config contract is now injected into tenant pods, and resolved policy metadata is included for runtime awareness, but the broader endpoint/policy/scheduling contract still depends on Phase II decisions.
 
-#### 8) Dual-write consistency hardening (CRDs -> PostgreSQL projection safety)
+#### 7) Dual-write consistency hardening (CRDs -> PostgreSQL projection safety)
 
 Status: Partially implemented.
 
