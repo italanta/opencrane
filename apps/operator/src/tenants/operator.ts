@@ -4,26 +4,19 @@ import type { Logger } from "pino";
 import type { OpenClawTenantOperatorConfig } from "../config.js";
 
 import type { Tenant } from "./models/tenant.interface.js";
-import { TenantStatusPhase } from "./models/tenant-status.interface.js";
+import { TenantPolicyResolutionState, TenantStatusPhase } from "./models/tenant-status.interface.js";
 
 import { _K8sApplyResource } from "../infra/k8s.js";
 import { _RunWatchLoop, K8sWatchEventType } from "../shared/watch-runner.js";
+import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "../shared/crd-constants.js";
 import { _BuildGCPBucketClaim } from "../storage/provider.js";
 import { _BuildConfigMap, _BuildDeployment, _BuildIngress, _BuildIngressHost, _BuildService, _BuildServiceAccount, _BuildStatePvc } from "./deploy/index.js";
 import { TenantCleanup } from "./destroy/tenant-cleanup.js";
 
 import { TenantEncryptionKeys } from "./internal/tenant-encryption-keys.js";
 import { TenantLiteLlmKeys } from "./internal/tenant-litellm-keys.js";
+import { _ResolveTenantPolicy } from "./internal/policy-resolution.js";
 import { TenantStatusWriter } from "./internal/tenant-status-writer.js";
-
-/** Kubernetes API group for OpenCrane CRDs. */
-const API_GROUP = "opencrane.io";
-
-/** API version for the Tenant CRD. */
-const API_VERSION = "v1alpha1";
-
-/** Plural resource name for the Tenant CRD. */
-const PLURAL = "tenants";
 
 /**
  * Watches Tenant custom resources and reconciles the corresponding
@@ -105,8 +98,8 @@ export class TenantOperator
   {
     const ns = this.config.watchNamespace;
     const path = ns
-      ? `/apis/${API_GROUP}/${API_VERSION}/namespaces/${ns}/${PLURAL}`
-      : `/apis/${API_GROUP}/${API_VERSION}/${PLURAL}`;
+      ? `/apis/${OPENCRANE_API_GROUP}/${OPENCRANE_API_VERSION}/namespaces/${ns}/${TENANT_CRD_PLURAL}`
+      : `/apis/${OPENCRANE_API_GROUP}/${OPENCRANE_API_VERSION}/${TENANT_CRD_PLURAL}`;
 
     await _RunWatchLoop<Tenant>({
       watch: this.watch,
@@ -176,9 +169,35 @@ export class TenantOperator
 
     try
     {
+      // 0. Effective policy — resolve policyRef deterministically so runtime behavior
+      //    is predictable even when selectors or default policies are configured.
+      const policyResolution = await _ResolveTenantPolicy(this.customApi, this.config, tenant, namespace);
+      if (policyResolution.state === TenantPolicyResolutionState.PolicyNotFound
+        || policyResolution.state === TenantPolicyResolutionState.PolicyConflict
+        || policyResolution.state === TenantPolicyResolutionState.DefaultPolicyNotFound)
+      {
+        await this.statusWriter.patchStatus(tenant, namespace, {
+          phase: TenantStatusPhase.Error,
+          message: policyResolution.message,
+          effectivePolicyRef: policyResolution.effectivePolicyRef,
+          policyResolutionSource: policyResolution.source,
+          policyResolutionState: policyResolution.state,
+          lastReconciled: new Date().toISOString(),
+        });
+        throw new Error(policyResolution.message);
+      }
+
+      const effectiveTenant: Tenant = {
+        ...tenant,
+        spec: {
+          ...tenant.spec,
+          policyRef: policyResolution.effectivePolicyRef,
+        },
+      };
+
       // 1. ServiceAccount — grants the tenant pod a GCP service account identity
       //    via Workload Identity, scoped to this tenant's GCS bucket and IAM bindings.
-      await _K8sApplyResource(this.coreApi, _BuildServiceAccount(this.config, tenant, namespace), this.log);
+      await _K8sApplyResource(this.coreApi, _BuildServiceAccount(this.config, effectiveTenant, namespace), this.log);
 
       // 2. BucketClaim — requests a per-tenant GCS bucket via Crossplane.
       //    Skipped when cloud storage or Crossplane is not configured (PVC fallback).
@@ -197,11 +216,11 @@ export class TenantOperator
 
       // 4. LiteLLM key Secret — creates a per-tenant virtual key in LiteLLM and stores
       //    it in a tenant Secret mounted through env var. Skipped when LiteLLM is disabled.
-      await this.liteLlmKeys.ensureLiteLlmKeySecret(tenant, namespace);
+      await this.liteLlmKeys.ensureLiteLlmKeySecret(effectiveTenant, namespace);
 
       // 5. ConfigMap — serialises the base OpenClaw JSON config merged with any
       //    spec.configOverrides the tenant author provided.
-      await _K8sApplyResource(this.coreApi, _BuildConfigMap(this.config, tenant, namespace), this.log);
+      await _K8sApplyResource(this.coreApi, _BuildConfigMap(this.config, effectiveTenant, namespace), this.log);
 
       // 6. Tenant state PVC — used only when cloud storage is disabled.
       if (!this.config.storageProvider)
@@ -211,14 +230,14 @@ export class TenantOperator
 
       // 7. Deployment — single-replica pod running the tenant's OpenClaw gateway.
       //    Mounts the ConfigMap, encryption key, GCS volume (or PVC), and shared skills.
-      await _K8sApplyResource(this.appsApi, _BuildDeployment(this.config, tenant, namespace), this.log);
+      await _K8sApplyResource(this.appsApi, _BuildDeployment(this.config, effectiveTenant, namespace), this.log);
 
       // 8. Service — ClusterIP that makes the gateway reachable inside the cluster
       //    on the configured gateway port.
-      await _K8sApplyResource(this.coreApi, _BuildService(this.config, tenant, namespace), this.log);
+      await _K8sApplyResource(this.coreApi, _BuildService(this.config, effectiveTenant, namespace), this.log);
 
       // 9. Ingress — routes external HTTPS traffic for {tenant}.{domain} to the Service.
-      await _K8sApplyResource(this.networkingApi, _BuildIngress(this.config, tenant, namespace), this.log);
+      await _K8sApplyResource(this.networkingApi, _BuildIngress(this.config, effectiveTenant, namespace), this.log);
 
       // 10. Status — write the observed Running state back to the Tenant CR so that
       //    kubectl, the control-plane API, and the UI all see the current phase.
@@ -226,6 +245,9 @@ export class TenantOperator
         phase: TenantStatusPhase.Running,
         podName: `openclaw-${name}`,
         ingressHost: _BuildIngressHost(name, this.config.ingressDomain),
+        effectivePolicyRef: policyResolution.effectivePolicyRef,
+        policyResolutionSource: policyResolution.source,
+        policyResolutionState: policyResolution.state,
         lastReconciled: new Date().toISOString(),
       });
     }

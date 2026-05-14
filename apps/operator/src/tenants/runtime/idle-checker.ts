@@ -2,17 +2,9 @@ import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
 
 import type { OperatorConfig } from "../../config.js";
+import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "../../shared/crd-constants.js";
 import { _ComputeLastActivityMs, _ListIdleCandidates, _ShouldSuspend } from "./idle-policy.js";
 import type { Tenant } from "../models/tenant.interface.js";
-
-/** Kubernetes API group for OpenCrane CRDs. */
-const API_GROUP = "opencrane.io";
-
-/** API version for the Tenant CRD. */
-const API_VERSION = "v1alpha1";
-
-/** Plural resource name for the Tenant CRD. */
-const PLURAL = "tenants";
 
 /**
  * Periodically checks running tenant deployments for inactivity and
@@ -108,8 +100,8 @@ export class IdleChecker
     const ns = this.config.watchNamespace;
 
     const response = ns
-      ? await this.customApi.listNamespacedCustomObject({ group: API_GROUP, version: API_VERSION, namespace: ns, plural: PLURAL })
-      : await this.customApi.listClusterCustomObject({ group: API_GROUP, version: API_VERSION, plural: PLURAL });
+      ? await this.customApi.listNamespacedCustomObject({ group: OPENCRANE_API_GROUP, version: OPENCRANE_API_VERSION, namespace: ns, plural: TENANT_CRD_PLURAL })
+      : await this.customApi.listClusterCustomObject({ group: OPENCRANE_API_GROUP, version: OPENCRANE_API_VERSION, plural: TENANT_CRD_PLURAL });
 
     const tenants = ((response as Record<string, unknown>).items ?? []) as Tenant[];
     const now = Date.now();
@@ -153,10 +145,10 @@ export class IdleChecker
     try
     {
       await this.customApi.patchNamespacedCustomObject({
-        group: API_GROUP,
-        version: API_VERSION,
+        group: OPENCRANE_API_GROUP,
+        version: OPENCRANE_API_VERSION,
         namespace,
-        plural: PLURAL,
+        plural: TENANT_CRD_PLURAL,
         name,
         body: { spec: { suspended: true } },
       });

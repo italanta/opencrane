@@ -4,17 +4,9 @@ import type { Logger } from "pino";
 import type { OperatorConfig } from "../config.js";
 import type { AccessPolicy } from "./types.js";
 import { _K8sApplyResource, _K8sDeleteResource } from "../infra/k8s.js";
+import { ACCESS_POLICY_CRD_PLURAL, OPENCRANE_API_GROUP, OPENCRANE_API_VERSION } from "../shared/crd-constants.js";
 import { _RunWatchLoop, K8sWatchEventType } from "../shared/watch-runner.js";
 import { PolicyResourceBuilder } from "./policy-resource-builder.js";
-
-/** Kubernetes API group for OpenCrane CRDs. */
-const API_GROUP = "opencrane.io";
-
-/** API version for the AccessPolicy CRD. */
-const API_VERSION = "v1alpha1";
-
-/** Plural resource name for the AccessPolicy CRD. */
-const PLURAL = "accesspolicies";
 
 /**
  * Watches AccessPolicy custom resources and reconciles the corresponding
@@ -61,8 +53,8 @@ export class PolicyOperator
   {
     const ns = this.config.watchNamespace;
     const path = ns
-      ? `/apis/${API_GROUP}/${API_VERSION}/namespaces/${ns}/${PLURAL}`
-      : `/apis/${API_GROUP}/${API_VERSION}/${PLURAL}`;
+      ? `/apis/${OPENCRANE_API_GROUP}/${OPENCRANE_API_VERSION}/namespaces/${ns}/${ACCESS_POLICY_CRD_PLURAL}`
+      : `/apis/${OPENCRANE_API_GROUP}/${OPENCRANE_API_VERSION}/${ACCESS_POLICY_CRD_PLURAL}`;
 
     await _RunWatchLoop<AccessPolicy>({
       watch: this.watch,
@@ -161,10 +153,10 @@ export class PolicyOperator
     try
     {
       await this.customApi.patchNamespacedCustomObjectStatus({
-        group: API_GROUP,
-        version: API_VERSION,
+        group: OPENCRANE_API_GROUP,
+        version: OPENCRANE_API_VERSION,
         namespace,
-        plural: PLURAL,
+        plural: ACCESS_POLICY_CRD_PLURAL,
         name,
         body: { status: { lastReconciled: new Date().toISOString() } },
       });

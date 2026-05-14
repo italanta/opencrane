@@ -53,6 +53,9 @@ export interface OpenClawTenantOperatorConfig
 
   /** Default monthly budget (USD) applied when tenant does not override it. */
   liteLlmDefaultMonthlyBudgetUsd: number;
+
+  /** Optional default AccessPolicy name used when no explicit or selector match is found. */
+  defaultTenantPolicyRef?: string;
 }
 
 /** Backwards-compatible alias used by existing operator modules. */
@@ -81,6 +84,7 @@ export function _LoadOperatorConfig(): OpenClawTenantOperatorConfig
     liteLlmEndpoint: _readEnvValue<string>("LITELLM_ENDPOINT", "string"),
     liteLlmMasterKey: _readEnvValue<string>("LITELLM_MASTER_KEY", "string", false, ""),
     liteLlmDefaultMonthlyBudgetUsd: _readEnvValue<number>("LITELLM_DEFAULT_MONTHLY_BUDGET_USD", "number"),
+    defaultTenantPolicyRef: _readEnvValue<string>("DEFAULT_TENANT_POLICY_REF", "string", false, ""),
   };
 }
 

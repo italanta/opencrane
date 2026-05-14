@@ -1,17 +1,9 @@
 import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
 
+import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "../../shared/crd-constants.js";
 import type { Tenant } from "../models/tenant.interface.js";
 import type { TenantStatus } from "../models/tenant-status.interface.js";
-
-/** Kubernetes API group for OpenCrane CRDs. */
-const API_GROUP = "opencrane.io";
-
-/** API version for the Tenant CRD. */
-const API_VERSION = "v1alpha1";
-
-/** Plural resource name for the Tenant CRD. */
-const PLURAL = "tenants";
 
 /**
  * Handles status patching for Tenant resources.
@@ -52,10 +44,10 @@ export class TenantStatusWriter
       // "add" on an existing object member replaces its value per RFC 6902.
       await this.customApi.patchNamespacedCustomObjectStatus(
         {
-          group: API_GROUP,
-          version: API_VERSION,
+          group: OPENCRANE_API_GROUP,
+          version: OPENCRANE_API_VERSION,
           namespace,
-          plural: PLURAL,
+          plural: TENANT_CRD_PLURAL,
           name,
           body: [{ op: "add", path: "/status", value: mergedStatus }],
         },

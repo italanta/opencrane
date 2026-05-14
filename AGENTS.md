@@ -127,6 +127,42 @@ interface OperatorConfig
 }
 ```
 
+### Type And Interface File Separation
+
+Interfaces and exported types must live in dedicated type files, not mixed with implementation logic.
+
+- Use `*.types.ts` files for exported interfaces, type aliases, and DTO shapes.
+- Keep runtime/business logic in separate implementation files.
+- If a module needs shared types, import them from its paired `*.types.ts` file.
+
+```typescript
+// WRONG: interface and runtime logic mixed in one file
+export interface ResolveResult
+{
+	status: "ok" | "error";
+}
+
+export function _Resolve(): ResolveResult
+{
+	return { status: "ok" };
+}
+
+// CORRECT: split files
+// resolve.types.ts
+export interface ResolveResult
+{
+	status: "ok" | "error";
+}
+
+// resolve.ts
+import type { ResolveResult } from "./resolve.types.js";
+
+export function _Resolve(): ResolveResult
+{
+	return { status: "ok" };
+}
+```
+
 ### Function Naming Conventions
 
 Use underscore prefixes to indicate scope and visibility.
