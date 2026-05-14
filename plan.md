@@ -41,6 +41,7 @@ This is an updated roadmap for shipping OpenCrane, the enterprise multi-tenant A
 - Implemented projection repair for Tenant and AccessPolicy rows: `POST /tenants/repair` and `POST /policies/repair` read CRDs as source of truth and upsert drifted PostgreSQL rows; dry-run by default, apply on `?dryRun=false`.
 - Added `GET /api/metrics/projection-drift` so dashboards can poll detect-only Tenant and AccessPolicy mismatch counts from the existing drift detector.
 - Added configurable threshold evaluation to `GET /api/metrics/projection-drift` so the API now exposes basic drift alert state alongside mismatch counts.
+- Added projection lag metrics to `GET /api/metrics/projection-drift`, derived from drifted row `updatedAt` timestamps so dashboards can estimate how stale current mismatches are.
 
 **Strategic approach**: OpenCrane differentiates by combining:
 - **Architectural advantages**: GCS Fuse CSI + Workload Identity (cloud-native isolation), dual-write pattern (CRDs + PostgreSQL), policy-first governance (AccessPolicy CRDs → CiliumNetworkPolicy).
@@ -486,7 +487,7 @@ Phase 2 is underway. The items below are the remaining decisions still worth res
     - ✅ Repair routes implemented: `POST /tenants/repair` and `POST /policies/repair` with dry-run default.
    - ✅ Mismatch count metrics implemented via `GET /api/metrics/projection-drift` for Tenant and AccessPolicy projections.
    - ✅ Configurable drift-threshold evaluation is exposed in the metrics payload for dashboard polling.
-   - Emit reconcile lag as a structured metric (still open).
+   - ✅ Projection lag metrics are exposed in the drift payload from drifted projection-row `updatedAt` timestamps.
    - Add external alert delivery when drift exceeds a configurable threshold (still open).
     - Decide single-writer ownership: control-plane request handlers, operator sidecar, or dedicated projector service (still open).
 

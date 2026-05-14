@@ -6,6 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { metricsRouter } from "../../routes/metrics.js";
 
+const _ONE_HOUR_AGO = new Date(Date.now() - (60 * 60 * 1000));
+const _THIRTY_MINUTES_AGO = new Date(Date.now() - (30 * 60 * 1000));
+
 /** Build a test app that mounts the metrics router with mocked dependencies. */
 function _BuildMetricsApp(customApi: k8s.CustomObjectsApi, prisma: PrismaClient)
 {
@@ -74,7 +77,13 @@ describe("metrics routes", function ()
       tenant: {
         count: vi.fn(),
         findMany: vi.fn().mockResolvedValue([
-          { name: "alpha", displayName: "Alpha stale", email: "alpha@example.com", team: "platform" },
+          {
+            name: "alpha",
+            displayName: "Alpha stale",
+            email: "alpha@example.com",
+            team: "platform",
+            updatedAt: _ONE_HOUR_AGO,
+          },
         ]),
       },
       accessPolicy: {
@@ -88,6 +97,15 @@ describe("metrics routes", function ()
     expect(res.body.mode).toBe("detect-only");
     expect(res.body.summary).toEqual({ totalDriftCount: 2, resourceCount: 2 });
     expect(res.body.alert).toEqual({ enabled: false, threshold: 0, exceeded: false, state: "ok" });
+    expect(res.body.lag.resources.tenant.measuredProjectionCount).toBe(1);
+    expect(res.body.lag.resources.tenant.unresolvedMissingProjectionCount).toBe(0);
+    expect(res.body.lag.resources.tenant.maxProjectionLagSeconds).toBeGreaterThanOrEqual(3590);
+    expect(res.body.lag.resources.tenant.maxProjectionLagSeconds).toBeLessThanOrEqual(3610);
+    expect(res.body.lag.resources.accessPolicy).toEqual({
+      maxProjectionLagSeconds: null,
+      measuredProjectionCount: 0,
+      unresolvedMissingProjectionCount: 1,
+    });
     expect(res.body.resources).toEqual({
       tenant: {
         sourceCount: 1,
@@ -143,7 +161,13 @@ describe("metrics routes", function ()
       tenant: {
         count: vi.fn(),
         findMany: vi.fn().mockResolvedValue([
-          { name: "alpha", displayName: "Alpha stale", email: "alpha@example.com", team: "platform" },
+          {
+            name: "alpha",
+            displayName: "Alpha stale",
+            email: "alpha@example.com",
+            team: "platform",
+            updatedAt: _THIRTY_MINUTES_AGO,
+          },
         ]),
       },
       accessPolicy: {

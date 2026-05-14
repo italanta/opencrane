@@ -2,6 +2,7 @@ import type * as k8s from "@kubernetes/client-node";
 import { Router } from "express";
 import type { PrismaClient } from "@prisma/client";
 
+import type { ProjectionTimestampRow } from "./metrics.types.js";
 import { _DetectPolicyProjectionDrift, _DetectTenantProjectionDrift } from "./internal/projection-drift.js";
 
 /**
@@ -60,15 +61,28 @@ export function metricsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
       _DetectPolicyProjectionDrift(customApi, prisma, namespace),
     ]);
 
-    // 2. Reduce the detailed findings into a metrics-friendly summary payload.
+    // 2. Read projection timestamps so the snapshot can expose how stale drifted rows are.
+    const [tenantRows, policyRows] = await Promise.all([
+      prisma.tenant.findMany({
+        select: { name: true, updatedAt: true },
+      }),
+      prisma.accessPolicy.findMany({
+        select: { name: true, updatedAt: true },
+      }),
+    ]);
+
+    // 3. Reduce the detailed findings into a metrics-friendly summary payload.
+    const sampledAt = new Date();
     const totalDriftCount = tenantReport.summary.driftCount + policyReport.summary.driftCount;
     const thresholdEnabled = projectionDriftAlertThreshold > 0;
     const thresholdExceeded = thresholdEnabled && totalDriftCount >= projectionDriftAlertThreshold;
+    const tenantLag = _BuildProjectionLagSummary(tenantReport.mismatches, tenantRows, sampledAt);
+    const policyLag = _BuildProjectionLagSummary(policyReport.mismatches, policyRows, sampledAt);
 
-    // 3. Return a timestamped snapshot that dashboards can poll directly.
+    // 4. Return a timestamped snapshot that dashboards can poll directly.
     res.json({
       mode: "detect-only",
-      sampledAt: new Date().toISOString(),
+      sampledAt: sampledAt.toISOString(),
       summary: {
         totalDriftCount,
         resourceCount: 2,
@@ -82,6 +96,13 @@ export function metricsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
       resources: {
         tenant: tenantReport.summary,
         accessPolicy: policyReport.summary,
+      },
+      lag: {
+        maxProjectionLagSeconds: _MaxNullableNumber(tenantLag.maxProjectionLagSeconds, policyLag.maxProjectionLagSeconds),
+        resources: {
+          tenant: tenantLag,
+          accessPolicy: policyLag,
+        },
       },
     });
   });
@@ -110,4 +131,56 @@ function _ReadProjectionDriftAlertThreshold(): number
   }
 
   return Math.floor(parsedValue);
+}
+
+/**
+ * Build lag metrics for the subset of mismatches that still have projection rows.
+ */
+function _BuildProjectionLagSummary(mismatches: Array<{ name: string; issue: string }>, rows: ProjectionTimestampRow[], sampledAt: Date)
+{
+  const rowsByName = new Map(rows.map(function _toRowEntry(row)
+  {
+    return [row.name, row] as const;
+  }));
+
+  const driftedProjectionLagSeconds = mismatches
+    .map(function _toLagSeconds(mismatch)
+    {
+      const row = rowsByName.get(mismatch.name);
+      if (!row)
+      {
+        return null;
+      }
+
+      return Math.max(0, Math.floor((sampledAt.getTime() - row.updatedAt.getTime()) / 1000));
+    })
+    .filter(function _hasLag(value): value is number
+    {
+      return value !== null;
+    });
+
+  return {
+    maxProjectionLagSeconds: driftedProjectionLagSeconds.length > 0 ? Math.max(...driftedProjectionLagSeconds) : null,
+    measuredProjectionCount: driftedProjectionLagSeconds.length,
+    unresolvedMissingProjectionCount: mismatches.filter(function _isMissingProjection(mismatch)
+    {
+      return mismatch.issue === "missing-projection";
+    }).length,
+  };
+}
+
+/** Return the larger of two nullable numbers, preserving `null` when both are absent. */
+function _MaxNullableNumber(left: number | null, right: number | null): number | null
+{
+  if (left === null)
+  {
+    return right;
+  }
+
+  if (right === null)
+  {
+    return left;
+  }
+
+  return Math.max(left, right);
 }
