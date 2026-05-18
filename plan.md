@@ -43,6 +43,14 @@ This is an updated roadmap for shipping OpenCrane, the enterprise multi-tenant A
 - Added configurable threshold evaluation to `GET /api/metrics/projection-drift` so the API now exposes basic drift alert state alongside mismatch counts.
 - Added projection lag metrics to `GET /api/metrics/projection-drift`, derived from drifted row `updatedAt` timestamps so dashboards can estimate how stale current mismatches are.
 
+**Live update (2026-05-18)**:
+- Mounted the spend router in control-plane route registration so `GET /api/spend/:tenantName` is reachable in the running API.
+- Added route-registration coverage that validates spend access through `_RegisterRoutes`, preventing future regressions where the endpoint is implemented but not exposed.
+- Revalidated control-plane package checks for this slice: `pnpm --filter @opencrane/control-plane test` and `pnpm --filter @opencrane/control-plane build` both pass.
+- Added a control-plane UI tenant spend dashboard page at `/tenant-spend` that calls `GET /api/spend/:tenantName` and renders the budget statement: "You have $X of $Y budget remaining."
+- Added UI unit coverage for tenant spend loading/error paths and fixed root-shell test DI setup for auth service dependencies.
+- Revalidated package checks for the UI/dashboard slice: `pnpm --filter @opencrane/control-plane-ui test`, `pnpm --filter @opencrane/control-plane-ui build`, `pnpm --filter @opencrane/control-plane test`, and `pnpm --filter @opencrane/control-plane build` pass.
+
 **Strategic approach**: OpenCrane differentiates by combining:
 - **Architectural advantages**: GCS Fuse CSI + Workload Identity (cloud-native isolation), dual-write pattern (CRDs + PostgreSQL), policy-first governance (AccessPolicy CRDs → CiliumNetworkPolicy).
 - **Tactical features**: Cost control (LiteLLM), self-service UX (web + Slack), fleet operations (auto-update, metrics, channel management).
@@ -510,7 +518,8 @@ platform/
 |------|-------|--------|-----------|
 | LiteLLM chart integration hardening | DevOps | 8h | Phase 1 done |
 | Operator: LiteLLM key generation on reconcile | Backend | 10h | LiteLLM chart deployed |
-| Control Plane: /api/spend endpoint | Backend | 8h | LiteLLM chart + schema |
+| ✅ Control Plane: /api/spend endpoint | Backend | 8h | LiteLLM chart + schema |
+| ✅ Dashboard: tenant spend and budget statement | Frontend | 6h | /api/spend endpoint |
 | Tenant config injection of proxy endpoint | Backend | 5h | Operator enhancement |
 | Org index schema + retrieval API surface | Backend | 14h | Phase 1 done |
 | Retrieval plugin SDK MVP + policy tests | Backend | 16h | Org index schema |
@@ -527,8 +536,8 @@ platform/
 - [ ] Helm chart deploys LiteLLM through the root chart with shared PostgreSQL integration.
 - [ ] On Tenant CR creation, operator creates a LiteLLM virtual key with monthly budget.
 - [ ] Tenant pod receives `LITELLM_API_KEY` and proxy endpoint.
-- [ ] Control Plane exposes spend endpoint; shows per-tenant usage + budget.
-- [ ] Dashboard can display "You have $X of $Y budget" per tenant.
+- [x] Control Plane exposes spend endpoint; shows per-tenant usage + budget.
+- [x] Dashboard can display "You have $X of $Y budget" per tenant.
 - [ ] Retrieval endpoint returns tenant-scoped, RBAC-filtered results from org index.
 - [ ] One harvesting connector continuously ingests documents with measurable lag/error metrics.
 - [ ] AccessPolicy allow/deny rules are enforced for retrieval access path with tests.

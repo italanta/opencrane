@@ -15,6 +15,7 @@ import { tenantsRouter } from "./routes/tenants.js";
 
 import { tokenUsageRouter } from "./routes/token-usage.js";
 import { accessTokensRouter } from "./routes/access-tokens.js";
+import { spendRouter } from "./routes/spend.js";
 
 import { _CheckDbHealth } from "./infra/db/healtcheck-db.js";
 
@@ -44,6 +45,7 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
   app.use("/api/policies",  policiesRouter(customApi, prisma));
      // Manage spent at the org level
   app.use("/api/ai-budget",   aiBudgetRouter(coreApi, prisma));
+   app.use("/api/spend",       spendRouter(prisma));
   app.use("/api/token-usage", tokenUsageRouter(prisma));
 
   // 3. Organisations & Collaboration

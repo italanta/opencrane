@@ -1,0 +1,42 @@
+<section class="stack">
+  <oc-ui-section-card title="Tenant Spend Snapshot" subtitle="Query per-tenant budget and spend from LiteLLM-backed control-plane APIs.">
+    <form [formGroup]="tenantForm" (ngSubmit)="loadSpend()" class="form-row">
+      <input pInputText type="text" formControlName="tenantName" placeholder="tenant name" />
+      <p-button type="submit" label="Load spend" icon="pi pi-search" [loading]="loading()"></p-button>
+    </form>
+
+    <p *ngIf="loading()">Loading tenant spend...</p>
+    <p *ngIf="error()" class="error">{{ error() }}</p>
+  </oc-ui-section-card>
+
+  <oc-ui-section-card *ngIf="summary() as current" title="Budget Status" subtitle="Remaining budget and consumption signal for the selected tenant.">
+    <div class="grid">
+      <oc-ui-kpi-tile label="Tenant" [value]="current.tenantName"></oc-ui-kpi-tile>
+      <oc-ui-kpi-tile label="Total Spend (USD)" [value]="'$' + (current.totalCostUsd | number : '1.2-2')" [progress]="utilizationPercent()"></oc-ui-kpi-tile>
+      <oc-ui-kpi-tile label="Monthly Budget (USD)" [value]="current.monthlyBudgetUsd === null ? 'Not configured' : ('$' + (current.monthlyBudgetUsd | number : '1.2-2'))"></oc-ui-kpi-tile>
+      <oc-ui-kpi-tile label="Remaining (USD)" [value]="current.remainingBudgetUsd === null ? 'Not configured' : ('$' + (current.remainingBudgetUsd | number : '1.2-2'))"></oc-ui-kpi-tile>
+    </div>
+
+    <p class="message">{{ budgetStatement() }}</p>
+    <p-tag severity="secondary" [value]="'Budget utilization: ' + (utilizationPercent() | number : '1.0-1') + '%' "></p-tag>
+  </oc-ui-section-card>
+
+  <oc-ui-section-card *ngIf="summary() as current" title="Top Models" subtitle="Model-level spend contributors for the selected tenant.">
+    <p-table [value]="current.topModels" [stripedRows]="true" [rows]="5" [paginator]="current.topModels.length > 5">
+      <ng-template pTemplate="header">
+        <tr>
+          <th>Model</th>
+          <th>Spend (USD)</th>
+          <th>Requests</th>
+        </tr>
+      </ng-template>
+      <ng-template pTemplate="body" let-model>
+        <tr>
+          <td>{{ model.model }}</td>
+          <td>{{ model.costUsd | number : '1.2-2' }}</td>
+          <td>{{ model.requests | number }}</td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </oc-ui-section-card>
+</section>

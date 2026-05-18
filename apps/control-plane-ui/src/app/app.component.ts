@@ -32,6 +32,7 @@ export class AppComponent implements OnInit
 
   protected readonly navigation: MenuItem[] = [
     { label: "Server Metrics", icon: "pi pi-chart-line", routerLink: "/stats" },
+    { label: "Tenant Spend", icon: "pi pi-dollar", routerLink: "/tenant-spend" },
     { label: "Token Usage & Budgets", icon: "pi pi-wallet", routerLink: "/usage" },
     { label: "Access Tokens", icon: "pi pi-key", routerLink: "/tokens" },
     { label: "Provider Keys", icon: "pi pi-shield", routerLink: "/providers" },

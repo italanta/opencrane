@@ -3,6 +3,7 @@ import { Injectable, inject } from "@angular/core";
 import { firstValueFrom } from "rxjs";
 
 import type { AccountBudget, ControlToken, CreateTokenRequest, CreateTokenResponse, GlobalBudget, ProviderKeyRecord, ServerUsageStats, UserTokenUsage } from "../models/control-plane.models";
+import type { TenantSpendSummary } from "../models/tenant-spend.types";
 
 /** API gateway for control-plane dashboard endpoints. */
 @Injectable({ providedIn: "root" })
@@ -44,6 +45,11 @@ export class ControlPlaneApiService
   async deleteAccountBudget(userId: string): Promise<void>
   {
     await firstValueFrom(this._http.delete(`${this._baseUrl}/budgets/accounts/${encodeURIComponent(userId)}`));
+  }
+
+  async getTenantSpend(tenantName: string): Promise<TenantSpendSummary>
+  {
+    return await firstValueFrom(this._http.get<TenantSpendSummary>(`${this._baseUrl}/spend/${encodeURIComponent(tenantName)}`));
   }
 
   async listTokens(): Promise<ControlToken[]>
