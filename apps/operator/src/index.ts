@@ -42,10 +42,17 @@ async function main(): Promise<void>
     // Poll npm registry for new releases; the controller handles rollout internally
     setInterval(async function _pollRelease()
     {
-      const latest = await fleetController.getLatestRelease();
-      if (latest !== null)
+      try
       {
-        log.debug({ latest }, "fleet release poll");
+        const latest = await fleetController.getLatestRelease();
+        if (latest !== null)
+        {
+          log.debug({ latest }, "fleet release poll");
+        }
+      }
+      catch (err)
+      {
+        log.warn({ err }, "fleet release poll failed; will retry next interval");
       }
     }, 15 * 60 * 1000); // every 15 minutes
   }

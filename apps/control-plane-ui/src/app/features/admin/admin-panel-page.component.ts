@@ -1,5 +1,6 @@
 import { Component, inject, OnInit, signal } from "@angular/core";
 import { CommonModule } from "@angular/common";
+import { FormsModule } from "@angular/forms";
 import { RouterModule } from "@angular/router";
 import { ButtonModule } from "primeng/button";
 import { TableModule } from "primeng/table";
@@ -20,6 +21,7 @@ import type { TenantSummary } from "../../core/models/tenant.models";
   standalone: true,
   imports: [
     CommonModule,
+    FormsModule,
     RouterModule,
     ButtonModule,
     TableModule,

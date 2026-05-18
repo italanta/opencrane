@@ -264,13 +264,17 @@ async function _CheckRetrievalPolicyDenied(
 /**
  * Produce a short deterministic fingerprint of a query string for audit log storage.
  * Uses a simple djb2-style hash; not a cryptographic hash.
+ * Input is capped at 1024 characters to prevent unbounded iteration over user-controlled input.
  */
 function _HashQuery(query: string): string
 {
+  // Cap input length to prevent loop-bound injection on user-controlled values.
+  const safeQuery = query.slice(0, 1024);
   let hash = 5381;
-  for (let i = 0; i < query.length; i++)
+  const len = safeQuery.length;
+  for (let i = 0; i < len; i++)
   {
-    hash = ((hash << 5) + hash) + query.charCodeAt(i);
+    hash = ((hash << 5) + hash) + safeQuery.charCodeAt(i);
     hash |= 0;
   }
 

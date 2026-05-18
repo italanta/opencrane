@@ -1,9 +1,13 @@
 import type * as k8s from "@kubernetes/client-node";
 import { Router } from "express";
 import type { PrismaClient } from "@prisma/client";
+import pino from "pino";
 
 import type { ProjectionTimestampRow } from "./metrics.types.js";
 import { _DetectPolicyProjectionDrift, _DetectTenantProjectionDrift } from "./internal/projection-drift.js";
+
+/** Module-level logger for webhook delivery errors. */
+const _log = pino({ name: "metrics-route" });
 
 /** Timeout for outbound drift-alert webhook requests (ms). */
 const WEBHOOK_TIMEOUT_MS = 5000;
@@ -116,7 +120,7 @@ export function metricsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
     {
       _FireDriftWebhook(driftWebhookUrl, responsePayload).catch(function _onWebhookError(err: unknown)
       {
-        console.error({ err, webhookUrl: driftWebhookUrl }, "drift alert webhook delivery failed");
+        _log.warn({ err, webhookUrl: driftWebhookUrl }, "drift alert webhook delivery failed");
       });
     }
 
