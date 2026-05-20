@@ -30,6 +30,8 @@ RUN pnpm install --frozen-lockfile --filter @opencrane/control-plane --prod
 
 COPY --from=build /app/apps/control-plane/dist apps/control-plane/dist
 COPY --from=build /app/apps/control-plane-ui/dist apps/control-plane-ui/dist
+COPY --from=build /app/apps/control-plane-ui/public apps/control-plane-ui/public
+
 
 USER node
 

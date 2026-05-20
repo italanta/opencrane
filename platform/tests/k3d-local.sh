@@ -124,20 +124,12 @@ k3d image import opencrane/control-plane:local --cluster "$CLUSTER_NAME"
 
 echo "[local] Using profile '$LOCAL_PROFILE' with values '$VALUES_FILE'"
 
-# 5. Install in-cluster PostgreSQL and publish the DATABASE_URL secret expected by the chart.
+# 5. Creating the namespace early so the PostgreSQL chart can reference it for its service discovery.
+kubectl create namespace opencrane-system --dry-run=client -o yaml | kubectl apply -f -
+
+# 6. Install in-cluster PostgreSQL using the configuration file
 echo "[local] Installing PostgreSQL release '$DB_RELEASE_NAME'"
-helm upgrade --install "$DB_RELEASE_NAME" oci://registry-1.docker.io/bitnamicharts/postgresql \
-  --version 16.4.1 \
-  --namespace "$NAMESPACE" \
-  --create-namespace \
-  --wait \
-  --set auth.username=opencrane \
-  --set auth.password="$DB_PASSWORD" \
-  --set auth.database=opencrane \
-  --set primary.persistence.size=10Gi \
-  --set primary.persistence.storageClass=local-path \
-  --set primary.resources.requests.cpu=250m \
-  --set primary.resources.requests.memory=256Mi
+kubectl apply -f "$ROOT_DIR/platform/tests/postgres.yaml"
 
 kubectl create secret generic "$DB_SECRET_NAME" \
   -n "$NAMESPACE" \
@@ -153,7 +145,7 @@ if [[ "$LOCAL_PROFILE" == "strict" ]]; then
     -o yaml | kubectl apply -f -
 fi
 
-# 6. Install the OpenCrane chart with local-strict overrides wired to the in-cluster database.
+# 7. Install the OpenCrane chart with local-strict overrides wired to the in-cluster database.
 echo "[local] Installing Helm release '$RELEASE_NAME'"
 helm_args=(
   upgrade
@@ -179,7 +171,7 @@ fi
 
 helm "${helm_args[@]}"
 
-# 7. Run schema migrations so the control-plane and LiteLLM share an initialized database.
+# 8. Run schema migrations so the control-plane and LiteLLM share an initialized database.
 echo "[local] Running Prisma migrations"
 cat <<EOF | kubectl apply -f -
 apiVersion: batch/v1
@@ -209,7 +201,7 @@ EOF
 
 _wait_for_job "opencrane-db-migrate"
 
-# 8. Wait for the platform workloads that depend on the database.
+# 9. Wait for the platform workloads that depend on the database.
 _wait_for_rollout "deployment/opencrane-operator"
 _wait_for_rollout "deployment/opencrane-control-plane"
 
