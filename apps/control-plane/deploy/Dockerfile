@@ -16,6 +16,9 @@ COPY apps/control-plane-ui/src apps/control-plane-ui/src
 COPY apps/control-plane-ui/public apps/control-plane-ui/public
 RUN pnpm --filter @opencrane/control-plane-ui build
 RUN pnpm --filter @opencrane/control-plane build
+# Stage generated Prisma client to a fixed path for the runtime stage
+RUN find /app -path '*/node_modules/.prisma/client' -type d | head -1 | \
+    xargs -I{} cp -r {} /generated-prisma
 
 # Runtime stage
 FROM node:22-bookworm-slim
@@ -27,6 +30,12 @@ COPY --from=build /app/package.json /app/pnpm-workspace.yaml /app/pnpm-lock.yaml
 COPY --from=build /app/apps/control-plane/package.json apps/control-plane/
 COPY --from=build /app/apps/control-plane/prisma apps/control-plane/prisma
 RUN pnpm install --frozen-lockfile --filter @opencrane/control-plane --prod
+COPY --from=build /generated-prisma /tmp/generated-prisma
+# Retrieve the generated Prisma client for the runtime stage
+RUN target=$(find /app -path '*/node_modules/.prisma/client' -type d | head -1) && \
+    rm -rf "$target" && \
+    cp -r /tmp/generated-prisma "$target" && \
+    rm -rf /tmp/generated-prisma
 
 COPY --from=build /app/apps/control-plane/dist apps/control-plane/dist
 COPY --from=build /app/apps/control-plane-ui/dist apps/control-plane-ui/dist

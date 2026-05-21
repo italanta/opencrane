@@ -142,6 +142,26 @@ kubectl create secret generic "$DB_SECRET_NAME" \
   --dry-run=client \
   -o yaml | kubectl apply -f -
 
+# 7b. Run Prisma migrations locally before deploying the application.
+echo "[local] Running Prisma migrations"
+
+# 7c. Wait for postgres pod to be ready
+echo "[local] Waiting for PostgreSQL pod to be ready..."
+kubectl wait --for=condition=Ready pod -l app=postgres -n "$NAMESPACE" --timeout=300s
+
+# 7d. Port-forward postgres to localhost so migrations can reach it
+echo "[local] Setting up port-forward to PostgreSQL"
+kubectl port-forward -n "$NAMESPACE" svc/opencrane-db-postgresql 5432:5432 >/dev/null 2>&1 &
+PF_PID=$!
+sleep 2
+
+# 7e. Run migrations against localhost (port-forwarded)
+export DATABASE_URL="postgresql://opencrane:${DB_PASSWORD}@localhost:5432/opencrane"
+pnpm --filter @opencrane/control-plane run db:migrate
+
+# 7f. Clean up port-forward
+kill $PF_PID 2>/dev/null || true
+
 if [[ "$LOCAL_PROFILE" == "strict" ]]; then
   kubectl create secret generic "$LITELLM_SECRET_NAME" \
     -n "$NAMESPACE" \
@@ -150,7 +170,7 @@ if [[ "$LOCAL_PROFILE" == "strict" ]]; then
     -o yaml | kubectl apply -f -
 fi
 
-# 7. Install the OpenCrane chart with local-strict overrides wired to the in-cluster database.
+# 8. Install the OpenCrane chart with local-strict overrides wired to the in-cluster database.
 echo "[local] Installing Helm release '$RELEASE_NAME'"
 helm_args=(
   upgrade
@@ -175,36 +195,6 @@ else
 fi
 
 helm "${helm_args[@]}"
-
-# 8. Run schema migrations so the control-plane and LiteLLM share an initialized database.
-echo "[local] Running Prisma migrations"
-cat <<EOF | kubectl apply -f -
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: opencrane-db-migrate
-  namespace: ${NAMESPACE}
-spec:
-  ttlSecondsAfterFinished: 300
-  backoffLimit: 3
-  template:
-    spec:
-      restartPolicy: OnFailure
-      containers:
-        - name: migrate
-          image: opencrane/control-plane:local
-          imagePullPolicy: IfNotPresent
-          command: ["npx", "prisma", "migrate", "deploy"]
-          workingDir: /app/apps/control-plane
-          env:
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: ${DB_SECRET_NAME}
-                  key: DATABASE_URL
-EOF
-
-_wait_for_job "opencrane-db-migrate"
 
 # 9. Wait for the platform workloads that depend on the database.
 _wait_for_rollout "deployment/opencrane-operator"
