@@ -122,12 +122,17 @@ k3d image import opencrane/operator:local --cluster "$CLUSTER_NAME"
 k3d image import opencrane/tenant:local --cluster "$CLUSTER_NAME"
 k3d image import opencrane/control-plane:local --cluster "$CLUSTER_NAME"
 
+# 5. Pre-pull PostgreSQL image for k3d
+echo "[local] Pre-pulling PostgreSQL image"
+docker pull postgres:16-alpine
+k3d image import postgres:16-alpine --cluster "$CLUSTER_NAME"
+
 echo "[local] Using profile '$LOCAL_PROFILE' with values '$VALUES_FILE'"
 
-# 5. Creating the namespace early so the PostgreSQL chart can reference it for its service discovery.
+# 6. Creating the namespace early so the PostgreSQL chart can reference it for its service discovery.
 kubectl create namespace opencrane-system --dry-run=client -o yaml | kubectl apply -f -
 
-# 6. Install in-cluster PostgreSQL using the configuration file
+# 7. Install in-cluster PostgreSQL using the configuration file
 echo "[local] Installing PostgreSQL release '$DB_RELEASE_NAME'"
 kubectl apply -f "$ROOT_DIR/platform/tests/postgres.yaml"
 
