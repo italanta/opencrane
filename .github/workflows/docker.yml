@@ -24,8 +24,6 @@ jobs:
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
-        with:
-          packageManager: true
 
       - uses: actions/setup-node@v4
         with:
