@@ -35,5 +35,5 @@ crossplane:
   enabled: false
 
 litellm:
-  enabled: true
+  enabled: false
   masterKey: e2e-master-key

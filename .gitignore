@@ -10,3 +10,6 @@ coverage/
 
 # Angular local build cache
 apps/control-plane-ui/.angular/
+
+# Dev Scripts
+dev/
