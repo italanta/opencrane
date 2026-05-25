@@ -197,7 +197,7 @@ spec:
         - name: migrate
           image: opencrane/control-plane:local
           imagePullPolicy: IfNotPresent
-          command: ["npx", "prisma", "migrate", "deploy"]
+          command: ["npx", "prisma@6", "migrate", "deploy"]
           workingDir: /app/apps/control-plane
           env:
             - name: DATABASE_URL
