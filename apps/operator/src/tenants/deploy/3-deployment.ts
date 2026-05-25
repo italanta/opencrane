@@ -33,6 +33,7 @@ export function _BuildDeployment(config: OperatorConfig, tenant: Tenant, namespa
     { name: "OPENCLAW_SECRETS_DIR", value: "/data/secrets" },
     { name: "OPENCLAW_ENCRYPTION_KEY_PATH", value: "/etc/openclaw/encryption-key/key" },
     { name: "OPENCLAW_TENANT_NAME", value: name },
+    { name: "OPENCLAW_GATEWAY_TOKEN", value: `opencrane-${name}-gateway` },
     { name: "OPENCLAW_VERSION", value: openclawVersion },
     { name: "OPENCRANE_RUNTIME_MODE", value: "managed" },
     { name: "OPENCRANE_RUNTIME_CONTRACT_PATH", value: "/config/opencrane-managed-runtime.json" },
@@ -54,6 +55,18 @@ export function _BuildDeployment(config: OperatorConfig, tenant: Tenant, namespa
       valueFrom: {
         secretKeyRef: {
           name: `openclaw-${name}-litellm-key`,
+          key: "apiKey",
+          optional: true,
+        },
+      },
+    });
+
+    // OpenClaw requires OPENAI_API_KEY for its internal OpenAI translator engine fallback
+    envVars.push({
+      name: "OPENAI_API_KEY",
+      valueFrom: {
+        secretKeyRef: {
+          name: `openclaw-${name}-openai-key`,
           key: "apiKey",
           optional: true,
         },
