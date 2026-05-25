@@ -3,7 +3,7 @@ import express from "express";
 import type { Express } from "express";
 import type { PrismaClient } from "@prisma/client";
 import request from "supertest";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { tenantsRouter } from "../../routes/tenants.js";
 
@@ -19,20 +19,35 @@ function _buildTenantsApp(customApi: k8s.CustomObjectsApi, prisma: PrismaClient)
 /** Build a minimal Prisma stub for tenant route tests. */
 function _buildPrismaStub(overrides: Partial<{
   tenantFindUnique: unknown;
-  datasetMembershipFindUnique: unknown;
-  datasetMembershipUpsert: unknown;
+  datasetMembershipFindMany: unknown;
+  datasetMembershipDeleteMany: unknown;
+  datasetMembershipCreateMany: unknown;
+  transaction: unknown;
   auditEntryCreate: unknown;
 }> = {}): PrismaClient
 {
+  const deleteManySpy = vi.fn().mockResolvedValue("datasetMembershipDeleteMany" in overrides ? overrides.datasetMembershipDeleteMany : { count: 0 });
+  const createManySpy = vi.fn().mockResolvedValue("datasetMembershipCreateMany" in overrides ? overrides.datasetMembershipCreateMany : { count: 0 });
+  const transactionSpy = vi.fn().mockImplementation(async function _transaction(operations: Promise<unknown>[])
+  {
+    if ("transaction" in overrides)
+    {
+      return overrides.transaction;
+    }
+    return Promise.all(operations);
+  });
+
   return {
     tenant: {
       create: vi.fn().mockResolvedValue({}),
       findUnique: vi.fn().mockResolvedValue("tenantFindUnique" in overrides ? overrides.tenantFindUnique : { name: "acme" }),
     },
     tenantDatasetMembership: {
-      findUnique: vi.fn().mockResolvedValue("datasetMembershipFindUnique" in overrides ? overrides.datasetMembershipFindUnique : null),
-      upsert: vi.fn().mockResolvedValue("datasetMembershipUpsert" in overrides ? overrides.datasetMembershipUpsert : {}),
+      findMany: vi.fn().mockResolvedValue("datasetMembershipFindMany" in overrides ? overrides.datasetMembershipFindMany : []),
+      deleteMany: deleteManySpy,
+      createMany: createManySpy,
     },
+    $transaction: transactionSpy,
     auditEntry: {
       create: vi.fn().mockResolvedValue("auditEntryCreate" in overrides ? overrides.auditEntryCreate : {}),
     },
@@ -41,24 +56,36 @@ function _buildPrismaStub(overrides: Partial<{
 
 describe("tenantsRouter dataset membership endpoints", () =>
 {
+  beforeEach(() =>
+  {
+    process.env.COGNEE_ENDPOINT = "http://cognee.test";
+  });
+
+  afterEach(() =>
+  {
+    delete process.env.COGNEE_ENDPOINT;
+    delete process.env.COGNEE_PERMISSIONS_TIMEOUT_MS;
+    vi.unstubAllGlobals();
+  });
+
   it("returns dataset memberships from SQL projection rows", async () =>
   {
     const prisma = _buildPrismaStub({
       tenantFindUnique: {
         name: "acme",
-        datasetMembership: {
-          org: ["default", "global"],
-          team: ["engineering"],
-          project: ["apollo"],
-          personal: ["owner@example.com"],
-        },
       },
+      datasetMembershipFindMany: [
+        { scope: "Org", subject: "default" },
+        { scope: "Team", subject: "engineering" },
+        { scope: "Project", subject: "apollo" },
+        { scope: "Personal", subject: "owner@example.com" },
+      ],
     });
     const app = _buildTenantsApp({} as k8s.CustomObjectsApi, prisma);
     const response = await request(app).get("/api/tenants/acme/datasets");
 
     expect(response.status).toBe(200);
-    expect(response.body.org).toEqual(["default", "global"]);
+    expect(response.body.org).toEqual(["default"]);
     expect(response.body.team).toEqual(["engineering"]);
     expect(response.body.project).toEqual(["apollo"]);
     expect(response.body.personal).toEqual(["owner@example.com"]);
@@ -66,14 +93,26 @@ describe("tenantsRouter dataset membership endpoints", () =>
 
   it("updates tenant dataset memberships and writes an audit entry", async () =>
   {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+    });
+    vi.stubGlobal("fetch", fetchSpy);
     const auditCreateSpy = vi.fn().mockResolvedValue({});
-    const upsertSpy = vi.fn().mockResolvedValue({});
+    const deleteManySpy = vi.fn().mockResolvedValue({ count: 4 });
+    const createManySpy = vi.fn().mockResolvedValue({ count: 4 });
+    const transactionSpy = vi.fn().mockImplementation(async function _transaction(operations: Promise<unknown>[])
+    {
+      return Promise.all(operations);
+    });
 
     const prisma = _buildPrismaStub({
       auditEntryCreate: {},
     });
     prisma.auditEntry.create = auditCreateSpy as unknown as PrismaClient["auditEntry"]["create"];
-    prisma.tenantDatasetMembership.upsert = upsertSpy as unknown as PrismaClient["tenantDatasetMembership"]["upsert"];
+    prisma.tenantDatasetMembership.deleteMany = deleteManySpy as unknown as PrismaClient["tenantDatasetMembership"]["deleteMany"];
+    prisma.tenantDatasetMembership.createMany = createManySpy as unknown as PrismaClient["tenantDatasetMembership"]["createMany"];
+    prisma.$transaction = transactionSpy as unknown as PrismaClient["$transaction"];
 
     const app = _buildTenantsApp({} as k8s.CustomObjectsApi, prisma);
     const response = await request(app)
@@ -86,7 +125,10 @@ describe("tenantsRouter dataset membership endpoints", () =>
       });
 
     expect(response.status).toBe(200);
-    expect(upsertSpy).toHaveBeenCalledOnce();
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(transactionSpy).toHaveBeenCalledOnce();
+    expect(deleteManySpy).toHaveBeenCalledOnce();
+    expect(createManySpy).toHaveBeenCalledOnce();
     expect(auditCreateSpy).toHaveBeenCalledOnce();
     expect(response.body.team).toEqual(["engineering"]);
   });
@@ -123,13 +165,43 @@ describe("tenantsRouter dataset membership endpoints", () =>
       });
 
     expect(response.status).toBe(400);
-    expect(response.body.error).toBe("org, team, project, and personal must all be string arrays");
+    expect(response.body.error).toBe("org, team, project, and personal must all be string arrays, and org may only contain 'default'");
   });
 
-  it("returns 502 when persisting dataset updates fails", async () =>
+  it("returns 502 when applying dataset updates in Cognee fails", async () =>
   {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+    });
+    vi.stubGlobal("fetch", fetchSpy);
     const prisma = _buildPrismaStub();
-    prisma.tenantDatasetMembership.upsert = vi.fn().mockRejectedValue(new Error("upsert failed")) as unknown as PrismaClient["tenantDatasetMembership"]["upsert"];
+    const deleteManySpy = vi.fn().mockResolvedValue({ count: 4 });
+    prisma.tenantDatasetMembership.deleteMany = deleteManySpy as unknown as PrismaClient["tenantDatasetMembership"]["deleteMany"];
+    const app = _buildTenantsApp({} as k8s.CustomObjectsApi, prisma);
+    const response = await request(app)
+      .put("/api/tenants/acme/datasets")
+      .send({
+        org: ["default"],
+        team: [],
+        project: [],
+        personal: [],
+      });
+
+    expect(response.status).toBe(502);
+    expect(response.body.error).toBe("Failed to apply tenant datasets in Cognee");
+    expect(deleteManySpy).not.toHaveBeenCalled();
+  });
+
+  it("returns 502 when persisting dataset updates fails after Cognee apply", async () =>
+  {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    const prisma = _buildPrismaStub();
+    prisma.$transaction = vi.fn().mockRejectedValue(new Error("persist failed")) as unknown as PrismaClient["$transaction"];
     const app = _buildTenantsApp({} as k8s.CustomObjectsApi, prisma);
     const response = await request(app)
       .put("/api/tenants/acme/datasets")
@@ -146,6 +218,11 @@ describe("tenantsRouter dataset membership endpoints", () =>
 
   it("returns 200 when audit write fails after dataset patch succeeds", async () =>
   {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+    });
+    vi.stubGlobal("fetch", fetchSpy);
     const prisma = _buildPrismaStub();
     prisma.auditEntry.create = vi.fn().mockRejectedValue(new Error("audit unavailable")) as unknown as PrismaClient["auditEntry"]["create"];
     const app = _buildTenantsApp({} as k8s.CustomObjectsApi, prisma);

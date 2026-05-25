@@ -19,22 +19,29 @@ model Tenant {
   updatedAt       DateTime     @updatedAt @map("updated_at")
   auditEntries    AuditEntry[]
   litellmKeys     TenantLiteLlmKey[]
-  datasetMembership TenantDatasetMembership?
+  datasetMemberships TenantDatasetMembership[]
 
   @@map("tenants")
 }
 
 model TenantDatasetMembership {
-  tenant     String   @id
-  org        String[] @default(["default"])
-  team       String[] @default([])
-  project    String[] @default([])
-  personal   String[] @default([])
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
-  tenantRef  Tenant   @relation(fields: [tenant], references: [name], onDelete: Cascade)
+  tenant     String
+  scope      DatasetScope
+  subject    String
+  createdAt  DateTime     @default(now()) @map("created_at")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+  tenantRef  Tenant       @relation(fields: [tenant], references: [name], onDelete: Cascade)
 
+  @@id([tenant, scope, subject])
+  @@index([tenant, scope])
   @@map("tenant_dataset_memberships")
+}
+
+enum DatasetScope {
+  Org      @map("org")
+  Team     @map("team")
+  Project  @map("project")
+  Personal @map("personal")
 }
 
 model TenantLiteLlmKey {

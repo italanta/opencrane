@@ -10,6 +10,7 @@ import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from ".
 /** Tenant CR appearance SLO constants. */
 const TENANT_CR_APPEARANCE_TIMEOUT_MS = 30_000;
 const TENANT_CR_APPEARANCE_POLL_INTERVAL_MS = 500;
+const DEFAULT_COGNEE_PERMISSIONS_TIMEOUT_MS = 5000;
 
 /**
  * Creates an Express router that exposes CRUD operations and
@@ -74,17 +75,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
     {
       const tenant = await prisma.tenant.findUnique({
         where: { name: req.params.name },
-        select: {
-          name: true,
-          datasetMembership: {
-            select: {
-              org: true,
-              team: true,
-              project: true,
-              personal: true,
-            },
-          },
-        },
+        select: { name: true },
       });
 
       if (!tenant)
@@ -93,7 +84,14 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
         return;
       }
 
-      const response: TenantDatasetsResponse = tenant.datasetMembership ?? _DefaultTenantDatasetMembership();
+      const memberships = await prisma.tenantDatasetMembership.findMany({
+        where: { tenant: req.params.name },
+        select: {
+          scope: true,
+          subject: true,
+        },
+      });
+      const response: TenantDatasetsResponse = _BuildTenantDatasetMembershipResponse(memberships);
       res.json(response);
     }
     catch
@@ -112,7 +110,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
 
     if (!membership)
     {
-      res.status(400).json({ error: "org, team, project, and personal must all be string arrays" });
+      res.status(400).json({ error: "org, team, project, and personal must all be string arrays, and org may only contain 'default'" });
       return;
     }
 
@@ -135,17 +133,28 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
       return;
     }
 
-    // 3. Persist normalized dataset memberships in SQL and write an audit trail.
+    // 3. Push tenant scope-subject bindings to Cognee where IAM enforcement lives.
     try
     {
-      await prisma.tenantDatasetMembership.upsert({
-        where: { tenant: name },
-        create: {
-          tenant: name,
-          ...membership,
-        },
-        update: membership,
-      });
+      await _ApplyTenantDatasetMembershipToCognee(name, membership, req.headers.authorization);
+    }
+    catch
+    {
+      res.status(502).json({ error: "Failed to apply tenant datasets in Cognee" });
+      return;
+    }
+
+    // 4. Persist normalized dataset memberships in SQL projection storage.
+    try
+    {
+      const projectionRows = _BuildTenantDatasetMembershipRows(name, membership);
+      await prisma.$transaction([
+        prisma.tenantDatasetMembership.deleteMany({ where: { tenant: name } }),
+        prisma.tenantDatasetMembership.createMany({
+          data: projectionRows,
+          skipDuplicates: true,
+        }),
+      ]);
     }
     catch
     {
@@ -153,6 +162,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
       return;
     }
 
+    // 5. Write audit metadata as best effort because the authoritative apply already succeeded.
     try
     {
       await prisma.auditEntry.create({
@@ -427,11 +437,17 @@ function _ValidateTenantDatasetUpdate(body: Partial<UpdateTenantDatasetsRequest>
     return null;
   }
 
+  const org = _NormalizeSubjectList(body.org);
+  if (org.length > 0 && (org.length !== 1 || org[0] !== "default"))
+  {
+    return null;
+  }
+
   return {
-    org: body.org,
-    team: body.team,
-    project: body.project,
-    personal: body.personal,
+    org: ["default"],
+    team: _NormalizeSubjectList(body.team),
+    project: _NormalizeSubjectList(body.project),
+    personal: _NormalizeSubjectList(body.personal),
   };
 }
 
@@ -548,4 +564,169 @@ function _DefaultTenantDatasetMembership(): TenantDatasetsResponse
     project: [],
     personal: [],
   };
+}
+
+/**
+ * Normalize subject values by trimming empties and removing duplicates.
+ * @param values - Raw subject values from API payloads.
+ */
+function _NormalizeSubjectList(values: string[]): string[]
+{
+  const normalized = values.map(function _trim(value)
+  {
+    return value.trim();
+  }).filter(function _isNonEmpty(value)
+  {
+    return value.length > 0;
+  });
+  return Array.from(new Set(normalized)).sort();
+}
+
+/**
+ * Build SQL projection rows from API membership payloads.
+ * @param tenant - Tenant name.
+ * @param membership - Normalized membership payload.
+ */
+function _BuildTenantDatasetMembershipRows(tenant: string, membership: TenantDatasetsResponse): Array<{
+  tenant: string;
+  scope: "Org" | "Team" | "Project" | "Personal";
+  subject: string;
+}>
+{
+  return [
+    ...membership.org.map(function _mapOrg(subject)
+    {
+      return { tenant, scope: "Org" as const, subject };
+    }),
+    ...membership.team.map(function _mapTeam(subject)
+    {
+      return { tenant, scope: "Team" as const, subject };
+    }),
+    ...membership.project.map(function _mapProject(subject)
+    {
+      return { tenant, scope: "Project" as const, subject };
+    }),
+    ...membership.personal.map(function _mapPersonal(subject)
+    {
+      return { tenant, scope: "Personal" as const, subject };
+    }),
+  ];
+}
+
+/**
+ * Build API dataset response shape from SQL projection rows.
+ * @param memberships - SQL projection rows for a tenant.
+ */
+function _BuildTenantDatasetMembershipResponse(memberships: Array<{
+  scope: "Org" | "Team" | "Project" | "Personal";
+  subject: string;
+}>): TenantDatasetsResponse
+{
+  const response = _DefaultTenantDatasetMembership();
+
+  for (const membership of memberships)
+  {
+    if (membership.scope === "Org")
+    {
+      response.org = ["default"];
+    }
+    else if (membership.scope === "Team")
+    {
+      response.team.push(membership.subject);
+    }
+    else if (membership.scope === "Project")
+    {
+      response.project.push(membership.subject);
+    }
+    else
+    {
+      response.personal.push(membership.subject);
+    }
+  }
+
+  response.team = _NormalizeSubjectList(response.team);
+  response.project = _NormalizeSubjectList(response.project);
+  response.personal = _NormalizeSubjectList(response.personal);
+  return response;
+}
+
+/**
+ * Apply tenant subject memberships to Cognee so IAM enforcement remains centralized there.
+ * @param tenant - Tenant name.
+ * @param membership - Normalized membership payload.
+ * @param authorization - Optional inbound authorization header.
+ */
+async function _ApplyTenantDatasetMembershipToCognee(
+  tenant: string,
+  membership: TenantDatasetsResponse,
+  authorization: string | string[] | undefined,
+): Promise<void>
+{
+  const timeoutMs = _ReadPositiveIntEnv("COGNEE_PERMISSIONS_TIMEOUT_MS", DEFAULT_COGNEE_PERMISSIONS_TIMEOUT_MS);
+  const response = await fetch(_BuildCogneePermissionsUrl(`/v1/permissions/tenants/${encodeURIComponent(tenant)}/subjects`), {
+    method: "PUT",
+    headers: _BuildCogneePermissionsHeaders(tenant, authorization),
+    body: JSON.stringify({
+      subjects: [
+        ...membership.org.map(function _mapOrg(subject)
+        {
+          return { scope: "org", subject };
+        }),
+        ...membership.team.map(function _mapTeam(subject)
+        {
+          return { scope: "team", subject };
+        }),
+        ...membership.project.map(function _mapProject(subject)
+        {
+          return { scope: "project", subject };
+        }),
+        ...membership.personal.map(function _mapPersonal(subject)
+        {
+          return { scope: "personal", subject };
+        }),
+      ],
+    }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+
+  if (!response.ok)
+  {
+    throw new Error(`Cognee permission sync failed with status ${response.status}`);
+  }
+}
+
+/**
+ * Build Cognee permissions endpoint URL.
+ * @param path - API path suffix.
+ */
+function _BuildCogneePermissionsUrl(path: string): string
+{
+  const endpoint = process.env.COGNEE_ENDPOINT?.trim();
+  if (!endpoint)
+  {
+    throw new Error("COGNEE_ENDPOINT is required for Cognee permissions sync");
+  }
+  return `${endpoint.replace(/\/+$/, "")}${path}`;
+}
+
+/**
+ * Build headers for Cognee permission sync calls.
+ * @param tenant - Tenant being synchronized.
+ * @param authorization - Optional incoming authorization header value.
+ */
+function _BuildCogneePermissionsHeaders(
+  tenant: string,
+  authorization: string | string[] | undefined,
+): Record<string, string>
+{
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "x-cognee-tenant-id": tenant,
+    "x-opencrane-sync-source": "control-plane",
+  };
+  if (typeof authorization === "string" && authorization.length > 0)
+  {
+    headers.authorization = authorization;
+  }
+  return headers;
 }
