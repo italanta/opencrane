@@ -431,7 +431,7 @@ All Phase 2 architecture questions are now decided. Decisions are marked with th
 7. **Retrieval Authorization Model** — **DECIDED**
    - **Decision**: AccessPolicy is the sole enforcement source for retrieval allow/deny decisions. No additional ACL layer for Phase 2.
    - **Decision**: Retrieval failures (policy-denied requests) return `403` with an explicit authorization error body (not silent empty results). Empty results are returned only when the query genuinely matches no documents.
-   - **Decision**: Retrieval access is audited at query-level — each `/api/retrieval/query` call writes an audit entry with the tenant, query fingerprint, and allow/deny outcome.
+   - **Decision**: Retrieval is direct from OpenClaw/Clawdbot to Cognee. Control-plane only applies dataset permission mappings to Cognee and audits dataset membership changes.
 
 8. **Harvesting Agent Scope (MVP)** — **DECIDED**
    - **Decision**: Initial connector implementation exists for Slack, but the source strategy is not locked to Slack-only. Candidate frameworks/connectors for Office 365, SharePoint, Google Workspace, and other enterprise sources must be evaluated before scaling connector coverage.
@@ -547,9 +547,9 @@ platform/
 - [x] Tenant pod receives `LITELLM_API_KEY` and proxy endpoint.
 - [x] Control Plane exposes spend endpoint; shows per-tenant usage + budget.
 - [x] Dashboard can display "You have $X of $Y budget" per tenant (SpendChartComponent in Angular portal).
-- [x] Retrieval endpoint returns tenant-scoped, RBAC-filtered results from org index (`/api/retrieval/query` implemented with AccessPolicy enforcement).
+- [x] Retrieval path is direct from OpenClaw/Clawdbot to Cognee; control-plane no longer mediates `/api/retrieval/query`.
 - [x] One harvesting connector continuously ingests documents with measurable lag/error metrics (Slack connector in `apps/harvesting-agent` with `/metrics` endpoint).
-- [x] AccessPolicy allow/deny rules are enforced for retrieval access path with tests (10 conformance tests in `retrieval.test.ts`).
+- [x] AccessPolicy outcomes are translated into Cognee dataset memberships via `/api/tenants/:name/datasets` and synced to Cognee permissions.
 - [x] MCP server allow/deny is enforced at gateway level beyond startup: tenant CRD `mcpPolicy` field, injected as `OPENCRANE_TENANT_MCP_ALLOW`/`OPENCRANE_TENANT_MCP_DENY` env vars, checked in `entrypoint.sh` before policy-level allow/deny.
 - [ ] Control-plane-managed env updates and propagation path to OpenClaw runtime still need explicit design and implementation notes.
 - [x] Tenant skill distribution model: durable `skillAllowlist` field added to Tenant CRD spec and TypeScript interface; takes precedence over legacy `skills` array.
@@ -680,8 +680,8 @@ apps/
 - [x] Non-admin user can self-provision tenant via web form (ProvisionPageComponent + TenantApiService implemented).
 - [x] Tenant appears in Kubernetes as Tenant CR within 30s (create route now polls Kubernetes and returns 504 if the CR is not visible within the SLO window).
 - [x] Dashboard shows health, spend, and last reconciled time per tenant (DashboardPageComponent + SpendChartComponent implemented).
-- [x] Retrieval runtime is cut over from PostgreSQL-only path to Cognee write-through for all tenants using a hard switch (`/api/retrieval/query` now calls Cognee directly; PostgreSQL org-document retrieval path removed).
-- [x] AccessPolicy-compatible dataset permissions are enforced in retrieval responses (dataset scope/id authorization added to `/api/retrieval/query` with `DATASET_DENIED` path and conformance tests).
+- [x] Retrieval runtime is cut over from PostgreSQL-only path to Cognee write-through for all tenants using a hard switch with direct OpenClaw/Clawdbot to Cognee calls.
+- [x] AccessPolicy-compatible dataset permissions are enforced through control-plane-managed Cognee subject memberships (`/api/tenants/:name/datasets`).
 - [x] control-plane-ui exposes dataset membership controls for org/team/project/personal scopes (Tenant Detail includes reusable Dataset Membership editor backed by `/api/tenants/:name/datasets`).
 - [x] Approval flow remains explicitly deferred; no Phase 3 blocker depends on approval route delivery.
 - [x] Freshness/invalidation is deferred to Sprint 3+ and controlled from Clawdbot.
@@ -842,10 +842,8 @@ Already complete from previous cycle. Key generation, budget enforcement, spend 
 
 ### Session 3 — Retrieval foundation
 - `OrgDocument` and `HarvestingCursor` models added to Prisma schema (migration `0002_retrieval_foundation`).
-- `/api/retrieval/query` route implemented with AccessPolicy-driven allow/deny enforcement.
-- `/api/retrieval/health` endpoint for org index monitoring.
-- 10 conformance tests covering allow path, deny path (explicit deny, allow-list exclusion), 404 tenant not found, excerpt truncation, audit entry creation, and health check.
-- All 32 control-plane tests pass.
+- Retrieval mediation in control-plane is superseded; retrieval now goes directly from OpenClaw/Clawdbot to Cognee.
+- Control-plane retains dataset membership and Cognee permission synchronization via `/api/tenants/:name/datasets`.
 
 ### Session 4 — Harvesting-agent MVP
 - `apps/harvesting-agent` workspace package created with Slack source connector.

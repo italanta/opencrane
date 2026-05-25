@@ -32,10 +32,8 @@ spec:
               value: {{ .Values.ingress.domain | quote }}
             - name: COGNEE_ENDPOINT
               value: {{ .Values.controlPlane.cognee.endpoint | quote }}
-            - name: COGNEE_QUERY_TIMEOUT_MS
-              value: {{ .Values.controlPlane.cognee.queryTimeoutMs | quote }}
-            - name: COGNEE_HEALTH_TIMEOUT_MS
-              value: {{ .Values.controlPlane.cognee.healthTimeoutMs | quote }}
+            - name: COGNEE_PERMISSIONS_TIMEOUT_MS
+              value: {{ .Values.controlPlane.cognee.permissionsTimeoutMs | quote }}
             - name: COGNEE_ENABLE_BACKEND_ACCESS_CONTROL
               value: {{ ternary "true" "false" .Values.controlPlane.cognee.backendAccessControl | quote }}
             - name: LITELLM_ENDPOINT

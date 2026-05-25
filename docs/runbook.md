@@ -128,13 +128,13 @@ pnpm test
 pnpm build
 ```
 
-### Retrieval Health Check
+### Cognee Health Check
 
 ```bash
-curl -H "Authorization: Bearer $OPENCRANE_API_TOKEN" \
-  https://control.opencrane.io/api/retrieval/health
+kubectl port-forward -n opencrane service/cognee 8000:8000 &
+curl http://localhost:8000/health
 
-# Expected: {"status":"ok","totalDocuments":<n>,"sources":[...]}
+# Expected: HTTP 200 and a healthy status payload
 ```
 
 ### Harvesting Agent Status
@@ -473,7 +473,7 @@ kubectl patch tenant acme -n opencrane \
 | `GET /healthz` | Overall health check (DB connectivity) |
 | `GET /api/metrics/server` | CPU, memory, storage, active tenant count |
 | `GET /api/metrics/projection-drift` | CRD vs PostgreSQL mismatch counts and lag |
-| `GET /api/retrieval/health` | Org knowledge index document counts |
+| `GET /api/tenants/:name/datasets` | Tenant dataset membership projection |
 | `GET /api/ai-budget/:tenant/spend` | LiteLLM spend vs budget for a tenant |
 | `GET http://harvesting-agent:9090/metrics` | Ingest lag, success rates by source |
 | `GET http://harvesting-agent:9090/healthz` | Harvesting agent liveness |

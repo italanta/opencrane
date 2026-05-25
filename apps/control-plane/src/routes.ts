@@ -10,7 +10,6 @@ import { metricsRouter } from "./routes/metrics.js";
 
 import { providerKeysRouter } from "./routes/provider-keys.js";
 
-import { retrievalRouter } from "./routes/retrieval.js";
 import { skillsRouter } from "./routes/skills.js";
 import { tenantsRouter } from "./routes/tenants.js";
 import { prometheusMetricsRouter } from "./routes/prometheus-metrics.js";
@@ -51,9 +50,6 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
   // 3. Organisations & Collaboration
      // Deploying and sharing of skills
   app.use("/api/skills",    skillsRouter(prisma));
-  
-     // Retrieval — org knowledge index with AccessPolicy-driven authorization
-  app.use("/api/retrieval", retrievalRouter(customApi, prisma));
 
      // Provider management
   app.use("/api/access-tokens",  accessTokensRouter(prisma));

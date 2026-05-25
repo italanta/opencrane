@@ -50,16 +50,14 @@ controlPlane:
     existingSecret: ""
     # -- Key within the Secret that holds the connection string
     secretKey: DATABASE_URL
-  # -- Cognee retrieval runtime configuration (Phase 3 hard cutover path)
+  # -- Cognee integration for control-plane permission synchronization
   cognee:
-    # -- Cognee HTTP endpoint used by /api/retrieval/*
+    # -- Cognee HTTP endpoint used by control-plane permission sync routes
     endpoint: "http://cognee:8000"
     # -- Enable Cognee backend access controls (tenant isolation + RBAC enforcement)
     backendAccessControl: true
-    # -- Retrieval query timeout in milliseconds
-    queryTimeoutMs: 5000
-    # -- Retrieval health-check timeout in milliseconds
-    healthTimeoutMs: 3000
+    # -- Permission sync timeout in milliseconds
+    permissionsTimeoutMs: 5000
 
 # -- LiteLLM integration settings
 litellm:
