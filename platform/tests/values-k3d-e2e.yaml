@@ -37,3 +37,7 @@ crossplane:
 litellm:
   enabled: true
   masterKey: e2e-master-key
+  image:
+    repository: ghcr.io/berriai/litellm-non_root
+    tag: main-v1.81.0-stable
+    pullPolicy: IfNotPresent

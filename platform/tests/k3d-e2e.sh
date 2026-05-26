@@ -8,6 +8,12 @@ RELEASE_NAME="${RELEASE_NAME:-opencrane}"
 KEEP_CLUSTER="${KEEP_CLUSTER:-0}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-240}"
 MIN_FREE_GB="${MIN_FREE_GB:-8}"
+DB_RELEASE_NAME="${DB_RELEASE_NAME:-opencrane-db}"
+DB_SECRET_NAME="${DB_SECRET_NAME:-opencrane-db}"
+DB_PASSWORD="${DB_PASSWORD:-opencrane-e2e-password}"
+LOCAL_PROFILE="${LOCAL_PROFILE:-}"
+LITELLM_SECRET_NAME="${LITELLM_SECRET_NAME:-opencrane-litellm}"
+LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY:-}"
 
 function _require_cmd()
 {
@@ -92,17 +98,82 @@ echo "[e2e] Recreating k3d cluster '$CLUSTER_NAME'"
 k3d cluster delete "$CLUSTER_NAME" >/dev/null 2>&1 || true
 k3d cluster create "$CLUSTER_NAME" --agents 1
 
-# 4. Import images into the k3d cluster runtime.
+# 4a. Pre-pulling the official CloudNativePG database image.
+echo "[e2e] Pre-pulling official CloudNativePG database image"
+docker pull ghcr.io/cloudnative-pg/postgresql:16
+
+# 4b. Import images into the k3d cluster runtime.
 echo "[e2e] Importing images into k3d"
 k3d image import opencrane/operator:e2e --cluster "$CLUSTER_NAME"
 k3d image import opencrane/tenant:e2e --cluster "$CLUSTER_NAME"
+k3d image import ghcr.io/cloudnative-pg/postgresql:16 --cluster "$CLUSTER_NAME"
 
-# 5. Install Helm chart with k3d-safe overrides.
+# 5. Install in-cluster PostgreSQL and publish the DATABASE_URL secret expected by the chart.
+echo "[e2e] Installing CloudNativePG Engine Operator into control plane"
+helm repo add cnpg https://cloudnative-pg.github.io/charts --force-update >/dev/null
+helm upgrade --install cnpg cnpg/cloudnative-pg \
+  --namespace "$NAMESPACE" \
+  --create-namespace \
+  --wait \
+  --set-string monitoring.podMonitor.enabled=false
+
+echo "[e2e] Bootstrapping credentials secret for PostgreSQL"
+kubectl create secret generic "${DB_RELEASE_NAME}-creds" \
+  -n "$NAMESPACE" \
+  --from-literal=username=opencrane \
+  --from-literal=password="$DB_PASSWORD" \
+  --dry-run=client \
+  -o yaml | kubectl apply -f -
+
+echo "[e2e] Applying CloudNativePG configuration layer"
+cat <<EOF | kubectl apply -f -
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: ${DB_RELEASE_NAME}
+  namespace: ${NAMESPACE}
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+  storage:
+    size: 10Gi
+    storageClass: local-path
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+  bootstrap:
+    initdb:
+      database: opencrane
+      secret:
+        name: ${DB_RELEASE_NAME}-creds
+EOF
+
+echo "[e2e] Waiting for Control-Plane Database Engine to stabilize..."
+kubectl wait --for=condition=Ready cluster/"${DB_RELEASE_NAME}" -n "$NAMESPACE" --timeout="${TIMEOUT_SECONDS}s"
+
+# Note: CNPG creates a service structured as [cluster-name]-rw for write/read routes
+kubectl create secret generic "$DB_SECRET_NAME" \
+  -n "$NAMESPACE" \
+  --from-literal=DATABASE_URL="postgresql://opencrane:${DB_PASSWORD}@${DB_RELEASE_NAME}-rw.${NAMESPACE}.svc.cluster.local:5432/opencrane" \
+  --dry-run=client \
+  -o yaml | kubectl apply -f -
+
+if [[ "$LOCAL_PROFILE" == "strict" ]]; then
+  kubectl create secret generic "$LITELLM_SECRET_NAME" \
+    -n "$NAMESPACE" \
+    --from-literal=LITELLM_MASTER_KEY="$LITELLM_MASTER_KEY" \
+    --dry-run=client \
+    -o yaml | kubectl apply -f -
+fi
+
+# 6. Install Helm chart with k3d-safe overrides wired to the in-cluster database.
 echo "[e2e] Installing Helm release '$RELEASE_NAME'"
 helm upgrade --install "$RELEASE_NAME" "$ROOT_DIR/platform/helm" \
   --namespace "$NAMESPACE" \
   --create-namespace \
-  --values "$ROOT_DIR/platform/tests/values-k3d-e2e.yaml"
+  --values "$ROOT_DIR/platform/tests/values-k3d-e2e.yaml" \
+  --set "litellm.existingDatabaseSecret=$DB_SECRET_NAME"
 
 # Wait for operator deployment (skip helm --wait because local-path PVCs don't bind
 # until a pod mounts them, creating a chicken-and-egg with Helm's readiness checks).
@@ -113,7 +184,7 @@ if kubectl get deployment/opencrane-litellm -n "$NAMESPACE" >/dev/null 2>&1; the
   kubectl rollout status deployment/opencrane-litellm -n "$NAMESPACE" --timeout=120s
 fi
 
-# 6. Create a Tenant CR and let the operator reconcile child resources.
+# 7. Create a Tenant CR and let the operator reconcile child resources.
 echo "[e2e] Creating Tenant CR"
 cat <<EOF | kubectl apply -f -
 apiVersion: opencrane.io/v1alpha1
@@ -129,7 +200,7 @@ EOF
 
 _wait_for_tenant_running
 
-# 7. Assert core reconciled resources exist.
+# 8. Assert core reconciled resources exist.
 kubectl get serviceaccount openclaw-e2e -n "$NAMESPACE" >/dev/null
 kubectl get configmap openclaw-e2e-config -n "$NAMESPACE" >/dev/null
 kubectl get deployment openclaw-e2e -n "$NAMESPACE" >/dev/null
@@ -137,7 +208,7 @@ kubectl get service openclaw-e2e -n "$NAMESPACE" >/dev/null
 kubectl get ingress openclaw-e2e -n "$NAMESPACE" >/dev/null
 kubectl get secret openclaw-e2e-encryption-key -n "$NAMESPACE" >/dev/null
 
-# 8. Assert status fields were written by the operator.
+# 9. Assert status fields were written by the operator.
 INGRESS_HOST="$(kubectl get tenant e2e -n "$NAMESPACE" -o jsonpath='{.status.ingressHost}')"
 if [[ "$INGRESS_HOST" != "e2e.opencrane.local" ]]; then
   echo "[e2e] Unexpected ingress host: $INGRESS_HOST"
