@@ -116,32 +116,67 @@ echo "[local] Recreating k3d cluster '$CLUSTER_NAME'"
 k3d cluster delete "$CLUSTER_NAME" >/dev/null 2>&1 || true
 k3d cluster create "$CLUSTER_NAME" --agents 1
 
-# 4. Import locally built images into the k3d runtime.
+# 4a. Pre-pulling the official CloudNativePG database image.
+echo "[local] Pre-pulling official CloudNativePG database image"
+docker pull ghcr.io/cloudnative-pg/postgresql:16
+
+# 4b. Import locally built images into the k3d runtime.
 echo "[local] Importing images into k3d"
 k3d image import opencrane/operator:local --cluster "$CLUSTER_NAME"
 k3d image import opencrane/tenant:local --cluster "$CLUSTER_NAME"
 k3d image import opencrane/control-plane:local --cluster "$CLUSTER_NAME"
+k3d image import ghcr.io/cloudnative-pg/postgresql:16 --cluster "$CLUSTER_NAME"
 
 echo "[local] Using profile '$LOCAL_PROFILE' with values '$VALUES_FILE'"
 
 # 5. Install in-cluster PostgreSQL and publish the DATABASE_URL secret expected by the chart.
-echo "[local] Installing PostgreSQL release '$DB_RELEASE_NAME'"
-helm upgrade --install "$DB_RELEASE_NAME" oci://registry-1.docker.io/bitnamicharts/postgresql \
-  --version 16.4.1 \
+echo "[local] Installing CloudNativePG Engine Operator into control plane"
+helm repo add cnpg https://cloudnative-pg.github.io/charts --force-update >/dev/null
+helm upgrade --install cnpg cnpg/cloudnative-pg \
   --namespace "$NAMESPACE" \
   --create-namespace \
   --wait \
-  --set auth.username=opencrane \
-  --set auth.password="$DB_PASSWORD" \
-  --set auth.database=opencrane \
-  --set primary.persistence.size=10Gi \
-  --set primary.persistence.storageClass=local-path \
-  --set primary.resources.requests.cpu=250m \
-  --set primary.resources.requests.memory=256Mi
+  --set-string monitoring.podMonitor.enabled=false
 
+echo "[local] Bootstrapping credentials secret for PostgreSQL"
+kubectl create secret generic "${DB_RELEASE_NAME}-creds" \
+  -n "$NAMESPACE" \
+  --from-literal=username=opencrane \
+  --from-literal=password="$DB_PASSWORD" \
+  --dry-run=client \
+  -o yaml | kubectl apply -f -
+
+echo "[local] Applying CloudNativePG configuration layer"
+cat <<EOF | kubectl apply -f -
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: ${DB_RELEASE_NAME}
+  namespace: ${NAMESPACE}
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+  storage:
+    size: 10Gi
+    storageClass: local-path
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+  bootstrap:
+    initdb:
+      database: opencrane
+      secret:
+        name: ${DB_RELEASE_NAME}-creds
+EOF
+
+echo "[local] Waiting for Control-Plane Database Engine to stabilize..."
+kubectl wait --for=condition=Ready cluster/"${DB_RELEASE_NAME}" -n "$NAMESPACE" --timeout="${TIMEOUT_SECONDS}s"
+
+# Note: CNPG creates a service structured as [cluster-name]-rw for write/read routes
 kubectl create secret generic "$DB_SECRET_NAME" \
   -n "$NAMESPACE" \
-  --from-literal=DATABASE_URL="postgresql://opencrane:${DB_PASSWORD}@${DB_RELEASE_NAME}-postgresql.${NAMESPACE}.svc.cluster.local:5432/opencrane" \
+  --from-literal=DATABASE_URL="postgresql://opencrane:${DB_PASSWORD}@${DB_RELEASE_NAME}-rw.${NAMESPACE}.svc.cluster.local:5432/opencrane" \
   --dry-run=client \
   -o yaml | kubectl apply -f -
 
