@@ -5,28 +5,18 @@ import type { NormalizedDocument } from "./domain/harvesting-agents/harvesting-a
 /**
  * Resolve the Cognee dataset name for a normalized document.
  *
- * Dataset hierarchy follows the OpenCrane scope model documented in `docs/memory.md`:
- * team → department → project → org (fallback). The most-specific scope wins so
- * that narrowly-scoped documents land in the most appropriate dataset.
+ * Dataset name is derived directly from the document's scope category and subject
+ * identifier (e.g. `team/platform`, `department/engineering`, `project/opencrane`).
+ * Falls back to `org` when no scope is set.
  *
  * @param document - Normalized document produced by a source connector.
  * @returns Cognee dataset name string.
  */
 export function _ResolveDatasetName(document: NormalizedDocument): string
 {
-  if (document.teamScope)
+  if (document.scope && document.subject)
   {
-    return `team/${document.teamScope}`;
-  }
-
-  if (document.departmentScope)
-  {
-    return `dept/${document.departmentScope}`;
-  }
-
-  if (document.projectScope)
-  {
-    return `project/${document.projectScope}`;
+    return `${document.scope}/${document.subject}`;
   }
 
   return "org";
@@ -36,8 +26,9 @@ export function _ResolveDatasetName(document: NormalizedDocument): string
  * Push a single normalized document to Cognee via its REST ingest API.
  *
  * Sends document content and all policy-relevant metadata (ACL origin,
- * sensitivity tags, scopes, freshness markers) to the Cognee `/v1/add`
- * endpoint so retrieval and permission enforcement can work correctly.
+ * sensitivity tags, scope, subject, share list, freshness markers) to the
+ * Cognee `/v1/add` endpoint so retrieval and permission enforcement can work
+ * correctly.
  *
  * @param cogneeEndpoint - Base URL of the Cognee service (e.g. `http://cognee:8000`).
  * @param document       - Normalized document to push.
@@ -69,24 +60,24 @@ export async function _PushDocumentToCognee(
     ingest_cursor: document.ingestCursor,
   };
 
+  if (document.scope)
+  {
+    metadata.scope = document.scope;
+  }
+
+  if (document.subject)
+  {
+    metadata.subject = document.subject;
+  }
+
+  if (document.shareList && document.shareList.length > 0)
+  {
+    metadata.share_list = document.shareList;
+  }
+
   if (document.title)
   {
     metadata.title = document.title;
-  }
-
-  if (document.teamScope)
-  {
-    metadata.team_scope = document.teamScope;
-  }
-
-  if (document.departmentScope)
-  {
-    metadata.department_scope = document.departmentScope;
-  }
-
-  if (document.projectScope)
-  {
-    metadata.project_scope = document.projectScope;
   }
 
   if (document.confidentiality)

@@ -1,7 +1,7 @@
 import type { NormalizedDocument, OrgIndexDocumentConformanceIssue, OrgIndexDocumentConformanceResult } from "./domain/harvesting-agents/harvesting-agent.types.js";
 
 /** Optional string metadata fields accepted by the org index schema v2 contract. */
-const OPTIONAL_STRING_FIELDS = ["teamScope", "departmentScope", "projectScope", "title", "confidentiality", "jurisdiction", "retentionClass"] as const;
+const OPTIONAL_STRING_FIELDS = ["scope", "subject", "title", "confidentiality", "jurisdiction", "retentionClass"] as const;
 
 /** Required timestamp metadata fields enforced by the org index schema v2 contract. */
 const REQUIRED_TIMESTAMP_FIELDS = ["sourceUpdatedAt", "freshnessRecordedAt"] as const;
@@ -59,7 +59,33 @@ export function _ValidateOrgIndexDocument(document: NormalizedDocument): OrgInde
     }
   }
 
-  // 3. Validate freshness markers so later SLO checks can trust timestamp semantics.
+  // 3. Validate optional shareList entries when present.
+  if (document.shareList !== undefined)
+  {
+    if (!Array.isArray(document.shareList))
+    {
+      issues.push({
+        field: "shareList",
+        message: "must be omitted or provided as an array of non-empty strings",
+      });
+    }
+    else
+    {
+      for (const entry of document.shareList)
+      {
+        if (typeof entry !== "string" || entry.trim() === "")
+        {
+          issues.push({
+            field: "shareList",
+            message: "must contain only non-empty strings",
+          });
+          break;
+        }
+      }
+    }
+  }
+
+  // 4. Validate freshness markers so later SLO checks can trust timestamp semantics.
   for (const field of REQUIRED_TIMESTAMP_FIELDS)
   {
     _pushRequiredTimestampIssue(issues, field, document[field]);

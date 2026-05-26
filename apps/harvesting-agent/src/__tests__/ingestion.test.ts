@@ -22,9 +22,9 @@ function _BuildDocument(overrides: Partial<NormalizedDocument> = {}): Normalized
     source: "slack",
     sourceId: "C123/1717171717.000100",
     owner: "owner@example.com",
-    teamScope: "platform",
-    departmentScope: "engineering",
-    projectScope: "opencrane",
+    scope: "team",
+    subject: "platform",
+    shareList: ["user1@example.com", "user2@example.com"],
     sensitivityTags: ["slack", "internal"],
     title: "Release checklist",
     content: "Ship the awareness schema v2 rollout.",
@@ -83,8 +83,9 @@ describe("harvesting ingestion schema v2", function _suite()
     expect(body.metadata.source).toBe("slack");
     expect(body.metadata.acl_origin).toBe("slack:channel-membership");
     expect(body.metadata.sensitivity_tags).toEqual(["slack", "internal"]);
-    expect(body.metadata.department_scope).toBe("engineering");
-    expect(body.metadata.project_scope).toBe("opencrane");
+    expect(body.metadata.scope).toBe("team");
+    expect(body.metadata.subject).toBe("platform");
+    expect(body.metadata.share_list).toEqual(["user1@example.com", "user2@example.com"]);
     expect(body.metadata.confidentiality).toBe("internal");
     expect(body.metadata.source_updated_at).toBe("2024-05-30T12:08:37.100Z");
   });
@@ -126,9 +127,9 @@ describe("harvesting ingestion schema v2", function _suite()
   it("resolves dataset as 'org' when no scope fields are set", async function _test()
   {
     const document = _BuildDocument({
-      teamScope: undefined,
-      departmentScope: undefined,
-      projectScope: undefined,
+      scope: undefined,
+      subject: undefined,
+      shareList: undefined,
     });
     const fetchSpy = _BuildSuccessFetchSpy();
     vi.stubGlobal("fetch", fetchSpy);
