@@ -80,9 +80,9 @@ OpenCrane is represented here as a clean operating model: a central **Control Pl
 
 ```
 ┌──────────────────────────┐      ┌──────────────────────────────┐
-│      Control Plane       │◄────►│  Cloud SQL + Skills Repo    │
-│   admin.opencrane.ai     │      │  org / users / teams /      │
-│   Express + Prisma       │      │  projects / state           │
+│      Control Plane       │◄────►│  Cloud SQL + Skills Repo     │
+│   admin.opencrane.ai     │      │  org / users / teams /       │
+│   Express + Prisma       │      │  projects / state            │
 └─────────────┬────────────┘      └──────────────────────────────┘
               │
               ▼
