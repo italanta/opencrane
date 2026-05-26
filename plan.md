@@ -768,6 +768,12 @@ apps/
    - Promotion and demotion are metadata operations over immutable versions (scope grants move, artifact stays unchanged).
    - After protocol cutover criteria pass, remove legacy filesystem-only sharing paths and keep filesystem usage as pull-through cache only.
 
+### Current Implementation Progress
+
+- [x] Org index schema v2 metadata fields now exist in the harvesting pipeline and control-plane persistence model for department/project scope, confidentiality, jurisdiction, retention class, ACL lineage, freshness markers, and ingest cursor tracking.
+- [x] Slack harvesting now emits the required lineage/freshness metadata, and ingestion rejects non-conformant org index records before they enter the shared awareness corpus.
+- [ ] Connector rollout beyond Slack and the final conformance enforcement bar remain blocked on the open Phase 4 connector-adoption and department-scope decisions.
+
 ### Key Tasks (Phase 4)
 
 | Task | Owner | Effort | Dependency |

@@ -17,6 +17,12 @@ export interface NormalizedDocument
   /** Optional team scope for RBAC filtering. */
   teamScope?: string;
 
+  /** Optional department scope for organization-aware retrieval. */
+  departmentScope?: string;
+
+  /** Optional project scope for project-aware retrieval. */
+  projectScope?: string;
+
   /** Sensitivity classification tags applied by the connector. */
   sensitivityTags: string[];
 
@@ -25,6 +31,93 @@ export interface NormalizedDocument
 
   /** Full plain-text content of the document. */
   content: string;
+
+  /** Optional confidentiality marker carried from the source system. */
+  confidentiality?: string;
+
+  /** Optional jurisdiction marker carried from the source system. */
+  jurisdiction?: string;
+
+  /** Optional retention class marker carried from the source system. */
+  retentionClass?: string;
+
+  /** ACL lineage marker describing which source ACL model produced this record. */
+  aclOrigin: string;
+
+  /** Source-system update time used for freshness evaluation. */
+  sourceUpdatedAt: string;
+
+  /** Timestamp when the connector captured freshness metadata for this record. */
+  freshnessRecordedAt: string;
+
+  /** Connector cursor value associated with this document during ingestion. */
+  ingestCursor: string;
+}
+
+/** Single schema-conformance issue found while validating an org index document. */
+export interface OrgIndexDocumentConformanceIssue
+{
+  /** Field name that failed validation. */
+  field: string;
+
+  /** Human-readable explanation of why the field is invalid. */
+  message: string;
+}
+
+/** Result returned after validating an org index schema v2 document. */
+export interface OrgIndexDocumentConformanceResult
+{
+  /** Whether the document satisfies the schema contract. */
+  valid: boolean;
+
+  /** Field-level issues that explain any validation failures. */
+  issues: OrgIndexDocumentConformanceIssue[];
+}
+
+/** Stored org document fields needed to detect metadata drift without re-embedding. */
+export interface StoredOrgDocumentSnapshot
+{
+  /** Stored content hash representing the last embedded document body. */
+  contentHash: string | null;
+
+  /** Stored owner identifier. */
+  owner: string;
+
+  /** Stored team scope. */
+  teamScope: string | null;
+
+  /** Stored department scope. */
+  departmentScope: string | null;
+
+  /** Stored project scope. */
+  projectScope: string | null;
+
+  /** Stored sensitivity tags. */
+  sensitivityTags: string[];
+
+  /** Stored title. */
+  title: string | null;
+
+  /** Stored confidentiality marker. */
+  confidentiality: string | null;
+
+  /** Stored jurisdiction marker. */
+  jurisdiction: string | null;
+
+  /** Stored retention class. */
+  retentionClass: string | null;
+
+  /** Stored ACL origin marker. */
+  aclOrigin: string;
+
+  /** Stored source update time. */
+  sourceUpdatedAt: Date;
+
+  /** Stored ingest cursor. */
+  ingestCursor: string;
+
+  /** Stored embedding-ready flag. */
+  embeddingReady: boolean;
 }
 
 /** Cursor value persisted between sync cycles for incremental ingestion. */

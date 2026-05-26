@@ -74,6 +74,7 @@ export class SlackConnector
     const documents: NormalizedDocument[] = [];
     const errors: string[] = [];
     let latestTs: string | null = null;
+    const normalizedAt = new Date().toISOString();
 
     // 1. Iterate over each configured channel — each produces a batch of messages.
     for (const channelId of this._config.channelIds)
@@ -91,7 +92,7 @@ export class SlackConnector
       // 3. Normalize each message into a canonical NormalizedDocument.
       for (const message of result.messages ?? [])
       {
-        const doc = this._normalizeMessage(channelId, message);
+        const doc = this._normalizeMessage(channelId, message, normalizedAt);
         if (doc)
         {
           documents.push(doc);
@@ -163,7 +164,7 @@ export class SlackConnector
    * Normalize a Slack message into a {@link NormalizedDocument}.
    * Returns null for system messages, bot messages without text, or empty messages.
    */
-  private _normalizeMessage(channelId: string, message: SlackMessage): NormalizedDocument | null
+  private _normalizeMessage(channelId: string, message: SlackMessage, normalizedAt: string): NormalizedDocument | null
   {
     // 1. Skip non-user messages (system events, bot messages without text).
     if (!message.text || message.text.trim() === "")
@@ -177,6 +178,14 @@ export class SlackConnector
     // 3. Classify sensitivity — apply "slack" sensitivity tag to all messages.
     //    Fine-grained sensitivity classification is a Phase 3 feature.
     const sensitivityTags = ["slack"];
+    // 4. Reject messages with an unparseable timestamp so freshness and cursor
+    //    metadata never fall back to misleading epoch values.
+    const sourceUpdatedAt = _slackTimestampToIso(message.ts);
+
+    if (!sourceUpdatedAt)
+    {
+      return null;
+    }
 
     return {
       source: "slack",
@@ -184,6 +193,10 @@ export class SlackConnector
       owner: message.user ?? "unknown",
       sensitivityTags,
       content: message.text,
+      aclOrigin: "slack:channel-membership",
+      sourceUpdatedAt,
+      freshnessRecordedAt: normalizedAt,
+      ingestCursor: message.ts,
     };
   }
 }
@@ -196,4 +209,27 @@ export class SlackConnector
 export function _ComputeContentHash(content: string): string
 {
   return createHash("sha256").update(content, "utf8").digest("hex");
+}
+
+/**
+ * Convert a Slack `ts` value into an ISO-8601 timestamp string.
+ *
+ * @param slackTimestamp - Slack timestamp in seconds.microseconds format.
+ * @returns ISO-8601 timestamp when parsing succeeds, otherwise null.
+ */
+function _slackTimestampToIso(slackTimestamp: string): string | null
+{
+  if (slackTimestamp.trim() === "")
+  {
+    return null;
+  }
+
+  const parsedTimestamp = Number(slackTimestamp);
+
+  if (!Number.isFinite(parsedTimestamp))
+  {
+    return null;
+  }
+
+  return new Date(parsedTimestamp * 1000).toISOString();
 }

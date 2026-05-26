@@ -177,10 +177,19 @@ model OrgDocument {
   sourceId        String   @map("source_id")
   owner           String
   teamScope       String?  @map("team_scope")
+  departmentScope String?  @map("department_scope")
+  projectScope    String?  @map("project_scope")
   sensitivityTags String[] @map("sensitivity_tags")
   title           String?
   content         String
   contentHash     String?  @map("content_hash")
+  confidentiality String?
+  jurisdiction    String?
+  retentionClass  String?  @map("retention_class")
+  aclOrigin       String   @map("acl_origin")
+  sourceUpdatedAt DateTime @map("source_updated_at")
+  freshnessRecordedAt DateTime @map("freshness_recorded_at")
+  ingestCursor    String   @map("ingest_cursor")
   embeddingReady  Boolean  @default(false) @map("embedding_ready")
   ingestedAt      DateTime @default(now()) @map("ingested_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
