@@ -688,7 +688,7 @@ apps/
 
 ---
 
-## Phase 4: Fleet Organizational Awareness
+## Phase 4: Fleet Organizational Awareness + MCP & Skills Platform
 
 ### Architecture Checkpoint: Uniform Awareness Across All OpenClaws
 
@@ -721,7 +721,18 @@ apps/
    - Freshness/invalidation logic is centralized as reusable OpenClaw behavior, not bespoke prompt rules.
    - Define stale-data fallback UX and reason codes.
 
-5. **Skills Sharing and Participation Protocol**
+5. **MCP & Skills Platform (Config-Slaved Ingress Planes)**
+   - Replace the policy-only MCP Server Plane and the shared-PVC skill mount with two config-slaved ingress service planes, both governed by the control-plane as sole authority.
+   - **Obot MCP Gateway** — in-cluster MCP registry + gateway (runtime tool broker). Headless, admin disabled, config-slaved via operator reconcile.
+   - **Skill Registry & Delivery** — org-aligned skill management over OCI/ORAS (Zot) with per-read entitlement enforcement.
+   - Tenant→plane auth = projected ServiceAccount token, audience-bound (`aud=obot-gateway` / `aud=skill-registry`), ~600s TTL, kubelet-rotated. Delete the predictable `OPENCLAW_GATEWAY_TOKEN`.
+   - MCP downstream secrets live only in Obot (central broker, confirmed); never reach a pod.
+   - Skill substrate = build thin over OCI/ORAS + Cognee (confirmed); not a ClawHub fork.
+   - Two clocks: revocation effective on next gateway call / next pull (fail-closed); new grants usable after next contract re-pull (eventually-consistent).
+   - Remove legacy wiring — no duplicate failover paths, single clean architecture.
+   - Full specification in `mcp-skills-platform-brief.md`.
+
+6. **Skills Sharing and Participation Protocol**
    - Define a fleet-wide skills-sharing model with explicit hierarchy: org, department, project, personal.
    - Support controlled promotion and demotion between scopes (personal -> project -> department -> org and reverse) with policy checks and audit trail.
    - Every promoted or demoted skill remains versioned and immutable by digest; no in-place mutation.
@@ -729,7 +740,18 @@ apps/
    - Control-plane monitors protocol participation health, policy compliance, and rollout version drift.
    - Prefer existing protocols first: OpenClaw skill folder format plus OCI Distribution for bundle transport/versioning.
 
-**Action**: Deliver a single organizational-awareness layer that every OpenClaw instance consumes identically, with direct Cognee retrieval and centrally managed permissions.
+7. **Control-Plane MCP & Skill Management Surfaces**
+   - **MCP server management:** full lifecycle CRUD for MCP servers; `McpServer`, `McpServerGrant`, `McpServerCredential` data models; per-scope entitlement via the shared 5-level compiler; config + grants pushed to Obot MCP Gateway via operator reconcile.
+   - **Skill catalog, sharing & promotion:** replace filesystem-only `skillsRouter` with registry-backed catalog; `SkillBundle` (immutable, OCI digest-pinned), `SkillEntitlement`, `SkillPromotion` models; Cognee-backed semantic search; promotion/demotion workflow with admin review.
+   - **Third-party source installation:** `ThirdPartySource` and `ThirdPartySourceItem` models; support MCP Server Registry, Anthropic skills, ClawHub (future), custom Git repos, manual upload; security-critical ingest pipeline (fetch → scan → validate → register → entitle → audit); auto-sync via CronJob (discover only, install requires explicit admin action).
+
+8. **Effective-Contract Integration (MCP + Skills)**
+   - Extend `runtimeContract` with `gateway`, `mcp.servers` (compiled grant), `skills.entitled` (index with name, scope, version, digest), `contractVersion`.
+   - `GET /api/tenants/:name/effective-contract` compiles MCP + skill grants by evaluating all entitlement records matching the tenant's org hierarchy position.
+   - Pod re-pulls contract at agentic-loop boundaries; diffs entitled set; pulls new bodies, drops de-entitled; refreshes discovery index.
+   - Entitlement-scoping is security-critical: registry is the boundary (not the contract); existence-hiding (404 not 403); no list/search verb on pod-facing delivery endpoint; audit every out-of-scope attempt.
+
+**Action**: Deliver a single organizational-awareness layer that every OpenClaw instance consumes identically, with direct Cognee retrieval, centrally managed permissions, and two config-slaved ingress planes for MCP and skills.
 
 ---
 
@@ -768,6 +790,36 @@ apps/
    - Promotion and demotion are metadata operations over immutable versions (scope grants move, artifact stays unchanged).
    - After protocol cutover criteria pass, remove legacy filesystem-only sharing paths and keep filesystem usage as pull-through cache only.
 
+8. **Obot MCP Gateway (Config-Slaved Ingress)**
+   - Deploy Obot headless with native admin disabled and IdP bound to central OIDC.
+   - Operator reconciles config + MCP server registries; drift-detects/repairs.
+   - Per-call scope check via projected JWT (`aud=obot-gateway`).
+   - Downstream credential brokering via RFC 8693 shim; secrets never reach tenant pods.
+   - NetworkPolicies restrict tenant pods to gateway ingress only (no path to Obot DB).
+
+9. **Skill Registry & Delivery Service (Config-Slaved Ingress)**
+   - New in-cluster ingress service over OCI/ORAS (Zot) for scoped skill content delivery.
+   - Entitlement enforced per read; pod-facing endpoint supports only `get-by-entitled-digest` (no list/search).
+   - Existence-hiding: non-entitled lookups return 404, not 403.
+   - Ingest/scan pipeline: Trivy/Grype on every ingest; flagged items quarantined.
+   - NetworkPolicies restrict tenant pods to delivery ingress only (no path to OCI store).
+
+10. **Control-Plane MCP & Skill Management**
+    - MCP server lifecycle CRUD with per-scope entitlement grants via 5-level compiler.
+    - Skill catalog with registry-backed authoring, promotion/demotion workflow, and Cognee-backed search.
+    - Third-party source management: upstream registry sync, security-critical ingest pipeline, explicit admin-only installation.
+    - Config + grant push to both planes via operator reconcile path.
+
+11. **Projected-Token Identity Migration**
+    - Replace `OPENCLAW_GATEWAY_TOKEN` with audience-bound projected ServiceAccount tokens (~600s TTL, kubelet-rotated).
+    - Set tenant SA audiences for both planes (`aud=obot-gateway`, `aud=skill-registry`).
+    - Extend effective-contract with `mcp.servers`, `skills.entitled`, and `contractVersion`.
+
+12. **Central Per-Tenant Scheduler**
+    - Central scheduler owns schedule + governance; dispatches jobs as tenant identity via projected-token path.
+    - Claws do not self-schedule; schedules survive pod suspension and restarts.
+    - Wake/dispatch path guarded: job-scoped token, audited, no broad impersonation.
+
 ### Current Implementation Progress
 
 - [x] Org index schema v2 metadata fields now exist in the harvesting pipeline and control-plane persistence model for department/project scope, confidentiality, jurisdiction, retention class, ACL lineage, freshness markers, and ingest cursor tracking.
@@ -788,8 +840,20 @@ apps/
 | Control-plane protocol monitoring + dashboards | Backend + DevOps | 10h | Protocol runtime telemetry |
 | Hierarchical scope promotion/demotion workflow + audit trail | Backend | 10h | Skills sharing protocol runtime |
 | OCI-based skill registry sync (digest pinning + rollout policy) | Backend + DevOps | 6h | Hierarchical scope model |
+| Projected-token identity migration (remove `OPENCLAW_GATEWAY_TOKEN`, SA audiences) | Backend | 10h | Phase 3 tenant SA baseline |
+| Effective-contract extension (`mcp.servers`, `skills.entitled`, `contractVersion`) | Backend | 12h | Projected-token identity |
+| MCP server management routes + data model (`McpServer`, `McpServerGrant`) | Backend | 14h | Effective-contract extension |
+| Skill catalog routes + data model (`SkillBundle`, `SkillEntitlement`, `SkillPromotion`) | Backend | 16h | OCI-based skill registry |
+| Third-party source management routes + ingest pipeline | Backend | 14h | MCP server + skill catalog routes |
+| 5-level permission compiler (shared by MCP + skills + awareness) | Backend | 12h | AccessPolicy compiler baseline |
+| Obot MCP Gateway deployment (headless, config-slaved, drift-repaired) | Backend + DevOps | 14h | MCP server management routes |
+| Skill Registry & Delivery service (OCI/ORAS + entitlement enforcement) | Backend + DevOps | 16h | Skill catalog routes |
+| Helm templates + NetworkPolicies for both ingress planes | DevOps | 10h | Gateway + registry deployment |
+| CRDs: `MCPServer`, `ObotConfig`, `SkillBundle`, `SkillRegistry`, `Schedule` | Backend + DevOps | 8h | Phase 3 CRD baseline |
+| Central per-tenant scheduler (dispatch as tenant identity) | Backend | 12h | Projected-token identity |
+| Control-plane UI: MCP install, skill catalog, permission management, schedules | Frontend | 20h | MCP + skill + scheduler routes |
 | Tenant-cohort canary rollout and rollback playbook | DevOps | 10h | Feature flags + evaluation harness |
-| **Phase 4 Total** | | **156h** | |
+| **Phase 4 Total** | | **324h** | |
 
 ### Success Criteria
 
@@ -804,6 +868,18 @@ apps/
 - [ ] Skills support org, department, project, and personal scopes with policy-controlled promotion and demotion flows.
 - [ ] Every deployed skill is versioned and pinned by immutable artifact digest, with rollback to prior versions supported per scope.
 - [ ] Legacy filesystem-only sharing paths are removed after protocol cutover; only registry-backed distribution with optional pull-through cache remains.
+- [ ] Tenant pods authenticate to both planes via projected ServiceAccount tokens only; no static bearer tokens remain.
+- [ ] A tenant cannot obtain or read another tenant's gateway/downstream token (no shared/guessable credential anywhere).
+- [ ] Tenant pod filesystem/env contains no MCP downstream secret; secrets live only in Obot token store.
+- [ ] A tenant pod cannot enumerate or pull any skill outside its compiled entitlement, including by direct digest or search against the registry.
+- [ ] Removing a grant denies the next MCP call / skill pull (audited) without a pod restart.
+- [ ] Adding a grant becomes usable after the next contract re-pull, no restart.
+- [ ] Manual edits to either plane's config are reverted by operator drift reconcile.
+- [ ] MCP servers are manageable via control-plane CRUD with per-scope entitlement grants.
+- [ ] Third-party MCP servers and skills can be installed from upstream sources via the ingest pipeline (scan → validate → register → entitle).
+- [ ] Skill catalog supports authoring, promotion/demotion with admin review, and Cognee-backed semantic search.
+- [ ] Per-tenant schedules survive pod suspension and restarts; claws run no self-owned cron.
+- [ ] All new code conforms to `AGENTS.md`.
 
 ---
 
@@ -832,8 +908,8 @@ apps/
 | **Phase 1** (Core) | 90h | 3 weeks (2 eng + 1 ops) | Week 1 |
 | **Phase 2** (Cost control + retrieval foundation) | 127h | 2-3 weeks (parallel to Phase 1 end) | Week 2 |
 | **Phase 3** (Self-service + memory cutover) | 97h | 3 weeks (after Phase 2) | Week 4 |
-| **Phase 4** (Fleet organizational awareness) | 156h | 5-6 weeks (after Phase 3) | Week 7 |
-| **Total** | **470h** | **12–15 weeks** | |
+| **Phase 4** (Fleet organizational awareness + MCP & skills platform) | 324h | 8-10 weeks (after Phase 3) | Week 7 |
+| **Total** | **638h** | **16–20 weeks** | |
 
 ---
 
@@ -913,6 +989,13 @@ This avoids rework and ensures alignment across teams.
 - [ ] Department scope semantics versus team scope migration rules.
 - [ ] Promotion and demotion authorization rules and required approvers per scope boundary.
 - [ ] OCI artifact naming, tagging, and digest pinning policy for skill versions.
+- [x] MCP credential custody: central broker (Obot holds downstream creds; pod never receives them). **Confirmed.**
+- [x] Skill substrate: build thin over OCI/ORAS + Cognee (not a ClawHub fork). **Confirmed.**
+- [ ] Obot MCP Gateway version and deployment topology (single replica vs HA).
+- [ ] Skill registry OCI store: Zot vs alternative OCI-compliant registry.
+- [ ] Third-party source auto-sync interval defaults and rate-limit policy.
+- [ ] Scheduler dispatch identity model: job-scoped token TTL and audience.
+- [ ] ClawdBot bootstrap injection content (BOOTSTRAP.MD, SOUL.MD) review and sign-off.
 
 #### Phase 3 Decision Lock: AccessPolicy -> Cognee Mapping
 

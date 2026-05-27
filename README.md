@@ -106,24 +106,21 @@ OpenCrane is represented here as a clean operating model: a central **Control Pl
 │  └────────────────────────┘    │           |            |    │ (registry-pulled, run        │  │
 │                                └──────┬────┬────────────┘    │  locally)                    │  │
 │  ┌────────────────────────┐           |    │  (3) JWT        ├──────────────────────────────┤  │
-│  │ Cognee Brain           │◄───────────────┴────────────────►│ Obot token store             │  │
-│  │ - retrieval / memory   │           |                      │ - per-user downstream creds  │  │
-│  └──────────▲─────────────┘           |                      │ - encrypted; pod-unreachable │  │
-│             │                         |                      └──────────────────────────────┘  │
-│             │                         |                                                        │
-│             │                         |                      ┌──────────────────────────────┐  │
-│             │                         └ ─(jente.oc)─ ─ ─ ───►│ Egress Control Plane         ▒▒▒▒▒▒
-│             │                                                │ - allowlists / DLP / audit   │  │
-│             │                                                │ - network egress authority   │  │
-│             │                                                └──────────────────────────────┘  │
-│             │                                                                                  │
-│             │                                                ┌──────────────────────────────┐  │
-│             └────────────────────────────────────────────────┤ Harvesting Agents            ▒▒▒▒▒▒
-│                                ┌────────────────────────┐    │ - ingest -> Cognee           │  │
-│                                │  jane.oc (isolated)    │    └──────────────────────────────┘  │
-│                                └────────────────────────┘                                      │
+│  │ Cognee Brain           │◄──────┬────────┴────────────────►│ Obot token store             │  │
+│  │ - retrieval / memory   │       |   |                      │ - per-user downstream creds  │  │
+│  └──────────▲─────────────┘       |   |                      │ - encrypted; pod-unreachable │  │
+│             │                     |   |                      └──────────────────────────────┘  │
+│  ┌──────────┴─────┬───────────┐   |   |                                                        │
+│  │ Skill Registry │Skills     │   |   |                      ┌──────────────────────────────┐  │
+│  │ & Delivery     │ Access    │◄──┘   └ ─(jente.oc)─ ─ ─ ───►│ Egress Control Plane         ▒▒▒▒▒▒
+│  │ - OCI/ORAS     │ Permission│                              │ - allowlists / DLP / audit   │  │
+│  │ - scan/ingest  │ Gate      │                              │ - network egress authority   │  │
+│  └────────────────┴───────────┘                              └──────────────────────────────┘  │
 │                                ┌────────────────────────┐                                      │
-│                                │  niels.oc (isolated)   │                                      │
+│                                │  jane.oc (isolated)    │    ┌──────────────────────────────┐  │
+│                                └────────────────────────┘    │ Harvesting Agents            ▒▒▒▒▒▒
+│                                ┌────────────────────────┐    │ - ingest -> Cognee           │  │
+│                                │  niels.oc (isolated)   │    └──────────────────────────────┘  │
 │                                └────────────────────────┘                                      │
 └────────────────────────────────────────────────────────────────────────────────────────────────┘
 
@@ -134,7 +131,7 @@ Legend
 (3) JWT — short-lived, audience-bound projected SA token; shim injects downstream creds server-side, never to the pod.
 ```
 
-In this view, the left control pillar is split into separate Operator Control, Cognee Brain, MCP Server Plane, and Harvesting Agents blocks, while Egress Control enforces outbound and model-access guardrails.
+In this view, the left control pillar stacks Operator Control, Cognee Brain, and the Permission Compiler + Skill Registry (split box showing entitlement resolution alongside OCI/ORAS-backed skill delivery). The right MCP & Egress Plane hosts the Obot MCP Gateway, in-cluster MCP servers, Obot token store, Egress Control Plane, and Harvesting Agents. Both planes are config-slaved to the control plane; tenants reach them only via projected JWT.
 
 ### Direct Retrieval Runtime: Extending Tenant Context
 
@@ -181,8 +178,19 @@ During Agentic Loop:
   - shared OpenClaw SDK as execution engine,
   - control-plane served effective-contract endpoint per scope.
 - **Rollout safety**: SemVer contract compatibility, tenant-cohort canaries, optional shadow mode, and contract-ID rollback.
+- **MCP & Skills Platform (two config-slaved ingress planes)**:
+  - **Obot MCP Gateway** — headless, admin disabled, config-slaved. Validates projected JWT (`aud=obot-gateway`), per-call scope check, brokers downstream creds via RFC 8693 shim. Secrets never reach tenant pods.
+  - **Skill Registry & Delivery** — in-cluster over OCI/ORAS (Zot). Permission Compiler resolves 5-level entitlements (org/dept/team/project/individual); delivery endpoint enforces per-read, existence-hiding (404 not 403), no list/search verb for pods.
+  - Control plane owns both planes' config and per-tenant grants; operator reconciles + drift-repairs.
+- **Control-plane MCP & skill management surfaces**:
+  - MCP server lifecycle CRUD with per-scope entitlement grants.
+  - Skill catalog with registry-backed authoring, promotion/demotion, and Cognee-backed search.
+  - Third-party source installation (MCP Server Registry, Anthropic skills, ClawHub, Git repos) via security-critical ingest pipeline (fetch → scan → validate → register → entitle → audit).
+- **Projected-token identity**: Replace `OPENCLAW_GATEWAY_TOKEN` with audience-bound projected SA tokens (~600s TTL, kubelet-rotated). Two audiences: `aud=obot-gateway`, `aud=skill-registry`.
+- **Central per-tenant scheduler**: Schedules owned centrally; dispatched as tenant identity via projected-token path. Claws do not self-schedule.
 - **Skills sharing protocol**: Explicit promotion/demotion flow across personal, project, department, and org scopes with immutable digest-pinned versions.
-- **Legacy removal target**: Filesystem-only sharing path is removed after protocol cutover.
+- **Legacy removal target**: Filesystem-only sharing path and `OPENCLAW_GATEWAY_TOKEN` removed after cutover.
+- Full specification: `mcp-skills-platform-brief.md`.
 
 ### Current State (Phase 1)
 
@@ -223,7 +231,7 @@ OpenCrane Phase 1 delivers a **production-ready multi-tenant control plane** wit
 - ✅ AccessPolicy-compatible dataset permission sync to Cognee is active.
 - ⏸️ Explicitly deferred: approval workflow expansion, optional approval 2FA, OIDC migration, and freshness/invalidation implementation details controlled from Clawdbot.
 
-**Phase 4 (Fleet Organizational Awareness, current focus):**
+**Phase 4 (Fleet Organizational Awareness + MCP & Skills Platform, current focus):**
 - 🎯 Uniform Awareness Contract across all OpenClaws using a hybrid model:
   - declarative contract schema,
   - shared OpenClaw SDK execution layer,
@@ -232,9 +240,13 @@ OpenCrane Phase 1 delivers a **production-ready multi-tenant control plane** wit
 - 🎯 Org knowledge fabric standardization with schema v2 and connector conformance checks.
 - 🎯 Awareness policy compiler to translate AccessPolicy + dataset membership into Cognee grants and runtime hints.
 - 🎯 Fleet evaluation harness and awareness SLO dashboards (policy safety, freshness, citation coverage, latency).
-- 🎯 Skills sharing protocol runtime with control-plane monitoring for participation health and version drift.
+- 🎯 Obot MCP Gateway deployed headless and config-slaved; downstream creds brokered server-side, never in tenant pods.
+- 🎯 Skill Registry & Delivery over OCI/ORAS with 5-level Permission Compiler for entitlement enforcement per read.
+- 🎯 Control-plane MCP server management, skill catalog with promotion/demotion, and third-party source installation pipeline.
+- 🎯 Projected-token identity migration: audience-bound SA tokens replace `OPENCLAW_GATEWAY_TOKEN`.
+- 🎯 Central per-tenant scheduler with job dispatch as tenant identity.
 - 🎯 Hierarchical skill registry (org/department/project/personal) with immutable OCI digest-pinned bundles.
-- 🎯 Legacy filesystem-only skill sharing removed after protocol cutover, with optional pull-through cache retained for startup resilience.
+- 🎯 Legacy filesystem-only skill sharing and static gateway tokens removed after cutover, with optional pull-through cache retained for startup resilience.
 
 ## Components
 
