@@ -74,19 +74,6 @@ spec:
                         enum: [TCP, UDP]
                         default: TCP
                   description: CIDR-based egress rules for standard NetworkPolicy
-                mcpServers:
-                  type: object
-                  properties:
-                    allow:
-                      type: array
-                      items:
-                        type: string
-                      description: Allowed MCP server names
-                    deny:
-                      type: array
-                      items:
-                        type: string
-                      description: Denied MCP server names
             status:
               type: object
               properties:

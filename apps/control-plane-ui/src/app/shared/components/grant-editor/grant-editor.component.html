@@ -1,0 +1,111 @@
+<div class="flex flex-column gap-3">
+  <div>
+    <h3 class="text-lg font-semibold m-0">{{ title }}</h3>
+  </div>
+
+  @if (grants.length === 0) {
+    <p-message severity="info" [text]="emptyMessage" />
+  } @else {
+    <div class="flex flex-column gap-2">
+      @for (grant of grants; track grant.id) {
+        <div class="flex flex-wrap align-items-center gap-2 border-1 surface-border border-round px-3 py-2">
+          <p-tag [value]="grant.access" [severity]="_accessSeverity(grant.access)" />
+          <p-tag [value]="grant.scope" severity="secondary" />
+          <span class="font-medium">{{ grant.subjectType }} · {{ grant.subjectName }}</span>
+          @if (grant.note) {
+            <span class="text-sm text-color-secondary">{{ grant.note }}</span>
+          }
+          @if (!disabled) {
+            <p-button
+              icon="pi pi-times"
+              severity="secondary"
+              [text]="true"
+              [rounded]="true"
+              (click)="_removeGrant(grant.id)"
+            />
+          }
+        </div>
+      }
+    </div>
+  }
+
+  <div class="grid">
+    <div class="col-12 md:col-3 flex flex-column gap-1">
+      <label for="grant-subject-type" class="font-medium">Principal type</label>
+      <select
+        id="grant-subject-type"
+        class="p-inputtext p-component w-full"
+        [value]="_draftSubjectType()"
+        [disabled]="disabled"
+        (change)="_onSubjectTypeChange($event)"
+      >
+        @for (subjectType of _subjectTypes; track subjectType) {
+          <option [value]="subjectType">{{ subjectType }}</option>
+        }
+      </select>
+    </div>
+
+    <div class="col-12 md:col-3 flex flex-column gap-1">
+      <label for="grant-scope" class="font-medium">Scope</label>
+      <select
+        id="grant-scope"
+        class="p-inputtext p-component w-full"
+        [value]="_draftScope()"
+        [disabled]="disabled"
+        (change)="_onScopeChange($event)"
+      >
+        @for (scope of _scopes; track scope) {
+          <option [value]="scope">{{ scope }}</option>
+        }
+      </select>
+    </div>
+
+    <div class="col-12 md:col-3 flex flex-column gap-1">
+      <label for="grant-access" class="font-medium">Access</label>
+      <select
+        id="grant-access"
+        class="p-inputtext p-component w-full"
+        [value]="_draftAccess()"
+        [disabled]="disabled"
+        (change)="_onAccessChange($event)"
+      >
+        @for (access of _accessOptions; track access) {
+          <option [value]="access">{{ access }}</option>
+        }
+      </select>
+    </div>
+
+    <div class="col-12 md:col-3 flex flex-column gap-1">
+      <label for="grant-subject-name" class="font-medium">Principal name</label>
+      <input
+        pInputText
+        id="grant-subject-name"
+        [value]="_draftSubjectName()"
+        [disabled]="disabled"
+        placeholder="engineering"
+        (input)="_onSubjectNameInput($event)"
+      />
+    </div>
+
+    <div class="col-12 flex flex-column gap-1">
+      <label for="grant-note" class="font-medium">Operator note</label>
+      <input
+        pInputText
+        id="grant-note"
+        [value]="_draftNote()"
+        [disabled]="disabled"
+        placeholder="Optional context for reviewers"
+        (input)="_onNoteInput($event)"
+      />
+    </div>
+  </div>
+
+  <div class="flex justify-content-end">
+    <p-button
+      label="Add grant"
+      icon="pi pi-plus"
+      [disabled]="disabled || !_canAddGrant()"
+      (click)="_addGrant()"
+    />
+  </div>
+</div>

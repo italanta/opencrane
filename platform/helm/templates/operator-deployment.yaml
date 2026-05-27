@@ -47,8 +47,12 @@ spec:
               value: {{ .Values.operator.idleCheckIntervalSeconds | quote }}
             - name: GATEWAY_PORT
               value: {{ .Values.tenant.gatewayPort | quote }}
-            - name: SHARED_SKILLS_PVC_NAME
-              value: {{ printf "%s-shared-skills" (include "opencrane.fullname" .) | quote }}
+            - name: MCP_GATEWAY_URL
+              value: {{ printf "http://%s-mcp-gateway:%v" (include "opencrane.fullname" .) .Values.mcpGateway.service.port | quote }}
+            - name: SKILL_REGISTRY_URL
+              value: {{ printf "http://%s-skill-registry:%v" (include "opencrane.fullname" .) .Values.skillRegistry.service.port | quote }}
+            - name: PROJECTED_TOKEN_TTL_SECONDS
+              value: {{ .Values.projectedIdentity.ttlSeconds | quote }}
             - name: LITELLM_ENABLED
               value: {{ .Values.litellm.enabled | quote }}
             - name: LITELLM_ENDPOINT

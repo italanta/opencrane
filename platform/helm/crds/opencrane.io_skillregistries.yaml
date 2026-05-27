@@ -1,0 +1,92 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: skillregistries.opencrane.io
+spec:
+  group: opencrane.io
+  names:
+    kind: SkillRegistry
+    listKind: SkillRegistryList
+    plural: skillregistries
+    singular: skillregistry
+    shortNames:
+      - sr
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          required:
+            - spec
+          properties:
+            spec:
+              type: object
+              properties:
+                description:
+                  type: string
+                  description: Human-readable description of this skill delivery plane.
+                deliveryUrl:
+                  type: string
+                  description: Cluster-local registry ingress URL exposed to tenant runtimes.
+                backend:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                      enum:
+                        - oci
+                        - oras
+                        - filesystem
+                      default: oci
+                    repository:
+                      type: string
+                      description: Backing registry/repository identifier managed by the platform.
+                catalog:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: true
+                    audience:
+                      type: string
+                      default: skill-registry
+                sync:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    intervalSeconds:
+                      type: integer
+                      minimum: 60
+                    sourceRef:
+                      type: string
+                      description: Optional upstream source identifier for discovery-only sync.
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                lastReconciled:
+                  type: string
+                  format: date-time
+                message:
+                  type: string
+      additionalPrinterColumns:
+        - name: Backend
+          type: string
+          jsonPath: .spec.backend.type
+        - name: Delivery URL
+          type: string
+          jsonPath: .spec.deliveryUrl
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp

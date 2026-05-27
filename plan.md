@@ -831,6 +831,7 @@ apps/
 - [x] Slack harvesting now emits the required lineage/freshness metadata, and ingestion rejects non-conformant org index records before they enter the shared awareness corpus.
 - [x] Operator tenant Deployment projected-token migration for `aud=obot-gateway` and `aud=skill-registry` is implemented (`apps/operator/src/tenants/deploy/3-deployment.ts`).
 - [x] Managed runtime contract Phase 4 scaffolding (`contractVersion`, `mcp.gateway`, `mcp.servers`, `skills.registry`, `skills.entitled`) is implemented (`apps/operator/src/tenants/deploy/2-config-map.ts`).
+- [x] Control-plane UI Phase 4 slice now includes MCP servers, skill catalog, and schedules pages plus reusable grant, skill, and MCP card components under `apps/control-plane-ui/src/app/`.
 - [ ] Connector rollout beyond Slack and the final conformance enforcement bar remain blocked on the open Phase 4 connector-adoption and department-scope decisions.
 
 ### Phase 4 Reality Check (Current Gaps)
@@ -839,8 +840,8 @@ apps/
 - [ ] Skill Registry & Delivery service (skills app) is not implemented yet.
 - [ ] Operator reconcile logic has not yet been updated for MCP + skills plane config/grants and drift repair.
 - [ ] Control-plane MCP/skills CRUD and third-party ingest routes are not yet implemented.
-- [ ] Control-plane frontend flows for Obot control, MCP install, and skill catalog/entitlements are not implemented yet.
-- [ ] Helm manifests/NetworkPolicies/CRDs for both ingress planes are not yet implemented end-to-end.
+- [ ] Control-plane frontend CRUD/install flows for Obot control, MCP install, and skill catalog publication are not implemented yet; the admin read/list slice now exists in `apps/control-plane-ui`.
+- [x] Helm manifests/NetworkPolicies/CRDs for both ingress planes are now scaffolded under `platform/helm/`, including plane services, plane deployments, ingress NetworkPolicies, and the `MCPServer`/`SkillRegistry`/`Schedule` CRDs.
 
 ### Key Tasks (Phase 4)
 

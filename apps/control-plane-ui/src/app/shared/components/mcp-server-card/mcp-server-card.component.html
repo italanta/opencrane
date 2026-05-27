@@ -1,0 +1,51 @@
+<p-card [header]="server.name" styleClass="h-full">
+  <div class="flex flex-column gap-3 h-full">
+    <div class="flex flex-wrap gap-2">
+      <p-tag [value]="server.status" [severity]="_statusSeverity(server.status)" />
+      <p-tag [value]="server.transport" severity="secondary" />
+      <p-tag [value]="server.scope" severity="secondary" />
+    </div>
+
+    <p class="m-0 text-color-secondary">{{ server.description }}</p>
+
+    <div class="text-sm flex flex-column gap-2">
+      <div class="flex justify-content-between gap-2">
+        <span class="text-color-secondary">Endpoint</span>
+        <span class="font-medium">{{ server.endpoint }}</span>
+      </div>
+      @if (server.sourceName) {
+        <div class="flex justify-content-between gap-2">
+          <span class="text-color-secondary">Source</span>
+          <span>{{ server.sourceName }}</span>
+        </div>
+      }
+      @if (server.lastSyncedAt) {
+        <div class="flex justify-content-between gap-2">
+          <span class="text-color-secondary">Last sync</span>
+          <span>{{ server.lastSyncedAt | date:'medium' }}</span>
+        </div>
+      }
+      <div class="flex justify-content-between gap-2">
+        <span class="text-color-secondary">Grants</span>
+        <span>{{ server.grants.length }}</span>
+      </div>
+    </div>
+
+    @if (server.capabilities.length > 0) {
+      <div class="flex flex-wrap gap-2">
+        @for (capability of server.capabilities; track capability) {
+          <p-tag [value]="capability" severity="secondary" />
+        }
+      </div>
+    }
+
+    <div class="flex justify-content-end mt-auto">
+      <p-button
+        [label]="selected ? 'Selected' : 'Review grants'"
+        icon="pi pi-arrow-right"
+        [outlined]="!selected"
+        (click)="_select()"
+      />
+    </div>
+  </div>
+</p-card>

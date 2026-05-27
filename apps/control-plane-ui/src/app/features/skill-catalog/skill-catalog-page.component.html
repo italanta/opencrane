@@ -1,0 +1,84 @@
+<div class="p-4 flex flex-column gap-4">
+  <div class="flex flex-column md:flex-row md:justify-content-between md:align-items-center gap-3">
+    <div>
+      <h1 class="text-2xl font-bold m-0">Skill Catalog</h1>
+      <p class="text-color-secondary mt-2 mb-0">Browse registry-backed skill bundles, rollout state, and entitlement previews.</p>
+    </div>
+
+    <p-button label="Reload" icon="pi pi-refresh" severity="secondary" [outlined]="true" (click)="_reload()" />
+  </div>
+
+  @if (_loading()) {
+    <div class="flex justify-content-center p-6">
+      <p-progressSpinner />
+    </div>
+  } @else if (_error()) {
+    <p-message severity="error" [text]="_error()!" />
+  } @else {
+    <p-message
+      severity="warn"
+      text="Promotion, install, and publish actions will arrive with the Phase 4 backend routes. This slice focuses on catalog visibility."
+    />
+
+    <div class="grid">
+      <div class="col-12 xl:col-8">
+        <oc-ui-section-card title="Catalog" [subtitle]="_catalogSubtitle()">
+          @if (_skillBundles().length === 0) {
+            <p-message severity="info" text="No skill bundles are available yet." />
+          } @else {
+            <div class="grid">
+              @for (bundle of _skillBundles(); track bundle.id) {
+                <div class="col-12 lg:col-6">
+                  <oc-skill-card
+                    [bundle]="bundle"
+                    [selected]="_selectedBundle()?.id === bundle.id"
+                    (select)="_selectBundle(bundle.id)"
+                  />
+                </div>
+              }
+            </div>
+          }
+        </oc-ui-section-card>
+      </div>
+
+      <div class="col-12 xl:col-4">
+        <oc-ui-section-card title="Target groups" subtitle="Groups referenced by promotion and entitlement workflows.">
+          @if (_groups().length === 0) {
+            <p-message severity="info" text="No groups are available yet." />
+          } @else {
+            <div class="flex flex-wrap gap-2">
+              @for (group of _groups(); track group.id) {
+                <p-tag
+                  [value]="group.name + ' · ' + group.memberCount + ' members'"
+                  [severity]="_scopeSeverity(group.scope)"
+                />
+              }
+            </div>
+          }
+        </oc-ui-section-card>
+      </div>
+
+      <div class="col-12">
+        <oc-ui-section-card title="Entitlement preview" subtitle="Inspect the selected skill bundle's compiled grants.">
+          @if (_selectedBundle()) {
+            <div class="flex flex-column gap-3">
+              <div>
+                <h2 class="text-xl font-semibold mt-0 mb-2">{{ _selectedBundle()!.name }}</h2>
+                <p class="text-color-secondary m-0">Use this local editor to review likely grant changes before backend publish workflows are available.</p>
+              </div>
+
+              <oc-grant-editor
+                title="Bundle grants"
+                [grants]="_selectedBundleGrants()"
+                emptyMessage="No grants are compiled for this bundle yet."
+                (grantsChange)="_updateSelectedGrants($event)"
+              />
+            </div>
+          } @else {
+            <p-message severity="info" text="Select a skill bundle to inspect its entitlement preview." />
+          }
+        </oc-ui-section-card>
+      </div>
+    </div>
+  }
+</div>

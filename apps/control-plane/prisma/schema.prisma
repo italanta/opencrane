@@ -8,29 +8,29 @@ datasource db {
 }
 
 model Tenant {
-  name            String       @id
-  displayName     String       @map("display_name")
-  email           String
-  team            String?
-  phase           String       @default("Pending")
-  ingressHost     String?      @map("ingress_host")
-  configOverrides Json?        @map("config_overrides")
-  createdAt       DateTime     @default(now()) @map("created_at")
-  updatedAt       DateTime     @updatedAt @map("updated_at")
-  auditEntries    AuditEntry[]
-  litellmKeys     TenantLiteLlmKey[]
+  name               String                    @id
+  displayName        String                    @map("display_name")
+  email              String
+  team               String?
+  phase              String                    @default("Pending")
+  ingressHost        String?                   @map("ingress_host")
+  configOverrides    Json?                     @map("config_overrides")
+  createdAt          DateTime                  @default(now()) @map("created_at")
+  updatedAt          DateTime                  @updatedAt @map("updated_at")
+  auditEntries       AuditEntry[]
+  litellmKeys        TenantLiteLlmKey[]
   datasetMemberships TenantDatasetMembership[]
 
   @@map("tenants")
 }
 
 model TenantDatasetMembership {
-  tenant     String
-  scope      DatasetScope
-  subject    String
-  createdAt  DateTime     @default(now()) @map("created_at")
-  updatedAt  DateTime     @updatedAt @map("updated_at")
-  tenantRef  Tenant       @relation(fields: [tenant], references: [name], onDelete: Cascade)
+  tenant    String
+  scope     DatasetScope
+  subject   String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  tenantRef Tenant   @relation(fields: [tenant], references: [name], onDelete: Cascade)
 
   @@id([tenant, scope, subject])
   @@index([tenant, scope])
@@ -45,16 +45,16 @@ enum DatasetScope {
 }
 
 model TenantLiteLlmKey {
-  id               String    @id @default(cuid())
+  id               String   @id @default(cuid())
   tenant           String
-  keyAlias         String    @map("key_alias")
-  secretName       String    @map("secret_name")
-  monthlyBudgetUsd Decimal?  @db.Decimal(12, 2) @map("monthly_budget_usd")
-  issuedAt         DateTime  @map("issued_at")
+  keyAlias         String   @map("key_alias")
+  secretName       String   @map("secret_name")
+  monthlyBudgetUsd Decimal? @db.Decimal(12, 2) @map("monthly_budget_usd")
+  issuedAt         DateTime @map("issued_at")
   revokedAt        DateTime? @map("revoked_at")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
-  tenantRef        Tenant    @relation(fields: [tenant], references: [name])
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  tenantRef        Tenant   @relation(fields: [tenant], references: [name])
 
   @@index([tenant])
   @@index([tenant, revokedAt])
@@ -89,6 +89,7 @@ model AuditEntry {
   @@map("audit_log")
 }
 
+/// Deprecated Phase 1 filesystem skill index retained only for migration seeding.
 model Skill {
   name        String
   scope       String
@@ -103,15 +104,277 @@ model Skill {
   @@map("skills")
 }
 
+model Group {
+  id          String          @id @default(cuid())
+  name        String          @unique
+  scope       GrantScope
+  description String?
+  members     Json            @default("[]")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+  grants      Grant[]
+  mcpGrants   McpServerGrant[]
+  entitlements SkillEntitlement[]
+
+  @@index([scope])
+  @@map("groups")
+}
+
+enum GrantScope {
+  Org        @map("org")
+  Department @map("department")
+  Project    @map("project")
+  Personal   @map("personal")
+}
+
+enum GrantSubjectType {
+  Group  @map("group")
+  Tenant @map("tenant")
+  User   @map("user")
+}
+
+enum GrantAccess {
+  Allow @map("allow")
+  Deny  @map("deny")
+}
+
+enum GrantPayloadType {
+  Awareness  @map("awareness")
+  McpServer  @map("mcp-server")
+  SkillBundle @map("skill-bundle")
+}
+
+model Grant {
+  id           String           @id @default(cuid())
+  payloadType  GrantPayloadType @map("payload_type")
+  payloadId    String           @map("payload_id")
+  scope        GrantScope
+  subjectType  GrantSubjectType @map("subject_type")
+  subjectId    String           @map("subject_id")
+  access       GrantAccess
+  priority     Int              @default(0)
+  note         String?
+  groupId      String?          @map("group_id")
+  mcpServerId  String?          @map("mcp_server_id")
+  skillBundleId String?         @map("skill_bundle_id")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+  group        Group?           @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  mcpServer    McpServer?       @relation(fields: [mcpServerId], references: [id], onDelete: Cascade)
+  skillBundle  SkillBundle?     @relation(fields: [skillBundleId], references: [id], onDelete: Cascade)
+  mcpGrant     McpServerGrant?
+  entitlement  SkillEntitlement?
+
+  @@index([payloadType, payloadId])
+  @@index([subjectType, subjectId])
+  @@map("grants")
+}
+
+enum McpServerTransport {
+  StreamableHttp   @map("streamable-http")
+  ServerSentEvents @map("sse")
+  WebSocket        @map("websocket")
+}
+
+enum McpServerStatus {
+  Active   @map("active")
+  Degraded @map("degraded")
+  Draft    @map("draft")
+}
+
+model McpServer {
+  id            String               @id @default(cuid())
+  name          String               @unique
+  description   String               @default("")
+  endpoint      String
+  scope         GrantScope
+  transport     McpServerTransport
+  status        McpServerStatus      @default(Draft)
+  capabilities  String[]             @default([])
+  sourceId      String?              @map("source_id")
+  lastSyncedAt  DateTime?            @map("last_synced_at")
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
+  grants        Grant[]
+  scopedGrants  McpServerGrant[]
+  credentials   McpServerCredential[]
+  source        ThirdPartySource?    @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+
+  @@index([scope])
+  @@map("mcp_servers")
+}
+
+model McpServerGrant {
+  id          String           @id @default(cuid())
+  mcpServerId String           @map("mcp_server_id")
+  grantId     String           @unique @map("grant_id")
+  scope       GrantScope
+  subjectType GrantSubjectType @map("subject_type")
+  subjectId   String           @map("subject_id")
+  access      GrantAccess
+  priority    Int              @default(0)
+  note        String?
+  groupId     String?          @map("group_id")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  mcpServer   McpServer        @relation(fields: [mcpServerId], references: [id], onDelete: Cascade)
+  grant       Grant            @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  group       Group?           @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  @@index([mcpServerId])
+  @@map("mcp_server_grants")
+}
+
+model McpServerCredential {
+  id          String    @id @default(cuid())
+  mcpServerId String    @map("mcp_server_id")
+  displayName String    @map("display_name")
+  secretRef   String    @map("secret_ref")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  mcpServer   McpServer @relation(fields: [mcpServerId], references: [id], onDelete: Cascade)
+
+  @@index([mcpServerId])
+  @@map("mcp_server_credentials")
+}
+
+enum SkillBundleStatus {
+  Published @map("published")
+  Review    @map("review")
+  Draft     @map("draft")
+}
+
+enum SkillPromotionStatus {
+  Proposed @map("proposed")
+  Approved @map("approved")
+  Rejected @map("rejected")
+}
+
+model SkillBundle {
+  id           String               @id @default(cuid())
+  name         String
+  description  String               @default("")
+  version      String
+  digest       String
+  scope        GrantScope
+  status       SkillBundleStatus    @default(Draft)
+  tags         String[]             @default([])
+  sourceId     String?              @map("source_id")
+  publishedAt  DateTime?            @map("published_at")
+  createdAt    DateTime             @default(now()) @map("created_at")
+  updatedAt    DateTime             @updatedAt @map("updated_at")
+  grants       Grant[]
+  entitlements SkillEntitlement[]
+  promotions   SkillPromotion[]
+  source       ThirdPartySource?    @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+
+  @@unique([name, version, digest])
+  @@index([scope])
+  @@map("skill_bundles")
+}
+
+model SkillEntitlement {
+  id            String           @id @default(cuid())
+  skillBundleId String           @map("skill_bundle_id")
+  grantId       String           @unique @map("grant_id")
+  scope         GrantScope
+  subjectType   GrantSubjectType @map("subject_type")
+  subjectId     String           @map("subject_id")
+  access        GrantAccess
+  priority      Int              @default(0)
+  note          String?
+  groupId       String?          @map("group_id")
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+  skillBundle   SkillBundle      @relation(fields: [skillBundleId], references: [id], onDelete: Cascade)
+  grant         Grant            @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  group         Group?           @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  @@index([skillBundleId])
+  @@map("skill_entitlements")
+}
+
+model SkillPromotion {
+  id           String               @id @default(cuid())
+  skillBundleId String              @map("skill_bundle_id")
+  fromScope    GrantScope           @map("from_scope")
+  toScope      GrantScope           @map("to_scope")
+  promotedBy   String               @map("promoted_by")
+  status       SkillPromotionStatus @default(Proposed)
+  notes        String?
+  createdAt    DateTime             @default(now()) @map("created_at")
+  updatedAt    DateTime             @updatedAt @map("updated_at")
+  skillBundle  SkillBundle          @relation(fields: [skillBundleId], references: [id], onDelete: Cascade)
+
+  @@index([skillBundleId])
+  @@map("skill_promotions")
+}
+
+enum ThirdPartySourceKind {
+  McpRegistry      @map("mcp-registry")
+  AnthropicSkills  @map("anthropic-skills")
+  GitRepository    @map("git-repository")
+  ManualUpload     @map("manual-upload")
+}
+
+enum ThirdPartySourceStatus {
+  Healthy         @map("healthy")
+  Syncing         @map("syncing")
+  Error           @map("error")
+  PendingApproval @map("pending-approval")
+}
+
+enum ThirdPartySourceItemKind {
+  McpServer   @map("mcp-server")
+  SkillBundle @map("skill-bundle")
+}
+
+model ThirdPartySource {
+  id          String                 @id @default(cuid())
+  name        String                 @unique
+  kind        ThirdPartySourceKind
+  status      ThirdPartySourceStatus @default(PendingApproval)
+  originUrl   String                 @map("origin_url")
+  syncMode    String                 @map("sync_mode")
+  lastSyncedAt DateTime?             @map("last_synced_at")
+  nextRunAt   DateTime?              @map("next_run_at")
+  notes       String?
+  createdAt   DateTime               @default(now()) @map("created_at")
+  updatedAt   DateTime               @updatedAt @map("updated_at")
+  items       ThirdPartySourceItem[]
+  mcpServers  McpServer[]
+  skillBundles SkillBundle[]
+
+  @@map("third_party_sources")
+}
+
+model ThirdPartySourceItem {
+  id          String                   @id @default(cuid())
+  sourceId    String                   @map("source_id")
+  kind        ThirdPartySourceItemKind
+  name        String
+  upstreamId  String                   @map("upstream_id")
+  version     String?
+  digest      String?
+  metadata    Json?
+  createdAt   DateTime                 @default(now()) @map("created_at")
+  updatedAt   DateTime                 @updatedAt @map("updated_at")
+  source      ThirdPartySource         @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@index([sourceId])
+  @@unique([sourceId, kind, upstreamId])
+  @@map("third_party_source_items")
+}
+
 model ServerMetricSnapshot {
-  id               Int      @id @default(autoincrement())
-  cpuPercent       Float    @map("cpu_percent")
-  memoryUsedBytes  BigInt   @map("memory_used_bytes")
-  memoryTotalBytes BigInt   @map("memory_total_bytes")
-  storageUsedBytes BigInt   @map("storage_used_bytes")
-  storageTotalBytes BigInt  @map("storage_total_bytes")
-  activeTenants    Int      @default(0) @map("active_tenants")
-  sampledAt        DateTime @default(now()) @map("sampled_at")
+  id                Int      @id @default(autoincrement())
+  cpuPercent        Float    @map("cpu_percent")
+  memoryUsedBytes   BigInt   @map("memory_used_bytes")
+  memoryTotalBytes  BigInt   @map("memory_total_bytes")
+  storageUsedBytes  BigInt   @map("storage_used_bytes")
+  storageTotalBytes BigInt   @map("storage_total_bytes")
+  activeTenants     Int      @default(0) @map("active_tenants")
+  sampledAt         DateTime @default(now()) @map("sampled_at")
 
   @@index([sampledAt])
   @@map("server_metric_snapshots")
@@ -151,11 +414,11 @@ model AccountBudgetSetting {
 }
 
 model AccessToken {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   name       String
   owner      String
-  tokenHash  String   @unique @map("token_hash")
-  createdAt  DateTime @default(now()) @map("created_at")
+  tokenHash  String    @unique @map("token_hash")
+  createdAt  DateTime  @default(now()) @map("created_at")
   expiresAt  DateTime? @map("expires_at")
   lastUsedAt DateTime? @map("last_used_at")
 
@@ -172,27 +435,27 @@ model ProviderApiKey {
 }
 
 model OrgDocument {
-  id              String   @id @default(cuid())
-  source          String
-  sourceId        String   @map("source_id")
-  owner           String
-  teamScope       String?  @map("team_scope")
-  departmentScope String?  @map("department_scope")
-  projectScope    String?  @map("project_scope")
-  sensitivityTags String[] @map("sensitivity_tags")
-  title           String?
-  content         String
-  contentHash     String?  @map("content_hash")
-  confidentiality String?
-  jurisdiction    String?
-  retentionClass  String?  @map("retention_class")
-  aclOrigin       String   @map("acl_origin")
-  sourceUpdatedAt DateTime @map("source_updated_at")
+  id                  String   @id @default(cuid())
+  source              String
+  sourceId            String   @map("source_id")
+  owner               String
+  teamScope           String?  @map("team_scope")
+  departmentScope     String?  @map("department_scope")
+  projectScope        String?  @map("project_scope")
+  sensitivityTags     String[] @map("sensitivity_tags")
+  title               String?
+  content             String
+  contentHash         String?  @map("content_hash")
+  confidentiality     String?
+  jurisdiction        String?
+  retentionClass      String?  @map("retention_class")
+  aclOrigin           String   @map("acl_origin")
+  sourceUpdatedAt     DateTime @map("source_updated_at")
   freshnessRecordedAt DateTime @map("freshness_recorded_at")
-  ingestCursor    String   @map("ingest_cursor")
-  embeddingReady  Boolean  @default(false) @map("embedding_ready")
-  ingestedAt      DateTime @default(now()) @map("ingested_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  ingestCursor        String   @map("ingest_cursor")
+  embeddingReady      Boolean  @default(false) @map("embedding_ready")
+  ingestedAt          DateTime @default(now()) @map("ingested_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
 
   @@unique([source, sourceId])
   @@index([source])

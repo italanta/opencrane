@@ -143,14 +143,71 @@ ingress:
     # -- Secret name for wildcard TLS cert (*.domain)
     secretName: opencrane-wildcard-tls
 
-# -- Shared skills volume (only K8s-resident PVC remaining)
-sharedSkills:
+# -- Obot MCP gateway plane settings
+mcpGateway:
   enabled: true
-  pvc:
-    storageClass: ""
-    # -- Must support ReadWriteMany (NFS, CephFS, Filestore CSI, etc.)
-    accessMode: ReadWriteMany
-    size: 5Gi
+  image:
+    repository: ghcr.io/opencrane/obot-mcp-gateway
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    port: 8080
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# -- Skill registry delivery plane settings
+skillRegistry:
+  enabled: true
+  image:
+    repository: ghcr.io/opencrane/skill-registry
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    port: 5000
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# -- Audience-bound projected token settings for tenant access into ingress planes
+projectedIdentity:
+  ttlSeconds: 600
 
 # -- Network policy (default egress control for tenant pods)
 networkPolicy:

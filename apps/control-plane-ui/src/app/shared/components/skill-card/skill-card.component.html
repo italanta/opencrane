@@ -1,0 +1,45 @@
+<p-card [header]="bundle.name" styleClass="h-full">
+  <div class="flex flex-column gap-3 h-full">
+    <div class="flex flex-wrap gap-2">
+      <p-tag [value]="bundle.status" [severity]="_statusSeverity(bundle.status)" />
+      <p-tag [value]="bundle.scope" severity="secondary" />
+      <p-tag [value]="bundle.version" severity="info" />
+    </div>
+
+    <p class="m-0 text-color-secondary">{{ bundle.description }}</p>
+
+    <div class="text-sm flex flex-column gap-2">
+      <div class="flex justify-content-between gap-2">
+        <span class="text-color-secondary">Digest</span>
+        <span class="font-medium">{{ _shortDigest(bundle.digest) }}</span>
+      </div>
+      @if (bundle.sourceName) {
+        <div class="flex justify-content-between gap-2">
+          <span class="text-color-secondary">Source</span>
+          <span>{{ bundle.sourceName }}</span>
+        </div>
+      }
+      <div class="flex justify-content-between gap-2">
+        <span class="text-color-secondary">Grants</span>
+        <span>{{ bundle.grants.length }}</span>
+      </div>
+    </div>
+
+    @if (bundle.tags.length > 0) {
+      <div class="flex flex-wrap gap-2">
+        @for (tag of bundle.tags; track tag) {
+          <p-tag [value]="tag" severity="secondary" />
+        }
+      </div>
+    }
+
+    <div class="flex justify-content-end mt-auto">
+      <p-button
+        [label]="selected ? 'Selected' : 'Review grants'"
+        icon="pi pi-arrow-right"
+        [outlined]="!selected"
+        (click)="_select()"
+      />
+    </div>
+  </div>
+</p-card>

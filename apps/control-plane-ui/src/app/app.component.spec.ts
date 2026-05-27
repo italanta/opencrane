@@ -24,7 +24,21 @@ describe("AppComponent", function _describeAppComponent()
 
     const fixture = TestBed.createComponent(AppComponent);
     const app = fixture.componentInstance as AppComponent;
+    const navigation = (app as any).navigation as Array<{ label: string }>;
 
-    expect((app as any).navigation.length).toBe(4);
+    expect(navigation.length).toBe(8);
+    expect(navigation.map(function _pluckLabel(item)
+    {
+      return item.label;
+    })).toEqual([
+      "Dashboard",
+      "MCP Servers",
+      "Skill Catalog",
+      "Schedules",
+      "Server Metrics",
+      "Token Usage & Budgets",
+      "Access Tokens",
+      "Provider Keys",
+    ]);
   });
 });

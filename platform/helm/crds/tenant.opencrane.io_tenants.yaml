@@ -66,7 +66,7 @@ spec:
                   type: object
                   description: >-
                     Per-tenant MCP server allow/deny policy applied at invocation level.
-                    Complements the AccessPolicy mcpServers field with tenant-specific overrides.
+                    This is the durable MCP policy surface consumed by tenant runtimes.
                   properties:
                     allow:
                       type: array

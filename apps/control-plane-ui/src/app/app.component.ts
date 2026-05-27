@@ -30,6 +30,10 @@ export class AppComponent implements OnInit
   });
 
   protected readonly navigation: MenuItem[] = [
+    { label: "Dashboard", icon: "pi pi-home", routerLink: "/dashboard" },
+    { label: "MCP Servers", icon: "pi pi-sitemap", routerLink: "/mcp-servers" },
+    { label: "Skill Catalog", icon: "pi pi-box", routerLink: "/skills" },
+    { label: "Schedules", icon: "pi pi-calendar", routerLink: "/schedules" },
     { label: "Server Metrics", icon: "pi pi-chart-line", routerLink: "/stats" },
     { label: "Token Usage & Budgets", icon: "pi pi-wallet", routerLink: "/usage" },
     { label: "Access Tokens", icon: "pi pi-key", routerLink: "/tokens" },

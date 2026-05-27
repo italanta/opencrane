@@ -1,8 +1,13 @@
+import { createHash } from "node:crypto";
+
 import * as k8s from "@kubernetes/client-node";
 import { Router } from "express";
 import type { Prisma, PrismaClient } from "@prisma/client";
 
+import { compile } from "../core/grants/grant-compiler.js";
+
 import type { CreateTenantRequest, TenantDatasetsResponse, TenantResponse, UpdateTenantDatasetsRequest } from "../types.js";
+import type { EffectiveContractResponse } from "./tenants.types.js";
 import { _DetectTenantProjectionDrift } from "./internal/projection-drift.js";
 import { _RepairTenantProjection } from "./internal/projection-repair.js";
 import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "./internal/crd-constants.js";
@@ -181,6 +186,131 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
     }
 
     res.json(membership);
+  });
+
+  /** Compile the effective awareness, MCP, and skill contract for a tenant. */
+  router.get("/:name/effective-contract", async function _getEffectiveContract(req, res)
+  {
+    const tenant = await prisma.tenant.findUnique({
+      where: { name: req.params.name },
+      select: {
+        name: true,
+        team: true,
+      },
+    });
+
+    if (!tenant)
+    {
+      res.status(404).json({ error: "Tenant not found" });
+      return;
+    }
+
+    const memberships = await prisma.tenantDatasetMembership.findMany({
+      where: { tenant: req.params.name },
+      select: {
+        scope: true,
+        subject: true,
+      },
+    });
+    const awarenessMemberships = _BuildTenantDatasetMembershipResponse(memberships);
+    const awarenessDecisions = await compile(req.params.name, "awareness", prisma);
+    const mcpDecisions = await compile(req.params.name, "mcp-server", prisma);
+    const allowedMcpIds = mcpDecisions.filter(function _isAllowed(decision)
+    {
+      return decision.access === "allow";
+    }).map(function _mapDecision(decision)
+    {
+      return decision.payloadId;
+    });
+    const allowedSkillIds = (await compile(req.params.name, "skill-bundle", prisma)).filter(function _isAllowed(decision)
+    {
+      return decision.access === "allow";
+    }).map(function _mapDecision(decision)
+    {
+      return decision.payloadId;
+    });
+    const mcpServers = allowedMcpIds.length > 0
+      ? await (prisma as unknown as {
+          mcpServer: {
+            findMany: (args: { where: { id: { in: string[] } }; orderBy: { name: "asc" } }) => Promise<Array<{
+              id: string;
+              name: string;
+              endpoint: string;
+              transport: string;
+            }>>;
+          };
+        }).mcpServer.findMany({
+          where: { id: { in: allowedMcpIds } },
+          orderBy: { name: "asc" },
+        })
+      : [];
+    const skillBundles = allowedSkillIds.length > 0
+      ? await (prisma as unknown as {
+          skillBundle: {
+            findMany: (args: { where: { id: { in: string[] } }; orderBy: { name: "asc" } }) => Promise<Array<{
+              id: string;
+              name: string;
+              scope: string;
+              version: string;
+              digest: string;
+            }>>;
+          };
+        }).skillBundle.findMany({
+          where: { id: { in: allowedSkillIds } },
+          orderBy: { name: "asc" },
+        })
+      : [];
+    const contractWithoutId: Omit<EffectiveContractResponse, "contractId"> = {
+      contractVersion: "4.0.0",
+      tenant: {
+        name: tenant.name,
+        team: tenant.team ?? null,
+        policyRef: null,
+      },
+      awareness: {
+        citationFormat: "inline",
+        memberships: awarenessMemberships,
+        grants: awarenessDecisions.map(function _mapDecision(decision)
+        {
+          return {
+            payloadId: decision.payloadId,
+            access: decision.access,
+          };
+        }),
+      },
+      mcp: {
+        gateway: process.env.MCP_GATEWAY_URL ?? "http://obot-gateway.opencrane-system.svc:8080",
+        servers: mcpServers.map(function _mapServer(server)
+        {
+          return {
+            id: server.id,
+            name: server.name,
+            transport: _NormalizeTransport(server.transport),
+            endpoint: server.endpoint,
+          };
+        }),
+      },
+      skills: {
+        registry: process.env.SKILL_REGISTRY_URL ?? "http://skill-registry.opencrane-system.svc:5000",
+        entitled: skillBundles.map(function _mapBundle(bundle)
+        {
+          return {
+            id: bundle.id,
+            name: bundle.name,
+            scope: String(bundle.scope).toLowerCase(),
+            version: bundle.version,
+            digest: bundle.digest,
+          };
+        }),
+      },
+    };
+    const contractId = createHash("sha256").update(_StableStringify(contractWithoutId)).digest("hex");
+    const response: EffectiveContractResponse = {
+      ...contractWithoutId,
+      contractId,
+    };
+
+    res.json(response);
   });
 
   /** Get a single tenant by name. */
@@ -729,4 +859,52 @@ function _BuildCogneePermissionsHeaders(
     headers.authorization = authorization;
   }
   return headers;
+}
+
+/**
+ * Normalize Prisma transport enum output into the contract wire format.
+ * @param transport - Raw transport enum value.
+ */
+function _NormalizeTransport(transport: string): string
+{
+  return transport
+    .replace("StreamableHttp", "streamable-http")
+    .replace("ServerSentEvents", "sse")
+    .replace("WebSocket", "websocket")
+    .toLowerCase();
+}
+
+/**
+ * Produce a stable JSON string so contract hashes remain deterministic.
+ * @param value - Arbitrary contract payload.
+ */
+function _StableStringify(value: unknown): string
+{
+  return JSON.stringify(_SortJsonValue(value));
+}
+
+/**
+ * Recursively sort JSON objects and arrays for deterministic hashing.
+ * @param value - Arbitrary JSON-like value.
+ */
+function _SortJsonValue(value: unknown): unknown
+{
+  if (Array.isArray(value))
+  {
+    return value.map(function _mapValue(entry)
+    {
+      return _SortJsonValue(entry);
+    });
+  }
+
+  if (typeof value !== "object" || value === null)
+  {
+    return value;
+  }
+
+  return Object.keys(value as Record<string, unknown>).sort().reduce<Record<string, unknown>>(function _reduce(sorted, key)
+  {
+    sorted[key] = _SortJsonValue((value as Record<string, unknown>)[key]);
+    return sorted;
+  }, {});
 }

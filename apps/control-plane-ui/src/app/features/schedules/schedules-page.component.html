@@ -1,0 +1,96 @@
+<div class="p-4 flex flex-column gap-4">
+  <div class="flex flex-column md:flex-row md:justify-content-between md:align-items-center gap-3">
+    <div>
+      <h1 class="text-2xl font-bold m-0">Schedules</h1>
+      <p class="text-color-secondary mt-2 mb-0">Central scheduler overview for source sync health, queue readiness, and rollout notes.</p>
+    </div>
+
+    <p-button label="Reload" icon="pi pi-refresh" severity="secondary" [outlined]="true" (click)="_reload()" />
+  </div>
+
+  @if (_loading()) {
+    <div class="flex justify-content-center p-6">
+      <p-progressSpinner />
+    </div>
+  } @else if (_error()) {
+    <p-message severity="error" [text]="_error()!" />
+  } @else {
+    <p-message
+      severity="info"
+      text="This Phase 4 slice focuses on central scheduler visibility. Job creation and dispatch actions can follow once backend routes land."
+    />
+
+    <div class="grid">
+      <div class="col-12 lg:col-4">
+        <oc-ui-section-card title="Scheduler health" subtitle="Source sync state across the Phase 4 ingest surface.">
+          <div class="flex flex-column gap-3">
+            <div class="flex justify-content-between">
+              <span class="text-color-secondary">Healthy</span>
+              <span class="font-medium">{{ _healthyCount() }}</span>
+            </div>
+            <div class="flex justify-content-between">
+              <span class="text-color-secondary">Syncing</span>
+              <span class="font-medium">{{ _syncingCount() }}</span>
+            </div>
+            <div class="flex justify-content-between">
+              <span class="text-color-secondary">Pending approval</span>
+              <span class="font-medium">{{ _pendingApprovalCount() }}</span>
+            </div>
+            <div class="flex justify-content-between">
+              <span class="text-color-secondary">Tracked sources</span>
+              <span class="font-medium">{{ _sources().length }}</span>
+            </div>
+          </div>
+        </oc-ui-section-card>
+      </div>
+
+      <div class="col-12 lg:col-8">
+        <oc-ui-section-card title="Managed third-party sources" subtitle="Discovery feeds that the scheduler can watch centrally.">
+          @if (_sources().length === 0) {
+            <p-message severity="info" text="No third-party sources are configured yet." />
+          } @else {
+            <p-table [value]="_sources()" [tableStyle]="{ 'min-width': '100%' }">
+              <ng-template pTemplate="header">
+                <tr>
+                  <th>Source</th>
+                  <th>Status</th>
+                  <th>Items</th>
+                  <th>Last sync</th>
+                  <th>Next run</th>
+                </tr>
+              </ng-template>
+              <ng-template pTemplate="body" let-source>
+                <tr>
+                  <td>
+                    <div class="font-medium">{{ source.name }}</div>
+                    <div class="text-sm text-color-secondary">{{ source.kind }} · {{ source.syncMode }}</div>
+                  </td>
+                  <td>
+                    <p-tag [value]="source.status" [severity]="_statusSeverity(source.status)" />
+                  </td>
+                  <td>{{ source.managedItemCount }}</td>
+                  <td>{{ source.lastSyncedAt ? (source.lastSyncedAt | date:'medium') : 'Not synced yet' }}</td>
+                  <td>{{ source.nextRunAt ? (source.nextRunAt | date:'medium') : 'Manual' }}</td>
+                </tr>
+              </ng-template>
+            </p-table>
+          }
+        </oc-ui-section-card>
+      </div>
+
+      <div class="col-12">
+        <oc-ui-section-card title="Dispatch notes" subtitle="Implementation direction carried by the central scheduler plan.">
+          <div class="grid">
+            @for (note of _schedulerNotes; track note.title) {
+              <div class="col-12 md:col-4">
+                <p-card [header]="note.title" styleClass="h-full">
+                  <p class="m-0 text-color-secondary">{{ note.detail }}</p>
+                </p-card>
+              </div>
+            }
+          </div>
+        </oc-ui-section-card>
+      </div>
+    </div>
+  }
+</div>

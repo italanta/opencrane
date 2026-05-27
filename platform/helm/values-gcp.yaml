@@ -11,10 +11,6 @@ tenant:
     csiDriver: gcsfuse.csi.storage.gke.io
     gcpProject: "replace-with-gcp-project-id"  # Set per environment
 
-sharedSkills:
-  pvc:
-    storageClass: standard-rwx
-
 ingress:
   className: gce
   annotations:

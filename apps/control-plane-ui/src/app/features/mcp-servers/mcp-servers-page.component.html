@@ -1,0 +1,101 @@
+<div class="p-4 flex flex-column gap-4">
+  <div class="flex flex-column md:flex-row md:justify-content-between md:align-items-center gap-3">
+    <div>
+      <h1 class="text-2xl font-bold m-0">MCP Servers</h1>
+      <p class="text-color-secondary mt-2 mb-0">Review registered brokers, upstream health, and compiled grant coverage.</p>
+    </div>
+
+    <p-button label="Reload" icon="pi pi-refresh" severity="secondary" [outlined]="true" (click)="_reload()" />
+  </div>
+
+  @if (_loading()) {
+    <div class="flex justify-content-center p-6">
+      <p-progressSpinner />
+    </div>
+  } @else if (_error()) {
+    <p-message severity="error" [text]="_error()!" />
+  } @else {
+    <p-message
+      severity="warn"
+      text="Backend CRUD routes are still in progress. This UI slice previews list data and local grant edits only."
+    />
+
+    <div class="grid">
+      <div class="col-12 xl:col-8">
+        <oc-ui-section-card title="Registered MCP servers" [subtitle]="_serversSubtitle()">
+          @if (_servers().length === 0) {
+            <p-message severity="info" text="No MCP servers are registered yet." />
+          } @else {
+            <div class="grid">
+              @for (server of _servers(); track server.id) {
+                <div class="col-12 lg:col-6">
+                  <oc-mcp-server-card
+                    [server]="server"
+                    [selected]="_selectedServer()?.id === server.id"
+                    (select)="_selectServer(server.id)"
+                  />
+                </div>
+              }
+            </div>
+          }
+        </oc-ui-section-card>
+      </div>
+
+      <div class="col-12 xl:col-4">
+        <oc-ui-section-card title="Group coverage" subtitle="Current groups feed entitlement previews and scope checks.">
+          @if (_groups().length === 0) {
+            <p-message severity="info" text="No groups are available yet." />
+          } @else {
+            <p-table [value]="_groups()" [tableStyle]="{ 'min-width': '100%' }">
+              <ng-template pTemplate="header">
+                <tr>
+                  <th>Group</th>
+                  <th>Scope</th>
+                  <th>Members</th>
+                  <th>Grants</th>
+                </tr>
+              </ng-template>
+              <ng-template pTemplate="body" let-group>
+                <tr>
+                  <td>
+                    <div class="font-medium">{{ group.name }}</div>
+                    @if (group.description) {
+                      <div class="text-sm text-color-secondary">{{ group.description }}</div>
+                    }
+                  </td>
+                  <td>
+                    <p-tag [value]="group.scope" [severity]="_scopeSeverity(group.scope)" />
+                  </td>
+                  <td>{{ group.memberCount }}</td>
+                  <td>{{ group.grants.length }}</td>
+                </tr>
+              </ng-template>
+            </p-table>
+          }
+        </oc-ui-section-card>
+      </div>
+
+      <div class="col-12">
+        <oc-ui-section-card title="Grant preview" subtitle="Preview scope-aware grants for the selected MCP server.">
+          @if (_selectedServer()) {
+            <div class="flex flex-column gap-3">
+              <div>
+                <h2 class="text-xl font-semibold mt-0 mb-2">{{ _selectedServer()!.name }}</h2>
+                <p class="text-color-secondary m-0">Local changes stay on this page until the Phase 4 control-plane grant APIs land.</p>
+              </div>
+
+              <oc-grant-editor
+                title="Compiled grants"
+                [grants]="_selectedServerGrants()"
+                emptyMessage="No grants are compiled for this server yet."
+                (grantsChange)="_updateSelectedGrants($event)"
+              />
+            </div>
+          } @else {
+            <p-message severity="info" text="Select a server to review grant coverage." />
+          }
+        </oc-ui-section-card>
+      </div>
+    </div>
+  }
+</div>
