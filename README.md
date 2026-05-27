@@ -79,45 +79,52 @@ See [**Current State** and **Roadmap**](#current-state-phase-1) below for implem
 OpenCrane is represented here as a clean operating model: a central **Control Plane** backed by **Cloud SQL + Skills Repo**, a **Cognee Brain** for retrieval orchestration, isolated **OpenClaw tenant pods**, and explicit in-cluster platform planes for operator control, harvesting, MCP servers, and egress guardrails.
 
 ```
-┌──────────────────────────┐      ┌──────────────────────────────┐
-│      Control Plane       │◄────►│  Cloud SQL + Skills Repo     │
-│   admin.opencrane.ai     │      │  org / users / teams /       │
-│   Express + Prisma       │      │  projects / state            │
-└─────────────┬────────────┘      └──────────────────────────────┘
-              │
-              ▼
-┌───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                   Kubernetes Cluster (OpenCrane)                                          │
-│                                                                                                           │
-│ Local infrastructure                      Tenant Runtime Pillar                      Egress Pillar        │
-│                                                                                                           │
-│ ┌────────────────────────────┐         ┌────────────────────────────┐            ┌──────────────────────┐ │
-│ │ Operator Control           │         │         jente.oc           │            │ Egress Control Plane │ │
-│ │ - tenant/policy reconcile  │         │         OpenClaw           │            │ - outbound policy    │ │
-│ │ - rollout coordination     │         │        (isolated)          │            │ - proxy / allowlists │ │
-│ └────────────────────────────┘         ├────────────┬───────────────┤            │ - secrets brokerage  │ │
-│                                        │    GCS     │      IAM      │            │ - AI token access    │ │
-│ ┌────────────────────────────┐         │   bucket   │ + SecretVault │            │ - audit / rate limit │ │
-│ │ Cognee Brain               │         └────────────────────────────┘            │ - external access ctl│ │
-│ │ - retrieval orchestration  │                                                   │ - MCP egress policy  │ │
-│ │ - endpoint authorization   │         ┌────────────────────────────┐            │ - external endpoint  │ │
-│ │ - policy-aware memory      │         │         jane.oc            │            │ - DLP / exfil checks │ │
-│ └────────────────────────────┘         │         OpenClaw           │            │ - identity attestatio│ │
-│                                        │        (isolated)          │            └──────────────────────┘ │
-│ ┌────────────────────────────┐         ├────────────┬───────────────┤                                     │
-│ │ MCP Server Plane           │         │    GCS     │      IAM      │                                     │
-│ │ - tenant/org MCP servers   │         │   bucket   │ + SecretVault │                                     │
-│ │ - policy-checked tool API  │         └────────────────────────────┘                                     │
-│ │ - protocol participation   │                                                                            │
-│ └────────────────────────────┘         ┌────────────────────────────┐                                     │
-│                                        │         niels.oc           │                                     │
-│ ┌────────────────────────────┐         │         OpenClaw           │                                     │
-│ │ Harvesting Agents          │         │        (isolated)          │                                     │
-│ │ - Slack/Teams connectors   │         ├────────────┬───────────────┤                                     │
-│ │ - ingest + normalize docs  │         │    GCS     │      IAM      │                                     │
-│ │ - publish to Cognee        │         │   bucket   │ + SecretVault │                                     │
-│ └────────────────────────────┘         └────────────────────────────┘                                     │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐      ┌──────────────────────────────┐
+│                  Control Plane                   │◄────►│  Cloud SQL + Skills Repo     │
+│                admin.opencrane.ai                │      │  org / dept / team /         │
+│     Express + Prisma + absorbed Obot admin UI    │      │  tenant / individual / state │
+│  • MCP install + in-cluster registry (desired)   │      └──────────────────────────────┘
+│  • Obot control & config authority               │
+│  • Permission compiler · effective-contract API  │
+└──────────────────────┬───────────────────────────┘
+                       │  (0) config   (1) grants   (2) contract
+                       ▼
+┌────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                Kubernetes Cluster (OpenCrane)                                  │
+│                                                                                                │
+│  Platform / Control            Tenant Runtime Pillar               MCP & Egress Plane          │
+│                                                                                                │
+│  ┌────────────────────────┐    ┌────────────────────────┐    ┌──────────────────────────────┐  │
+│  │ Operator Control       │    │       jente.oc         │    │ Obot MCP Gateway             │  │
+│  │ - tenant/policy        │    │       OpenClaw         │    │ (headless · config-slaved)   │  │
+│  │   reconcile            │    │      (isolated)        │    │ - native admin disabled      │  │
+│  │ - projected-token +    │    ├───────────┬────────────┤    │ - validate projected JWT     │  │
+│  │   contract injection   │    │   GCS     │    IAM     │    │ - per-call scope check       │  │
+│  │ - reconciles Obot      │    │  bucket   │ + Workload │    │ - credential broker/shim     │  │
+│  │   config + registry    │    │           │  Identity  │    ├──────────────────────────────┤  │
+│  │ - drift detect/repair  │    │                        |    │ In-cluster MCP servers       │  │
+│  └────────────────────────┘    │                        |    │ (registry-pulled, run        │  │
+│                                └───────────┬────────────┘    │  locally)                    │  │
+│  ┌────────────────────────┐                │  (3) JWT        ├──────────────────────────────┤  │
+│  │ Cognee Brain           │◄───────────────┴────────────────▶│ Obot token store             │  │
+│  │ - retrieval / memory   │                                  │ - per-user downstream creds  │  │
+│  └────────────────────────┘    ┌────────────────────────┐    │ - encrypted; pod-unreachable │  │
+│                                │       jane.oc          │    └──────────────────────────────┘  │
+│  ┌────────────────────────┐    │  OpenClaw (isolated)   │    ┌──────────────────────────────┐  │
+│  │ Harvesting Agents      │    ├───────────┬────────────┤    │ Egress Control Plane         │  │
+│  │ - ingest → Cognee      │    │   GCS     │  Workload  │    │ - allowlists / DLP / audit   │  │
+│  └────────────────────────┘    │  bucket   │  Identity  │    │ - network egress authority   │  │
+│                                └────────────────────────┘    └──────────────────────────────┘  │
+│                                ┌────────────────────────┐                                      │
+│                                │  niels.oc (isolated)   │                                      │
+│                                └────────────────────────┘                                      │
+└────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+Legend
+(0) config — control plane owns Obot's registry, IdP/gateway/auth, lifecycle; operator reconciles + drift-repairs.
+(1) grants — per-tenant compiled scope, pushed live; revocation effective next call.
+(2) contract — versioned effective-contract the pod re-pulls at loop boundaries.
+(3) JWT — short-lived, audience-bound projected SA token; shim injects downstream creds server-side, never to the pod.
 ```
 
 In this view, the left control pillar is split into separate Operator Control, Cognee Brain, MCP Server Plane, and Harvesting Agents blocks, while Egress Control enforces outbound and model-access guardrails.
