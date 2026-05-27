@@ -85,6 +85,7 @@ OpenCrane is represented here as a clean operating model: a central **Control Pl
 │     Express + Prisma + absorbed Obot admin UI    │      │  tenant / individual / state │
 │  • MCP install + in-cluster registry (desired)   │      └──────────────────────────────┘
 │  • Obot control & config authority               │
+│  • Control-plane UI manages Obot + skills        │
 │  • Permission compiler · effective-contract API  │
 └──────────────────────┬───────────────────────────┘
                        │  (0) config   (1) grants   (2) contract
@@ -103,7 +104,7 @@ OpenCrane is represented here as a clean operating model: a central **Control Pl
 │  │ - reconciles Obot      │    │   Drive   │ + Workload │    │ - credential broker/shim     │  │
 │  │   config + registry    │    │           │  Identity  │    ├──────────────────────────────┤  │
 │  │ - drift detect/repair  │    │           |            |    │ In-cluster MCP servers       │  │
-│  └────────────────────────┘    │           |            |    │ (registry-pulled, run        │  │
+│  └──────────────────────── ┘    │           |            |    │ (registry-pulled, run        │  │
 │                                └──────┬────┬────────────┘    │  locally)                    │  │
 │  ┌────────────────────────┐           |    │  (3) JWT        ├──────────────────────────────┤  │
 │  │ Cognee Brain           │◄──────┬────────┴────────────────►│ Obot token store             │  │
@@ -240,10 +241,11 @@ OpenCrane Phase 1 delivers a **production-ready multi-tenant control plane** wit
 - 🎯 Org knowledge fabric standardization with schema v2 and connector conformance checks.
 - 🎯 Awareness policy compiler to translate AccessPolicy + dataset membership into Cognee grants and runtime hints.
 - 🎯 Fleet evaluation harness and awareness SLO dashboards (policy safety, freshness, citation coverage, latency).
-- 🎯 Obot MCP Gateway deployed headless and config-slaved; downstream creds brokered server-side, never in tenant pods.
-- 🎯 Skill Registry & Delivery over OCI/ORAS with 5-level Permission Compiler for entitlement enforcement per read.
-- 🎯 Control-plane MCP server management, skill catalog with promotion/demotion, and third-party source installation pipeline.
-- 🎯 Projected-token identity migration: audience-bound SA tokens replace `OPENCLAW_GATEWAY_TOKEN`.
+- ⏳ Obot MCP Gateway deployment pending: headless, config-slaved, and backed by in-cluster service endpoints.
+- ⏳ Skill Registry & Delivery app pending over OCI/ORAS with per-read entitlement enforcement.
+- ⏳ Control-plane MCP server management, skill catalog with promotion/demotion, and third-party source installation pipeline pending implementation.
+- ⏳ Operator + identity migration pending: projected-token audiences replace `OPENCLAW_GATEWAY_TOKEN` once rollout is implemented.
+- 🎯 Control-plane frontend (`apps/control-plane-ui`) is the single admin surface for Obot config, MCP install, and skill catalog management.
 - 🎯 Central per-tenant scheduler with job dispatch as tenant identity.
 - 🎯 Hierarchical skill registry (org/department/project/personal) with immutable OCI digest-pinned bundles.
 - 🎯 Legacy filesystem-only skill sharing and static gateway tokens removed after cutover, with optional pull-through cache retained for startup resilience.
@@ -255,6 +257,7 @@ OpenCrane Phase 1 delivers a **production-ready multi-tenant control plane** wit
 | Helm chart | `helm/opencrane/` | K8s manifests, CRDs, operator + control plane deployments |
 | Operator | `operator/` | Watches Tenant/AccessPolicy CRDs, reconciles per-tenant resources |
 | Control Plane | `control-plane/` | Express REST API with Prisma ORM for tenant/skill/policy management |
+| Control Plane UI | `apps/control-plane-ui/` | Angular admin frontend for Obot control, MCP install, and skills catalog/entitlements |
 | Docker | `docker/` | Container images for tenant pods, operator, and control plane |
 | Skills | `skills/shared/` | Org/team shared skill library |
 | Terraform | `terraform/` | GCP infrastructure: GKE, Cloud SQL, VPC, Crossplane |

@@ -820,13 +820,27 @@ apps/
     - Claws do not self-schedule; schedules survive pod suspension and restarts.
     - Wake/dispatch path guarded: job-scoped token, audited, no broad impersonation.
 
+13. **Control-Plane Frontend (Obot + Skills Admin Surface)**
+   - `apps/control-plane-ui` is the single admin surface for Obot config, MCP install, and skill catalog/entitlement management.
+   - UI must expose promotion/demotion workflows, third-party source install flows, and operator/drift visibility for both ingress planes.
+   - UI actions must map to control-plane APIs only (no direct plane admin), preserving control-plane as sole authority.
+
 ### Current Implementation Progress
 
 - [x] Org index schema v2 metadata fields now exist in the harvesting pipeline and control-plane persistence model for department/project scope, confidentiality, jurisdiction, retention class, ACL lineage, freshness markers, and ingest cursor tracking.
 - [x] Slack harvesting now emits the required lineage/freshness metadata, and ingestion rejects non-conformant org index records before they enter the shared awareness corpus.
-- [x] Operator tenant Deployment now uses projected ServiceAccount identity tokens for `aud=obot-gateway` and `aud=skill-registry`, and no longer injects static `OPENCLAW_GATEWAY_TOKEN`.
-- [x] Managed runtime contract now includes Phase 4 contract scaffolding (`contractVersion`, `mcp.gateway`, `mcp.servers`, `skills.registry`, `skills.entitled`) while preserving existing policy fields.
+- [ ] Operator tenant Deployment projected-token migration for `aud=obot-gateway` and `aud=skill-registry` is not completed yet.
+- [ ] Managed runtime contract Phase 4 scaffolding (`contractVersion`, `mcp.gateway`, `mcp.servers`, `skills.registry`, `skills.entitled`) is not completed yet.
 - [ ] Connector rollout beyond Slack and the final conformance enforcement bar remain blocked on the open Phase 4 connector-adoption and department-scope decisions.
+
+### Phase 4 Reality Check (Current Gaps)
+
+- [ ] Obot MCP Gateway is not yet deployed in-cluster; current config would point to non-existent endpoints.
+- [ ] Skill Registry & Delivery service (skills app) is not implemented yet.
+- [ ] Operator reconcile logic has not yet been updated for MCP + skills plane config/grants and drift repair.
+- [ ] Control-plane MCP/skills CRUD and third-party ingest routes are not yet implemented.
+- [ ] Control-plane frontend flows for Obot control, MCP install, and skill catalog/entitlements are not implemented yet.
+- [ ] Helm manifests/NetworkPolicies/CRDs for both ingress planes are not yet implemented end-to-end.
 
 ### Key Tasks (Phase 4)
 
@@ -880,6 +894,7 @@ apps/
 - [ ] MCP servers are manageable via control-plane CRUD with per-scope entitlement grants.
 - [ ] Third-party MCP servers and skills can be installed from upstream sources via the ingest pipeline (scan → validate → register → entitle).
 - [ ] Skill catalog supports authoring, promotion/demotion with admin review, and Cognee-backed semantic search.
+- [ ] Control-plane UI supports Obot config, MCP install, skill catalog/entitlements, and third-party source installation without direct plane admin access.
 - [ ] Per-tenant schedules survive pod suspension and restarts; claws run no self-owned cron.
 - [ ] All new code conforms to `AGENTS.md`.
 
