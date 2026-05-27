@@ -33,10 +33,13 @@ export function _BuildDeployment(config: OperatorConfig, tenant: Tenant, namespa
     { name: "OPENCLAW_SECRETS_DIR", value: "/data/secrets" },
     { name: "OPENCLAW_ENCRYPTION_KEY_PATH", value: "/etc/openclaw/encryption-key/key" },
     { name: "OPENCLAW_TENANT_NAME", value: name },
-    { name: "OPENCLAW_GATEWAY_TOKEN", value: `opencrane-${name}-gateway` },
     { name: "OPENCLAW_VERSION", value: openclawVersion },
     { name: "OPENCRANE_RUNTIME_MODE", value: "managed" },
     { name: "OPENCRANE_RUNTIME_CONTRACT_PATH", value: "/config/opencrane-managed-runtime.json" },
+    { name: "OPENCRANE_MCP_GATEWAY_URL", value: config.mcpGatewayUrl },
+    { name: "OPENCRANE_SKILL_REGISTRY_URL", value: config.skillRegistryUrl },
+    { name: "OPENCRANE_MCP_GATEWAY_TOKEN_PATH", value: "/var/run/opencrane/tokens/obot-gateway.token" },
+    { name: "OPENCRANE_SKILL_REGISTRY_TOKEN_PATH", value: "/var/run/opencrane/tokens/skill-registry.token" },
     { name: "HOME", value: "/tmp/opencrane-home" },
     { name: "TMPDIR", value: "/tmp" },
     { name: "NPM_CONFIG_CACHE", value: "/tmp/npm-cache" },
@@ -82,6 +85,7 @@ export function _BuildDeployment(config: OperatorConfig, tenant: Tenant, namespa
     { name: "shared-skills", mountPath: "/shared-skills", readOnly: true },
     { name: "pod-secrets", mountPath: "/data/secrets" },
     { name: "encryption-key", mountPath: "/etc/openclaw/encryption-key", readOnly: true },
+    { name: "projected-identity", mountPath: "/var/run/opencrane/tokens", readOnly: true },
     { name: "tmp", mountPath: "/tmp" },
   ];
 
@@ -90,6 +94,27 @@ export function _BuildDeployment(config: OperatorConfig, tenant: Tenant, namespa
     { name: "shared-skills", persistentVolumeClaim: { claimName: config.sharedSkillsPvcName, readOnly: true } },
     { name: "pod-secrets", emptyDir: { medium: "Memory", sizeLimit: "10Mi" } },
     { name: "encryption-key", secret: { secretName: `openclaw-${name}-encryption-key` } },
+    {
+      name: "projected-identity",
+      projected: {
+        sources: [
+          {
+            serviceAccountToken: {
+              path: "obot-gateway.token",
+              expirationSeconds: config.projectedTokenTtlSeconds,
+              audience: "obot-gateway",
+            },
+          },
+          {
+            serviceAccountToken: {
+              path: "skill-registry.token",
+              expirationSeconds: config.projectedTokenTtlSeconds,
+              audience: "skill-registry",
+            },
+          },
+        ],
+      },
+    },
     { name: "tmp", emptyDir: {} },
   ];
 

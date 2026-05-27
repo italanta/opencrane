@@ -32,6 +32,9 @@ describe("TenantResourceBuilder", () =>
     expect(payload.agents.defaults.model).toBe("gpt-4o");
     expect(runtimeContract.mode).toBe("managed");
     expect(runtimeContract.tenant.name).toBe("cfg");
+    expect(runtimeContract.contractVersion).toBe("2.1.0");
+    expect(runtimeContract.mcp.gateway).toBe(defaultConfig.mcpGatewayUrl);
+    expect(runtimeContract.skills.registry).toBe(defaultConfig.skillRegistryUrl);
   });
 
   it("publishes effective MCP policy details in the managed runtime contract", () =>
@@ -47,6 +50,7 @@ describe("TenantResourceBuilder", () =>
 
     expect(runtimeContract.policy.effectiveRef).toBe("default-egress");
     expect(runtimeContract.policy.mcpServers).toEqual({ allow: ["skills"] });
+    expect(runtimeContract.mcp.servers).toEqual([{ name: "skills" }]);
     expect(runtimeContract.capabilities.mcpPolicyEnforced).toBe(true);
   });
 
@@ -110,12 +114,23 @@ describe("TenantResourceBuilder", () =>
     expect(container?.securityContext?.capabilities?.drop).toEqual(["ALL"]);
     expect(envVars.OPENCRANE_RUNTIME_MODE).toBe("managed");
     expect(envVars.OPENCRANE_RUNTIME_CONTRACT_PATH).toBe("/config/opencrane-managed-runtime.json");
+    expect(envVars.OPENCRANE_MCP_GATEWAY_URL).toBe(defaultConfig.mcpGatewayUrl);
+    expect(envVars.OPENCRANE_SKILL_REGISTRY_URL).toBe(defaultConfig.skillRegistryUrl);
+    expect(envVars.OPENCRANE_MCP_GATEWAY_TOKEN_PATH).toBe("/var/run/opencrane/tokens/obot-gateway.token");
+    expect(envVars.OPENCRANE_SKILL_REGISTRY_TOKEN_PATH).toBe("/var/run/opencrane/tokens/skill-registry.token");
     expect(envVars.OPENCRANE_POLICY_REF).toBe("restricted-mcp");
     expect(envVars.OPENCRANE_ALLOWED_SKILLS).toBe("company-policy,deploy-helper");
     expect(envVars.HOME).toBe("/tmp/opencrane-home");
     expect(envVars.NPM_CONFIG_CACHE).toBe("/tmp/npm-cache");
+    expect(envVars.OPENCLAW_GATEWAY_TOKEN).toBeUndefined();
     expect(volumeMounts.some((mount) => mount.name === "tmp" && mount.mountPath === "/tmp")).toBe(true);
+    expect(volumeMounts.some((mount) => mount.name === "projected-identity" && mount.mountPath === "/var/run/opencrane/tokens")).toBe(true);
     expect(volumes.some((volume) => volume.name === "tmp" && volume.emptyDir !== undefined)).toBe(true);
+    expect(volumes.some((volume) =>
+      volume.name === "projected-identity"
+      && volume.projected?.sources?.some((source) => source.serviceAccountToken?.audience === "obot-gateway")
+      && volume.projected?.sources?.some((source) => source.serviceAccountToken?.audience === "skill-registry"),
+    )).toBe(true);
   });
 
   it("builds Ingress host from tenant domain conventions", () =>

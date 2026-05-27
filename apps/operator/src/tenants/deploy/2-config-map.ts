@@ -49,6 +49,7 @@ export function _BuildConfigMap(config: OperatorConfig, tenant: Tenant, namespac
   //    tenant context in a machine-readable form for future runtime features.
   const runtimeContract = {
     version: "opencrane-runtime/v1alpha1",
+    contractVersion: "2.1.0",
     platform: "opencrane",
     mode: "managed",
     tenant: {
@@ -60,6 +61,25 @@ export function _BuildConfigMap(config: OperatorConfig, tenant: Tenant, namespac
     policy: {
       effectiveRef: effectivePolicy?.metadata?.name ?? tenant.spec.policyRef ?? null,
       mcpServers: effectivePolicy?.spec.mcpServers ?? null,
+    },
+    mcp: {
+      gateway: config.mcpGatewayUrl,
+      servers: effectivePolicy?.spec.mcpServers?.allow?.map(function _mapAllowedServer(server)
+      {
+        return { name: server };
+      }) ?? [],
+    },
+    skills: {
+      registry: config.skillRegistryUrl,
+      entitled: tenant.spec.skillAllowlist?.map(function _mapEntitledSkill(skillName)
+      {
+        return {
+          name: skillName,
+          scope: "tenant",
+          version: null,
+          digest: null,
+        };
+      }) ?? [],
     },
     capabilities: {
       liteLlmProxy: config.liteLlmEnabled,
