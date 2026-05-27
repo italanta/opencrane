@@ -829,8 +829,8 @@ apps/
 
 - [x] Org index schema v2 metadata fields now exist in the harvesting pipeline and control-plane persistence model for department/project scope, confidentiality, jurisdiction, retention class, ACL lineage, freshness markers, and ingest cursor tracking.
 - [x] Slack harvesting now emits the required lineage/freshness metadata, and ingestion rejects non-conformant org index records before they enter the shared awareness corpus.
-- [ ] Operator tenant Deployment projected-token migration for `aud=obot-gateway` and `aud=skill-registry` is not completed yet.
-- [ ] Managed runtime contract Phase 4 scaffolding (`contractVersion`, `mcp.gateway`, `mcp.servers`, `skills.registry`, `skills.entitled`) is not completed yet.
+- [x] Operator tenant Deployment projected-token migration for `aud=obot-gateway` and `aud=skill-registry` is implemented (`apps/operator/src/tenants/deploy/3-deployment.ts`).
+- [x] Managed runtime contract Phase 4 scaffolding (`contractVersion`, `mcp.gateway`, `mcp.servers`, `skills.registry`, `skills.entitled`) is implemented (`apps/operator/src/tenants/deploy/2-config-map.ts`).
 - [ ] Connector rollout beyond Slack and the final conformance enforcement bar remain blocked on the open Phase 4 connector-adoption and department-scope decisions.
 
 ### Phase 4 Reality Check (Current Gaps)

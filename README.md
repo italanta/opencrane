@@ -244,7 +244,8 @@ OpenCrane Phase 1 delivers a **production-ready multi-tenant control plane** wit
 - ⏳ Obot MCP Gateway deployment pending: headless, config-slaved, and backed by in-cluster service endpoints.
 - ⏳ Skill Registry & Delivery app pending over OCI/ORAS with per-read entitlement enforcement.
 - ⏳ Control-plane MCP server management, skill catalog with promotion/demotion, and third-party source installation pipeline pending implementation.
-- ⏳ Operator + identity migration pending: projected-token audiences replace `OPENCLAW_GATEWAY_TOKEN` once rollout is implemented.
+- ✅ Operator + identity migration delivered: projected-token audiences (`aud=obot-gateway`, `aud=skill-registry`) now replace `OPENCLAW_GATEWAY_TOKEN`.
+- ✅ Managed runtime contract scaffolding delivered: `contractVersion`, `mcp.gateway`, `mcp.servers`, `skills.registry`, and `skills.entitled` are now present.
 - 🎯 Control-plane frontend (`apps/control-plane-ui`) is the single admin surface for Obot config, MCP install, and skill catalog management.
 - 🎯 Central per-tenant scheduler with job dispatch as tenant identity.
 - 🎯 Hierarchical skill registry (org/department/project/personal) with immutable OCI digest-pinned bundles.
