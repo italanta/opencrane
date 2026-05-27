@@ -159,9 +159,9 @@ During Agentic Loop:
                │
                ▼
 ┌──────────────────────────────────────────────────┐
-│  Cognee Knowledge Plane                           │
-│  Enforces dataset memberships synced by control   │
-│  plane and returns scope-filtered results         │
+│  Cognee Knowledge Plane                          │
+│  Enforces dataset memberships synced by control  │
+│  plane and returns scope-filtered results        │
 └──────────────────────────────────────────────────┘
 ```
 
