@@ -5,7 +5,7 @@ import { firstValueFrom } from "rxjs";
 
 import type { McpServer } from "../models/mcp-server.model";
 
-/** API service for Phase 4 MCP server management endpoints. */
+/** API service for MCP server management endpoints. */
 @Injectable({ providedIn: "root" })
 export class McpServersService
 {

@@ -6,7 +6,7 @@ import { TagModule } from "primeng/tag";
 
 import { McpServerStatus, type McpServer } from "../../../core/models/mcp-server.model";
 
-/** Reusable summary card for Phase 4 MCP server entries. */
+/** Reusable summary card for MCP server entries. */
 @Component({
   selector: "oc-mcp-server-card",
   standalone: true,

@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from "@angular/core";
+import { Component, computed, inject } from "@angular/core";
 import { rxResource } from "@angular/core/rxjs-interop";
 import type { Observable } from "rxjs";
 import { ButtonModule } from "primeng/button";
@@ -9,14 +9,15 @@ import { TagModule } from "primeng/tag";
 
 import { GroupsService } from "../../core/api/groups.service";
 import { McpServersService } from "../../core/api/mcp-servers.service";
-import { GrantScope, type Grant } from "../../core/models/grant.model";
 import type { Group } from "../../core/models/group.model";
 import { McpServerStatus, type McpServer } from "../../core/models/mcp-server.model";
+import { createEntitlementCatalogPageState } from "../shared/entitlement-catalog-page.state";
 import { GrantEditorComponent } from "../../shared/components/grant-editor/grant-editor.component";
 import { McpServerCardComponent } from "../../shared/components/mcp-server-card/mcp-server-card.component";
 import { UiSectionCardComponent } from "../../shared/components/ui-section-card/ui-section-card.component";
+import { getGrantScopeSeverity } from "../../shared/utils/grant-scope-severity";
 
-/** Phase 4 admin page for MCP server inventory and grant previews. */
+/** Operator page for MCP server inventory and grant previews. */
 @Component({
   selector: "oc-mcp-servers-page",
   standalone: true,
@@ -40,12 +41,6 @@ export class McpServersPageComponent
   /** Group API service. */
   private readonly _groupsService = inject(GroupsService);
 
-  /** Currently selected server identifier. */
-  readonly _selectedServerId = signal<string | null>(null);
-
-  /** Local grant overrides for preview-only edits. */
-  readonly _grantOverrides = signal<Record<string, Grant[]>>({});
-
   /** Resource-backed MCP server inventory. */
   private readonly _serversResource = rxResource({
     stream: this._listServers.bind(this),
@@ -64,6 +59,9 @@ export class McpServersPageComponent
   /** Loaded groups. */
   readonly _groups = computed(this._computeGroups.bind(this));
 
+  /** Shared selection and preview state for the server catalog. */
+  private readonly _catalogState = createEntitlementCatalogPageState(this._servers);
+
   /** Combined page loading state. */
   readonly _loading = computed(this._computeLoading.bind(this));
 
@@ -74,10 +72,10 @@ export class McpServersPageComponent
   readonly _serversSubtitle = computed(this._computeServersSubtitle.bind(this));
 
   /** Selected server details. */
-  readonly _selectedServer = computed(this._computeSelectedServer.bind(this));
+  readonly _selectedServer = this._catalogState.selectedItem;
 
   /** Grants for the selected server, including local preview edits. */
-  readonly _selectedServerGrants = computed(this._computeSelectedServerGrants.bind(this));
+  readonly _selectedServerGrants = this._catalogState.selectedItemGrants;
 
   /** Count of active servers. */
   readonly _activeCount = computed(this._computeActiveCount.bind(this));
@@ -130,38 +128,6 @@ export class McpServersPageComponent
     return `${this._servers().length} registered • ${this._activeCount()} active • ${this._degradedCount()} degraded • ${this._draftCount()} draft`;
   }
 
-  /** Return the selected server or fall back to the first available record. */
-  private _computeSelectedServer(): McpServer | null
-  {
-    const selectedServerId = this._selectedServerId();
-    if (selectedServerId)
-    {
-      const selectedServer = this._servers().find(function _matchServer(server)
-      {
-        return server.id === selectedServerId;
-      });
-
-      if (selectedServer)
-      {
-        return selectedServer;
-      }
-    }
-
-    return this._servers()[0] ?? null;
-  }
-
-  /** Return the selected server grants with local preview overrides applied. */
-  private _computeSelectedServerGrants(): Grant[]
-  {
-    const selectedServer = this._selectedServer();
-    if (!selectedServer)
-    {
-      return [];
-    }
-
-    return this._grantOverrides()[selectedServer.id] ?? selectedServer.grants;
-  }
-
   /** Count servers in the active state. */
   private _computeActiveCount(): number
   {
@@ -192,22 +158,13 @@ export class McpServersPageComponent
   /** Select a server for the grant preview section. */
   _selectServer(serverId: string): void
   {
-    this._selectedServerId.set(serverId);
+    this._catalogState.selectItem(serverId);
   }
 
   /** Persist a local preview of the selected server grants. */
-  _updateSelectedGrants(grants: Grant[]): void
+  _updateSelectedGrants(grants: McpServer["grants"]): void
   {
-    const selectedServer = this._selectedServer();
-    if (!selectedServer)
-    {
-      return;
-    }
-
-    this._grantOverrides.set({
-      ...this._grantOverrides(),
-      [selectedServer.id]: grants,
-    });
+    this._catalogState.updateSelectedGrants(grants);
   }
 
   /** Reload both MCP and group inventories. */
@@ -218,18 +175,8 @@ export class McpServersPageComponent
   }
 
   /** Map a group scope to a PrimeNG tag severity. */
-  _scopeSeverity(scope: GrantScope): "info" | "warn" | "success" | "secondary"
+  _scopeSeverity(scope: Group["scope"]): "info" | "warn" | "success" | "secondary"
   {
-    switch (scope)
-    {
-      case GrantScope.Org:
-        return "info";
-      case GrantScope.Department:
-        return "warn";
-      case GrantScope.Project:
-        return "success";
-      default:
-        return "secondary";
-    }
+    return getGrantScopeSeverity(scope);
   }
 }

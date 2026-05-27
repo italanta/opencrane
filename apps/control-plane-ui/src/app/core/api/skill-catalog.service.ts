@@ -5,7 +5,7 @@ import { firstValueFrom } from "rxjs";
 
 import type { SkillBundle } from "../models/skill-bundle.model";
 
-/** API service for the registry-backed Phase 4 skill catalog. */
+/** API service for the registry-backed skill catalog. */
 @Injectable({ providedIn: "root" })
 export class SkillCatalogService
 {

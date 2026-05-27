@@ -1,6 +1,6 @@
 import { GrantScope, type Grant } from "./grant.model";
 
-/** Access group used for Phase 4 entitlement management. */
+/** Access group used to model domain membership for entitlement management. */
 export interface Group
 {
   /** Stable group identifier. */

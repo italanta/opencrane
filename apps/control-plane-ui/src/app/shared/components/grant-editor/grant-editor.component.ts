@@ -15,7 +15,7 @@ const _GRANT_SCOPES: GrantScope[] = [GrantScope.Org, GrantScope.Department, Gran
 /** Supported access decisions exposed in the reusable grant editor. */
 const _GRANT_ACCESS_OPTIONS: GrantAccess[] = [GrantAccess.Allow, GrantAccess.Deny];
 
-/** Reusable editor for Phase 4 entitlement grant previews. */
+/** Reusable editor for entitlement grant previews. */
 @Component({
   selector: "oc-grant-editor",
   standalone: true,

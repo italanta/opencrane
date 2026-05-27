@@ -1,4 +1,4 @@
-/** Source kinds supported by the Phase 4 ingestion surface. */
+/** Source kinds supported by the external ingestion surface. */
 export enum ThirdPartySourceKind
 {
   McpRegistry = "mcp-registry",

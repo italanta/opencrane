@@ -5,7 +5,7 @@ import { TagModule } from "primeng/tag";
 
 import { SkillBundleStatus, type SkillBundle } from "../../../core/models/skill-bundle.model";
 
-/** Reusable summary card for Phase 4 skill catalog entries. */
+/** Reusable summary card for skill catalog entries. */
 @Component({
   selector: "oc-skill-card",
   standalone: true,

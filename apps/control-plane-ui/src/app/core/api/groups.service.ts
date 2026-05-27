@@ -5,7 +5,7 @@ import { firstValueFrom } from "rxjs";
 
 import type { Group } from "../models/group.model";
 
-/** API service for Phase 4 access groups and entitlement targets. */
+/** API service for domain groups and entitlement targets. */
 @Injectable({ providedIn: "root" })
 export class GroupsService
 {

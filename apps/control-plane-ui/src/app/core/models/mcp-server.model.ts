@@ -16,7 +16,7 @@ export enum McpServerStatus
   Draft = "draft",
 }
 
-/** Phase 4 MCP server record returned to the UI. */
+/** MCP server record returned to the operator UI. */
 export interface McpServer
 {
   /** Stable server identifier. */

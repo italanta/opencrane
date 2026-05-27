@@ -5,7 +5,7 @@ export enum GrantAccess
   Deny = "deny",
 }
 
-/** Supported organizational scopes for Phase 4 permissions. */
+/** Supported organizational scopes for entitlement rules. */
 export enum GrantScope
 {
   Org = "org",

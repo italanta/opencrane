@@ -5,6 +5,7 @@ import { Router } from "express";
 import type { Prisma, PrismaClient } from "@prisma/client";
 
 import { compile } from "../core/grants/grant-compiler.js";
+import { GrantCompilerAccess, GrantCompilerPayloadType } from "../core/grants/grant-compiler.types.js";
 
 import type { CreateTenantRequest, TenantDatasetsResponse, TenantResponse, UpdateTenantDatasetsRequest } from "../types.js";
 import type { EffectiveContractResponse } from "./tenants.types.js";
@@ -213,18 +214,18 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
       },
     });
     const awarenessMemberships = _BuildTenantDatasetMembershipResponse(memberships);
-    const awarenessDecisions = await compile(req.params.name, "awareness", prisma);
-    const mcpDecisions = await compile(req.params.name, "mcp-server", prisma);
+    const awarenessDecisions = await compile(req.params.name, GrantCompilerPayloadType.Awareness, prisma);
+    const mcpDecisions = await compile(req.params.name, GrantCompilerPayloadType.McpServer, prisma);
     const allowedMcpIds = mcpDecisions.filter(function _isAllowed(decision)
     {
-      return decision.access === "allow";
+      return decision.access === GrantCompilerAccess.Allow;
     }).map(function _mapDecision(decision)
     {
       return decision.payloadId;
     });
-    const allowedSkillIds = (await compile(req.params.name, "skill-bundle", prisma)).filter(function _isAllowed(decision)
+    const allowedSkillIds = (await compile(req.params.name, GrantCompilerPayloadType.SkillBundle, prisma)).filter(function _isAllowed(decision)
     {
-      return decision.access === "allow";
+      return decision.access === GrantCompilerAccess.Allow;
     }).map(function _mapDecision(decision)
     {
       return decision.payloadId;

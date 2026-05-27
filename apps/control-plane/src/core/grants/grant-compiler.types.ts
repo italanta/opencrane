@@ -1,14 +1,34 @@
 /** Supported payload types compiled from the generic Grant table. */
-export type GrantCompilerPayloadType = "awareness" | "mcp-server" | "skill-bundle";
+export enum GrantCompilerPayloadType
+{
+  Awareness = "awareness",
+  McpServer = "mcp-server",
+  SkillBundle = "skill-bundle",
+}
 
 /** Allow/deny access result returned by the compiler. */
-export type GrantCompilerAccess = "allow" | "deny";
+export enum GrantCompilerAccess
+{
+  Allow = "allow",
+  Deny = "deny",
+}
 
 /** Subject types recognized by the compiler. */
-export type GrantCompilerSubjectType = "group" | "tenant" | "user";
+export enum GrantCompilerSubjectType
+{
+  Group = "group",
+  Tenant = "tenant",
+  User = "user",
+}
 
 /** Organizational scope attached to a grant. */
-export type GrantCompilerScope = "org" | "department" | "project" | "personal";
+export enum GrantCompilerScope
+{
+  Org = "org",
+  Department = "department",
+  Project = "project",
+  Personal = "personal",
+}
 
 /** Final compiler decision for a single payload target. */
 export interface CompiledGrantDecision

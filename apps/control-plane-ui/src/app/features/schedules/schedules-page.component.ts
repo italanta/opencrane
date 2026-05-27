@@ -13,7 +13,7 @@ import { ThirdPartySourcesService } from "../../core/api/third-party-sources.ser
 import { ThirdPartySourceStatus, type ThirdPartySource } from "../../core/models/third-party-source.model";
 import { UiSectionCardComponent } from "../../shared/components/ui-section-card/ui-section-card.component";
 
-/** Central scheduler overview page for Phase 4 source sync orchestration. */
+/** Central scheduler overview page for source sync orchestration. */
 @Component({
   selector: "oc-schedules-page",
   standalone: true,
