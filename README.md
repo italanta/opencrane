@@ -106,13 +106,13 @@ OpenCrane is represented here as a clean operating model: a central **Control Pl
 │  └────────────────────────┘    │                        |    │ (registry-pulled, run        │  │
 │                                └───────────┬────────────┘    │  locally)                    │  │
 │  ┌────────────────────────┐                │  (3) JWT        ├──────────────────────────────┤  │
-│  │ Cognee Brain           │◄───────────────┴────────────────▶│ Obot token store             │  │
+│  │ Cognee Brain           │◄───────────────┴────────────────►│ Obot token store             │  │
 │  │ - retrieval / memory   │                                  │ - per-user downstream creds  │  │
-│  └────────────────────────┘    ┌────────────────────────┐    │ - encrypted; pod-unreachable │  │
-│                                │       jane.oc          │    └──────────────────────────────┘  │
-│  ┌────────────────────────┐    │  OpenClaw (isolated)   │    ┌──────────────────────────────┐  │
+│  └──────────▲─────────────┘    ┌────────────────────────┐    │ - encrypted; pod-unreachable │  │
+│             │                  │       jane.oc          │    └──────────────────────────────┘  │
+│  ┌──────────┴─────────────┐    │  OpenClaw (isolated)   │    ┌──────────────────────────────┐  │
 │  │ Harvesting Agents      │    ├───────────┬────────────┤    │ Egress Control Plane         │  │
-│  │ - ingest → Cognee      │    │   GCS     │  Workload  │    │ - allowlists / DLP / audit   │  │
+│  │ - ingest -> Cognee     │    │   GCS     │  Workload  │    │ - allowlists / DLP / audit   │  │
 │  └────────────────────────┘    │  bucket   │  Identity  │    │ - network egress authority   │  │
 │                                └────────────────────────┘    └──────────────────────────────┘  │
 │                                ┌────────────────────────┐                                      │
