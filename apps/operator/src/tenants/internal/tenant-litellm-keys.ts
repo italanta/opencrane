@@ -73,8 +73,11 @@ export class TenantLiteLlmKeys
       // Continue to create key and secret when missing.
     }
 
-    // 3. Provision key in LiteLLM and persist as a namespaced Secret for tenant env injection.
+    // 3. Ensure team exists in LiteLLM — required for per-tenant spend tracking.
     const budget = tenant.spec.monthlyBudgetUsd ?? this.config.liteLlmDefaultMonthlyBudgetUsd;
+    await this._ensureLiteLlmTeam(name, budget);
+
+    // 4. Provision key in LiteLLM and persist as a namespaced Secret for tenant env injection.
     const issuedAt = new Date().toISOString();
     const keyAlias = `opencrane-${name}`;
     const apiKey = await this._generateLiteLlmVirtualKey(name, budget);
@@ -102,6 +105,50 @@ export class TenantLiteLlmKeys
   }
 
   /**
+   * Ensure a LiteLLM team exists for the tenant, creating it if absent.
+   * Teams enable per-tenant budget tracking and spend attribution in LiteLLM.
+   */
+  private async _ensureLiteLlmTeam(tenantName: string, monthlyBudgetUsd: number): Promise<void>
+  {
+    // 1. Check if team already exists — avoid duplicates on re-reconcile.
+    const infoResponse = await fetch(
+      `${this.config.liteLlmEndpoint}/team/info?team_id=${encodeURIComponent(tenantName)}`,
+      {
+        headers: { Authorization: `Bearer ${this.config.liteLlmMasterKey}` },
+      },
+    );
+
+    if (infoResponse.ok)
+    {
+      this.log.debug({ tenantName }, "litellm team already exists");
+      return;
+    }
+
+    // 2. Create team — establishes the tenant identity in LiteLLM for spend tracking.
+    const createResponse = await fetch(`${this.config.liteLlmEndpoint}/team/new`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        Authorization: `Bearer ${this.config.liteLlmMasterKey}`,
+      },
+      body: JSON.stringify({
+        team_id: tenantName,
+        team_alias: `opencrane-${tenantName}`,
+        max_budget: monthlyBudgetUsd,
+        metadata: { managed_by: "opencrane-operator" },
+      }),
+    });
+
+    if (!createResponse.ok)
+    {
+      const body = await createResponse.text();
+      throw new Error(`LiteLLM team creation failed (${createResponse.status}): ${body}`);
+    }
+
+    this.log.info({ tenantName, monthlyBudgetUsd }, "created litellm team");
+  }
+
+  /**
    * Request a new LiteLLM virtual key for the tenant from the LiteLLM API.
    */
   private async _generateLiteLlmVirtualKey(tenantName: string, monthlyBudgetUsd: number): Promise<string>
@@ -114,6 +161,7 @@ export class TenantLiteLlmKeys
       },
       body: JSON.stringify({
         key_alias: `opencrane-${tenantName}`,
+        team_id: tenantName,
         metadata: { tenant: tenantName },
         max_budget: monthlyBudgetUsd,
       }),
