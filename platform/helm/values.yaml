@@ -71,6 +71,8 @@ litellm:
   generateMasterKey: true
   # -- Default budget used by operator when tenant does not define monthlyBudgetUsd
   defaultMonthlyBudgetUsd: 50
+  # -- Default spend path template for control-plane to query tenant spend from LiteLLM (tenant_id placeholder: {tenant})
+  spendPathTemplate: "/spend/tenant/{tenant}"
   image:
     repository: ghcr.io/berriai/litellm
     tag: main-latest

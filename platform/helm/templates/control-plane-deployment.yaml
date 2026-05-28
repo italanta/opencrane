@@ -42,6 +42,8 @@ spec:
               value: {{ ternary "true" "false" .Values.controlPlane.cognee.backendAccessControl | quote }}
             - name: LITELLM_ENDPOINT
               value: {{ .Values.litellm.endpoint | quote }}
+            - name: LITELLM_SPEND_PATH_TEMPLATE
+              value: {{ .Values.litellm.spendPathTemplate | quote }}
             {{- if .Values.litellm.enabled }}
             - name: LITELLM_MASTER_KEY
               valueFrom:
