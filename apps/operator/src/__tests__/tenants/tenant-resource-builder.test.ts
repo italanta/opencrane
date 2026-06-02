@@ -37,7 +37,7 @@ describe("TenantResourceBuilder", () =>
     expect(runtimeContract.skills.registry).toBe(defaultConfig.skillRegistryUrl);
   });
 
-  it("publishes effective MCP policy details in the managed runtime contract", () =>
+  it("publishes policy reference metadata and defers grants to effective-contract", () =>
   {
     const tenant = _makeTenant("jente", {
       team: "engineering",
@@ -49,9 +49,9 @@ describe("TenantResourceBuilder", () =>
     const runtimeContract = JSON.parse(configMap.data?.["opencrane-managed-runtime.json"] ?? "{}");
 
     expect(runtimeContract.policy.effectiveRef).toBe("default-egress");
-    expect(runtimeContract.policy.mcpServers).toEqual({ allow: ["skills"] });
-    expect(runtimeContract.mcp.servers).toEqual([{ name: "skills" }]);
-    expect(runtimeContract.capabilities.mcpPolicyEnforced).toBe(true);
+    expect(runtimeContract.policy.mcpServers).toBeUndefined();
+    expect(runtimeContract.mcp.servers).toEqual([]);
+    expect(runtimeContract.skills.entitled).toEqual([]);
   });
 
   it("builds Deployment with pvc fallback when no cloud storage", () =>
@@ -119,7 +119,7 @@ describe("TenantResourceBuilder", () =>
     expect(envVars.OPENCRANE_MCP_GATEWAY_TOKEN_PATH).toBe("/var/run/opencrane/tokens/obot-gateway.token");
     expect(envVars.OPENCRANE_SKILL_REGISTRY_TOKEN_PATH).toBe("/var/run/opencrane/tokens/skill-registry.token");
     expect(envVars.OPENCRANE_POLICY_REF).toBe("restricted-mcp");
-    expect(envVars.OPENCRANE_ALLOWED_SKILLS).toBe("company-policy,deploy-helper");
+    expect(envVars.OPENCRANE_ALLOWED_SKILLS).toBeUndefined();
     expect(envVars.HOME).toBe("/tmp/opencrane-home");
     expect(envVars.NPM_CONFIG_CACHE).toBe("/tmp/npm-cache");
     expect(envVars.OPENCLAW_GATEWAY_TOKEN).toBeUndefined();
