@@ -130,19 +130,19 @@ export async function compile(
 ): Promise<CompiledGrantDecision[]>
 {
   // 1. Load the minimum group shape needed so membership matching stays typed and isolated.
-  const groupRows = await prisma.group.findMany(_GROUP_ROW_SELECT);
+  const groupRows: _GroupRow[] = await prisma.group.findMany(_GROUP_ROW_SELECT);
 
   // 2. Resolve every group that contains the principal because group grants are compiled alongside direct grants.
-  const matchingGroupIds = groupRows.filter(function _matchGroup(group)
+  const matchingGroupIds = groupRows.filter(function _matchGroup(group: _GroupRow)
   {
     return _GroupHasPrincipal(group.members, principalId);
-  }).map(function _mapGroup(group)
+  }).map(function _mapGroup(group: _GroupRow)
   {
     return group.id;
   });
 
   // 3. Fetch only grants that can apply to the principal so the later precedence pass stays deterministic and small.
-  const grantRows = await prisma.grant.findMany({
+  const grantRows: _GrantRow[] = await prisma.grant.findMany({
     ..._GRANT_ROW_SELECT,
     where: {
       payloadType: _ToPrismaPayloadType(payloadType),
@@ -200,7 +200,7 @@ function _ShouldReplaceWinner(currentWinner: CompiledGrantDecision, nextDecision
 
   if (nextDecision.access !== currentWinner.access)
   {
-    return nextDecision.access === "deny";
+    return nextDecision.access === GrantCompilerAccess.Deny;
   }
 
   return Date.parse(nextDecision.createdAt) > Date.parse(currentWinner.createdAt);
@@ -256,9 +256,9 @@ function _GroupHasPrincipal(members: unknown, principalId: string): boolean
       });
     }
 
-    return ___some(Object.keys(record), function _matchRecordKey(key)
+    return ___some(record, function _matchRecordValue(value, key)
     {
-      return key === principalId || _MemberMatchesPrincipal(record[key], principalId);
+      return key === principalId || _MemberMatchesPrincipal(value, principalId);
     });
   }
 

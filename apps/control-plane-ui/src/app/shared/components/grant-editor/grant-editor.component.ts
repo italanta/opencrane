@@ -1,10 +1,11 @@
-import { Component, EventEmitter, Input, Output, signal } from "@angular/core";
+import { Component, input, output, signal } from "@angular/core";
 import { ButtonModule } from "primeng/button";
 import { InputTextModule } from "primeng/inputtext";
 import { MessageModule } from "primeng/message";
 import { TagModule } from "primeng/tag";
 
 import { GrantAccess, GrantScope, GrantSubjectType, type Grant } from "../../../core/models/grant.model";
+import { _CreateGrantId, _ReadInputValue, _ReadSelectValue } from "./grant-editor.utils";
 
 /** Supported principal types exposed in the reusable grant editor. */
 const _GRANT_SUBJECT_TYPES: GrantSubjectType[] = [GrantSubjectType.Group, GrantSubjectType.Tenant, GrantSubjectType.User];
@@ -25,19 +26,19 @@ const _GRANT_ACCESS_OPTIONS: GrantAccess[] = [GrantAccess.Allow, GrantAccess.Den
 export class GrantEditorComponent
 {
   /** Optional card-level title rendered above the editor. */
-  @Input() title = "Entitlement grants";
+  readonly title = input("Entitlement grants");
 
   /** Current grants shown in the editor. */
-  @Input({ required: true }) grants: Grant[] = [];
+  readonly grants = input.required<Grant[]>();
 
   /** Disable editor interactions when the parent page cannot accept changes. */
-  @Input() disabled = false;
+  readonly disabled = input(false);
 
   /** Inline message rendered when no grants are present. */
-  @Input() emptyMessage = "No grants configured yet.";
+  readonly emptyMessage = input("No grants configured yet.");
 
   /** Emits the updated grant list after add/remove actions. */
-  @Output() grantsChange = new EventEmitter<Grant[]>();
+  readonly grantsChange = output<Grant[]>();
 
   /** Draft subject type for the next grant row. */
   readonly _draftSubjectType = signal<GrantSubjectType>(GrantSubjectType.Group);
@@ -66,31 +67,31 @@ export class GrantEditorComponent
   /** Update the draft subject type from the select input. */
   _onSubjectTypeChange(event: Event): void
   {
-    this._draftSubjectType.set((event.target as HTMLSelectElement).value as GrantSubjectType);
+    this._draftSubjectType.set(_ReadSelectValue(event) as GrantSubjectType);
   }
 
   /** Update the draft scope from the select input. */
   _onScopeChange(event: Event): void
   {
-    this._draftScope.set((event.target as HTMLSelectElement).value as GrantScope);
+    this._draftScope.set(_ReadSelectValue(event) as GrantScope);
   }
 
   /** Update the draft access decision from the select input. */
   _onAccessChange(event: Event): void
   {
-    this._draftAccess.set((event.target as HTMLSelectElement).value as GrantAccess);
+    this._draftAccess.set(_ReadSelectValue(event) as GrantAccess);
   }
 
   /** Update the draft subject name from the text input. */
   _onSubjectNameInput(event: Event): void
   {
-    this._draftSubjectName.set((event.target as HTMLInputElement).value);
+    this._draftSubjectName.set(_ReadInputValue(event));
   }
 
   /** Update the draft note from the text input. */
   _onNoteInput(event: Event): void
   {
-    this._draftNote.set((event.target as HTMLInputElement).value);
+    this._draftNote.set(_ReadInputValue(event));
   }
 
   /** Return whether the current draft contains enough data to add a new grant. */
@@ -121,14 +122,14 @@ export class GrantEditorComponent
     };
 
     // 3. Emit the updated list and reset the draft so operators can queue another preview edit quickly.
-    this.grantsChange.emit([...this.grants, grant]);
+    this.grantsChange.emit([...this.grants(), grant]);
     this._resetDraft();
   }
 
   /** Remove a grant from the preview list and emit the updated array. */
   _removeGrant(grantId: string): void
   {
-    this.grantsChange.emit(this.grants.filter(function _keepGrant(grant)
+    this.grantsChange.emit(this.grants().filter(function _keepGrant(grant)
     {
       return grant.id !== grantId;
     }));
@@ -149,11 +150,4 @@ export class GrantEditorComponent
   {
     return access === GrantAccess.Allow ? "success" : "danger";
   }
-}
-
-/** Create a stable-enough local identifier for preview-only grants. */
-function _CreateGrantId(subjectType: GrantSubjectType, subjectName: string, scope: GrantScope, access: GrantAccess): string
-{
-  const normalizedName = subjectName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  return `${scope}-${subjectType}-${normalizedName || "grant"}-${access}-${Date.now()}`;
 }

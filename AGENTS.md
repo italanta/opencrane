@@ -379,7 +379,13 @@ Always create reusable UI components before writing repeated page-level markup.
 - Prefer `resource(...)` for async read/loading flows in components instead of imperative `ngOnInit` data-fetch logic.
 - Prefer `rxResource(...)` / `httpResource(...)` over ad-hoc Promise orchestration when data originates from observables or HTTP.
 - Prefer `computed(...)`/`effect(...)` orchestration over manual imperative state transitions when deriving UI state.
+- For new or refactored standalone components, prefer `input()` / `output()` over decorator-based `@Input()` / `@Output()` unless Angular requires the decorator form.
 - Use signal-driven forms only for new and refactored feature forms.
+
+### Shared Component Size
+
+- Keep shared component classes focused on presentation state and orchestration.
+- Move standalone helpers, value parsers, and other pure utilities into sibling `*.utils.ts` files before a shared component grows into multiple concerns.
 
 ### Component Template Placement
 

@@ -1,13 +1,13 @@
 <div class="flex flex-column gap-3">
   <div>
-    <h3 class="text-lg font-semibold m-0">{{ title }}</h3>
+    <h3 class="text-lg font-semibold m-0">{{ title() }}</h3>
   </div>
 
-  @if (grants.length === 0) {
-    <p-message severity="info" [text]="emptyMessage" />
+  @if (grants().length === 0) {
+    <p-message severity="info" [text]="emptyMessage()" />
   } @else {
     <div class="flex flex-column gap-2">
-      @for (grant of grants; track grant.id) {
+      @for (grant of grants(); track grant.id) {
         <div class="flex flex-wrap align-items-center gap-2 border-1 surface-border border-round px-3 py-2">
           <p-tag [value]="grant.access" [severity]="_accessSeverity(grant.access)" />
           <p-tag [value]="grant.scope" severity="secondary" />
@@ -15,7 +15,7 @@
           @if (grant.note) {
             <span class="text-sm text-color-secondary">{{ grant.note }}</span>
           }
-          @if (!disabled) {
+          @if (!disabled()) {
             <p-button
               icon="pi pi-times"
               severity="secondary"
@@ -36,7 +36,7 @@
         id="grant-subject-type"
         class="p-inputtext p-component w-full"
         [value]="_draftSubjectType()"
-        [disabled]="disabled"
+        [disabled]="disabled()"
         (change)="_onSubjectTypeChange($event)"
       >
         @for (subjectType of _subjectTypes; track subjectType) {
@@ -51,7 +51,7 @@
         id="grant-scope"
         class="p-inputtext p-component w-full"
         [value]="_draftScope()"
-        [disabled]="disabled"
+        [disabled]="disabled()"
         (change)="_onScopeChange($event)"
       >
         @for (scope of _scopes; track scope) {
@@ -66,7 +66,7 @@
         id="grant-access"
         class="p-inputtext p-component w-full"
         [value]="_draftAccess()"
-        [disabled]="disabled"
+        [disabled]="disabled()"
         (change)="_onAccessChange($event)"
       >
         @for (access of _accessOptions; track access) {
@@ -81,7 +81,7 @@
         pInputText
         id="grant-subject-name"
         [value]="_draftSubjectName()"
-        [disabled]="disabled"
+        [disabled]="disabled()"
         placeholder="engineering"
         (input)="_onSubjectNameInput($event)"
       />
@@ -93,7 +93,7 @@
         pInputText
         id="grant-note"
         [value]="_draftNote()"
-        [disabled]="disabled"
+        [disabled]="disabled()"
         placeholder="Optional context for reviewers"
         (input)="_onNoteInput($event)"
       />
@@ -104,7 +104,7 @@
     <p-button
       label="Add grant"
       icon="pi pi-plus"
-      [disabled]="disabled || !_canAddGrant()"
+      [disabled]="disabled() || !_canAddGrant()"
       (click)="_addGrant()"
     />
   </div>
