@@ -217,7 +217,16 @@ export class TenantOperator
 
       // 4. LiteLLM key Secret — creates a per-tenant virtual key in LiteLLM and stores
       //    it in a tenant Secret mounted through env var. Skipped when LiteLLM is disabled.
-      await this.liteLlmKeys.ensureLiteLlmKeySecret(effectiveTenant, namespace);
+      //    This step is best-effort so transient LiteLLM backend issues do not block
+      //    tenant startup in environments where the pod can still run without a key.
+      try
+      {
+        await this.liteLlmKeys.ensureLiteLlmKeySecret(effectiveTenant, namespace);
+      }
+      catch (err)
+      {
+        this.log.warn({ err, name }, "litellm key provisioning failed; continuing reconcile");
+      }
 
       // 5. ConfigMap — serialises the base OpenClaw JSON config merged with any
       //    spec.configOverrides the tenant author provided.
