@@ -1,4 +1,4 @@
-import type PrismaClientPackage from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import type { Logger } from "pino";
 
 import type { NormalizedDocument, SyncCursor } from "./domain/harvesting-agents/harvesting-agent.types.js";
@@ -69,7 +69,7 @@ export async function _IngestDocuments(
  * @param source  - Logical source name (e.g. "slack").
  * @returns Cursor record or null.
  */
-export async function _LoadCursor(prisma: PrismaClientPackage.PrismaClient, source: string): Promise<SyncCursor | null>
+export async function _LoadCursor(prisma: PrismaClient, source: string): Promise<SyncCursor | null>
 {
   const row = await prisma.harvestingCursor.findUnique({ where: { source } });
 
@@ -92,7 +92,7 @@ export async function _LoadCursor(prisma: PrismaClientPackage.PrismaClient, sour
  * @param source      - Logical source name.
  * @param cursorValue - New cursor value (e.g. latest message timestamp).
  */
-export async function _SaveCursor(prisma: PrismaClientPackage.PrismaClient, source: string, cursorValue: string): Promise<void>
+export async function _SaveCursor(prisma: PrismaClient, source: string, cursorValue: string): Promise<void>
 {
   await prisma.harvestingCursor.upsert({
     where: { source },

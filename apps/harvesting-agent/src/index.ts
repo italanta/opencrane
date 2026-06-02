@@ -1,4 +1,4 @@
-import PrismaClientPackage from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import pino from "pino";
 
 import { SlackConnector } from "./connectors/slack.connector.js";
@@ -80,7 +80,7 @@ function _ReadDatabaseUrl(): string
 async function _RunSlackSyncCycle(
   connector: SlackConnector,
   cogneeEndpoint: string,
-  prisma: PrismaClientPackage.PrismaClient,
+  prisma: PrismaClient,
 ): Promise<void>
 {
   const source = "slack";
@@ -132,7 +132,7 @@ async function _Main(): Promise<void>
   _StartMetricsServer(metricsPort, log);
 
   // 3. Initialize the Prisma client for cursor persistence.
-  const prisma = new PrismaClientPackage.PrismaClient();
+  const prisma = new PrismaClient();
 
   // 4. Initialize the Slack connector with the resolved configuration.
   const slackConnector = new SlackConnector(slackConfig, log);
