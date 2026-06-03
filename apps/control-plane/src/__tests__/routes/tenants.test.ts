@@ -314,3 +314,129 @@ describe("tenantsRouter create endpoint — Tenant CR appearance validation", ()
     expect(auditCreateSpy).not.toHaveBeenCalled();
   });
 });
+
+describe("tenantsRouter status projection refresh on reads", () =>
+{
+  it("refreshes projected phase and ingress host on tenant list", async () =>
+  {
+    const tenantFindManySpy = vi.fn().mockResolvedValue([
+      {
+        name: "acme",
+        displayName: "Acme",
+        email: "owner@acme.io",
+        team: "engineering",
+        phase: "Pending",
+        ingressHost: null,
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    ]);
+    const tenantUpdateSpy = vi.fn().mockResolvedValue({});
+    const customApi = {
+      listNamespacedCustomObject: vi.fn().mockResolvedValue({
+        items: [
+          {
+            metadata: { name: "acme" },
+            status: {
+              phase: "Running",
+              ingressHost: "acme.opencrane.local",
+            },
+          },
+        ],
+      }),
+    } as unknown as k8s.CustomObjectsApi;
+    const prisma = {
+      tenant: {
+        findMany: tenantFindManySpy,
+        update: tenantUpdateSpy,
+      },
+    } as unknown as PrismaClient;
+
+    const app = _buildTenantsApp(customApi, prisma);
+    const response = await request(app).get("/api/tenants");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([
+      {
+        name: "acme",
+        displayName: "Acme",
+        email: "owner@acme.io",
+        team: "engineering",
+        phase: "Running",
+        ingressHost: "acme.opencrane.local",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    expect(tenantUpdateSpy).toHaveBeenCalledOnce();
+  });
+
+  it("returns SQL projection when Kubernetes status refresh fails", async () =>
+  {
+    const tenantFindManySpy = vi.fn().mockResolvedValue([
+      {
+        name: "acme",
+        displayName: "Acme",
+        email: "owner@acme.io",
+        team: "engineering",
+        phase: "Pending",
+        ingressHost: null,
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    ]);
+    const tenantUpdateSpy = vi.fn().mockResolvedValue({});
+    const customApi = {
+      listNamespacedCustomObject: vi.fn().mockRejectedValue(new Error("k8s unavailable")),
+    } as unknown as k8s.CustomObjectsApi;
+    const prisma = {
+      tenant: {
+        findMany: tenantFindManySpy,
+        update: tenantUpdateSpy,
+      },
+    } as unknown as PrismaClient;
+
+    const app = _buildTenantsApp(customApi, prisma);
+    const response = await request(app).get("/api/tenants");
+
+    expect(response.status).toBe(200);
+    expect(response.body[0].phase).toBe("Pending");
+    expect(tenantUpdateSpy).not.toHaveBeenCalled();
+  });
+
+  it("refreshes projected phase and ingress host on tenant detail", async () =>
+  {
+    const tenantFindUniqueSpy = vi.fn().mockResolvedValue(
+      {
+        name: "acme",
+        displayName: "Acme",
+        email: "owner@acme.io",
+        team: "engineering",
+        phase: "Pending",
+        ingressHost: null,
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    );
+    const tenantUpdateSpy = vi.fn().mockResolvedValue({});
+    const customApi = {
+      getNamespacedCustomObject: vi.fn().mockResolvedValue({
+        metadata: { name: "acme" },
+        status: {
+          phase: "Running",
+          ingressHost: "acme.opencrane.local",
+        },
+      }),
+    } as unknown as k8s.CustomObjectsApi;
+    const prisma = {
+      tenant: {
+        findUnique: tenantFindUniqueSpy,
+        update: tenantUpdateSpy,
+      },
+    } as unknown as PrismaClient;
+
+    const app = _buildTenantsApp(customApi, prisma);
+    const response = await request(app).get("/api/tenants/acme");
+
+    expect(response.status).toBe(200);
+    expect(response.body.phase).toBe("Running");
+    expect(response.body.ingressHost).toBe("acme.opencrane.local");
+    expect(tenantUpdateSpy).toHaveBeenCalledOnce();
+  });
+});

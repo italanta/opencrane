@@ -62,7 +62,9 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
       orderBy: { createdAt: "desc" },
     });
 
-    const response: TenantResponse[] = tenants.map(function _mapTenant(t)
+    const syncedTenants = await _SyncTenantStatusesForRows(customApi, prisma, namespace, tenants);
+
+    const response: TenantResponse[] = syncedTenants.map(function _mapTenant(t)
     {
       return {
         name: t.name,
@@ -331,14 +333,16 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
       return;
     }
 
+    const syncedTenant = await _SyncSingleTenantStatusForRow(customApi, prisma, namespace, tenant);
+
     const response: TenantResponse = {
-      name: tenant.name,
-      displayName: tenant.displayName,
-      email: tenant.email,
-      team: tenant.team ?? undefined,
-      phase: tenant.phase,
-      ingressHost: tenant.ingressHost ?? undefined,
-      createdAt: tenant.createdAt.toISOString(),
+      name: syncedTenant.name,
+      displayName: syncedTenant.displayName,
+      email: syncedTenant.email,
+      team: syncedTenant.team ?? undefined,
+      phase: syncedTenant.phase,
+      ingressHost: syncedTenant.ingressHost ?? undefined,
+      createdAt: syncedTenant.createdAt.toISOString(),
     };
 
     res.json(response);
@@ -796,6 +800,239 @@ async function _Sleep(durationMs: number): Promise<void>
   {
     setTimeout(resolve, durationMs);
   });
+}
+
+/** Minimal Tenant CR status shape for projection synchronization. */
+interface TenantCustomResourceStatus
+{
+  /** Current lifecycle phase observed by the operator. */
+  phase?: string;
+
+  /** External ingress host assigned to the tenant. */
+  ingressHost?: string;
+}
+
+/** Minimal Tenant CR shape needed to read status from the Kubernetes client payloads. */
+interface TenantCustomResource
+{
+  /** Standard Kubernetes metadata. */
+  metadata?: { name?: string };
+
+  /** Runtime status fields written by the operator. */
+  status?: TenantCustomResourceStatus;
+}
+
+/** Minimal SQL projection row shape needed for tenant API responses and status sync. */
+interface TenantProjectionRow
+{
+  /** Tenant resource name. */
+  name: string;
+
+  /** Display name reflected by the API. */
+  displayName: string;
+
+  /** Tenant owner contact email. */
+  email: string;
+
+  /** Optional team ownership label. */
+  team: string | null;
+
+  /** Current projected lifecycle phase. */
+  phase: string;
+
+  /** Current projected ingress host. */
+  ingressHost: string | null;
+
+  /** Tenant creation timestamp. */
+  createdAt: Date;
+}
+
+/** Kubernetes list payload shape returned by the custom objects client. */
+interface KubernetesListResponse<TItem>
+{
+  /** Newer client payload shape where items exist at top-level. */
+  items?: TItem[];
+
+  /** Legacy payload shape where items are nested in body. */
+  body?: {
+    /** List items from legacy payloads. */
+    items?: TItem[];
+  };
+}
+
+/** Kubernetes object payload shape returned by getNamespacedCustomObject. */
+interface KubernetesObjectResponse
+{
+  /** Newer client payload shape where object fields exist at top-level. */
+  metadata?: { name?: string };
+  status?: TenantCustomResourceStatus;
+
+  /** Legacy payload shape where object fields are nested in body. */
+  body?: TenantCustomResource;
+}
+
+/**
+ * Synchronize projection statuses for a list of tenant rows from Kubernetes CR status.
+ * Best-effort only: API responses still succeed even if Kubernetes sync fails.
+ * @param customApi - Kubernetes custom objects API client.
+ * @param prisma - Prisma ORM client.
+ * @param namespace - Kubernetes namespace.
+ * @param rows - Existing tenant projection rows loaded from SQL.
+ */
+async function _SyncTenantStatusesForRows(
+  customApi: k8s.CustomObjectsApi,
+  prisma: PrismaClient,
+  namespace: string,
+  rows: TenantProjectionRow[],
+): Promise<TenantProjectionRow[]>
+{
+  try
+  {
+    const response = await customApi.listNamespacedCustomObject({
+      group: OPENCRANE_API_GROUP,
+      version: OPENCRANE_API_VERSION,
+      namespace,
+      plural: TENANT_CRD_PLURAL,
+    }) as KubernetesListResponse<TenantCustomResource>;
+
+    const items = response.items ?? response.body?.items ?? [];
+    const statusByName = new Map<string, { phase: string; ingressHost: string | null }>();
+
+    for (const item of items)
+    {
+      const name = item.metadata?.name ?? "";
+      if (!name)
+      {
+        continue;
+      }
+
+      statusByName.set(name, {
+        phase: item.status?.phase ?? "Pending",
+        ingressHost: item.status?.ingressHost ?? null,
+      });
+    }
+
+    const updates: Array<Promise<unknown>> = [];
+    const syncedRows = rows.map(function _mapRow(row)
+    {
+      const status = statusByName.get(row.name);
+      if (!status)
+      {
+        return row;
+      }
+
+      const ingressHost = status.ingressHost;
+      if (row.phase === status.phase && (row.ingressHost ?? null) === ingressHost)
+      {
+        return row;
+      }
+
+      updates.push(prisma.tenant.update({
+        where: { name: row.name },
+        data: {
+          phase: status.phase,
+          ingressHost,
+        },
+      }));
+
+      return {
+        ...row,
+        phase: status.phase,
+        ingressHost,
+      };
+    });
+
+    if (updates.length > 0)
+    {
+      await Promise.all(updates);
+    }
+
+    return syncedRows;
+  }
+  catch
+  {
+    return rows;
+  }
+}
+
+/**
+ * Synchronize one tenant projection row from Kubernetes CR status.
+ * Best-effort only: returns the original row when sync cannot be completed.
+ * @param customApi - Kubernetes custom objects API client.
+ * @param prisma - Prisma ORM client.
+ * @param namespace - Kubernetes namespace.
+ * @param row - Existing tenant projection row loaded from SQL.
+ */
+async function _SyncSingleTenantStatusForRow(
+  customApi: k8s.CustomObjectsApi,
+  prisma: PrismaClient,
+  namespace: string,
+  row: TenantProjectionRow,
+): Promise<TenantProjectionRow>
+{
+  try
+  {
+    const response = await customApi.getNamespacedCustomObject({
+      group: OPENCRANE_API_GROUP,
+      version: OPENCRANE_API_VERSION,
+      namespace,
+      plural: TENANT_CRD_PLURAL,
+      name: row.name,
+    }) as KubernetesObjectResponse;
+
+    const resource = _ReadTenantCustomObject(response);
+    if (!resource)
+    {
+      return row;
+    }
+
+    const nextPhase = resource.status?.phase ?? "Pending";
+    const nextIngressHost = resource.status?.ingressHost ?? null;
+    if (row.phase === nextPhase && (row.ingressHost ?? null) === nextIngressHost)
+    {
+      return row;
+    }
+
+    await prisma.tenant.update({
+      where: { name: row.name },
+      data: {
+        phase: nextPhase,
+        ingressHost: nextIngressHost,
+      },
+    });
+
+    return {
+      ...row,
+      phase: nextPhase,
+      ingressHost: nextIngressHost,
+    };
+  }
+  catch
+  {
+    return row;
+  }
+}
+
+/**
+ * Read a Tenant custom object from either modern or legacy client payload shapes.
+ * @param response - Raw Kubernetes client response for getNamespacedCustomObject.
+ */
+function _ReadTenantCustomObject(response: KubernetesObjectResponse): TenantCustomResource | null
+{
+  if (response.body)
+  {
+    return response.body;
+  }
+
+  if (response.metadata || response.status)
+  {
+    return {
+      metadata: response.metadata,
+      status: response.status,
+    };
+  }
+
+  return null;
 }
 
 /**
