@@ -33,6 +33,16 @@ function _makeRecordingClient(): RecordingClient
       get(target, prop: string): unknown
       {
         if (prop === "created") return target.created;
+        if (prop === "readNamespacedDeployment")
+        {
+          return async function readNamespacedDeployment(): Promise<unknown>
+          {
+            return {
+              spec: { replicas: 1 },
+              status: { readyReplicas: 1 },
+            };
+          };
+        }
         // The generic KubernetesObjectApi methods (`create`/`read`/`replace`) must
         // stay absent so `_K8sApplyResource` falls through to the typed switch,
         // which is the production CoreV1/AppsV1 client surface.

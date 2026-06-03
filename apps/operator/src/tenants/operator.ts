@@ -12,13 +12,18 @@ import { _RunWatchLoop, K8sWatchEventType } from "../shared/watch-runner.js";
 import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "../shared/crd-constants.js";
 import { _BuildClusterTenantLimitRange, _BuildClusterTenantNamespace, _BuildClusterTenantResourceQuota, _BuildConfigMap, _BuildDeployment, _BuildIngress, _BuildIngressHost, _BuildService, _BuildServiceAccount, _BuildStatePvc } from "./deploy/index.js";
 import { TenantCleanup } from "./destroy/tenant-cleanup.js";
-
 import { TenantEncryptionKeys } from "./internal/tenant-encryption-keys.js";
 import { TenantLiteLlmKeys } from "./internal/tenant-litellm-keys.js";
 import { _ResolveTenantPolicy } from "./internal/policy-resolution.js";
 import { _ResolveClusterTenant } from "./internal/cluster-tenant-resolution.js";
 import type { ClusterTenantResource } from "./internal/cluster-tenant-resolution.types.js";
 import { TenantStatusWriter } from "./internal/tenant-status-writer.js";
+import type { DeploymentStatusSnapshot } from "./operator.types.js";
+
+/** Deployment readiness wait defaults used before marking tenant Running. */
+const TENANT_DEPLOYMENT_READY_TIMEOUT_MS = 120_000;
+/** Poll interval between readiness checks. */
+const TENANT_DEPLOYMENT_READY_POLL_INTERVAL_MS = 2_000;
 
 /**
  * Watches Tenant custom resources and reconciles the corresponding
@@ -71,17 +76,17 @@ export class TenantOperator
    * Prefer {@link _CreateTenantOperator} in production entry-points.
    */
   constructor(watch: k8s.Watch,
-              customApi: k8s.CustomObjectsApi,
-              coreApi: k8s.CoreV1Api,
-              appsApi: k8s.AppsV1Api,
-              networkingApi: k8s.NetworkingV1Api,
-              log: Logger,
-              config: OpenClawTenantOperatorConfig,
-              hosting: HostingAdapter,
-              cleanup: TenantCleanup,
-              statusWriter: TenantStatusWriter,
-              encryptionKeys: TenantEncryptionKeys,
-              liteLlmKeys: TenantLiteLlmKeys)
+			  customApi: k8s.CustomObjectsApi,
+			  coreApi: k8s.CoreV1Api,
+			  appsApi: k8s.AppsV1Api,
+			  networkingApi: k8s.NetworkingV1Api,
+			  log: Logger,
+			  config: OpenClawTenantOperatorConfig,
+			  hosting: HostingAdapter,
+			  cleanup: TenantCleanup,
+			  statusWriter: TenantStatusWriter,
+			  encryptionKeys: TenantEncryptionKeys,
+			  liteLlmKeys: TenantLiteLlmKeys)
   {
     this.watch = watch;
     this.customApi = customApi;
@@ -108,6 +113,7 @@ export class TenantOperator
       ? `/apis/${OPENCRANE_API_GROUP}/${OPENCRANE_API_VERSION}/namespaces/${ns}/${TENANT_CRD_PLURAL}`
       : `/apis/${OPENCRANE_API_GROUP}/${OPENCRANE_API_VERSION}/${TENANT_CRD_PLURAL}`;
 
+    const self = this;
     await _RunWatchLoop<Tenant>({
       watch: this.watch,
       path,
@@ -115,14 +121,16 @@ export class TenantOperator
       startMessage: "starting tenant watch",
       reconnectMessage: "watch connection lost, reconnecting...",
       failedMessage: "watch failed, retrying...",
-      onEvent: async (type: K8sWatchEventType | string, tenant: Tenant) => {
-        await this.handleEvent(type, tenant);
+      async onEvent(type: K8sWatchEventType | string, tenant: Tenant)
+      {
+        await self.handleEvent(type, tenant);
       },
     });
   }
 
   /**
-   * Route a watch event to the appropriate reconciliation handler.
+   * Route a watch event to the appropriate handler: provisioning for new
+   * tenants, reconciliation for updates, and cleanup for deletions.
    */
   private async handleEvent(type: K8sWatchEventType | string, tenant: Tenant): Promise<void>
   {
@@ -134,6 +142,16 @@ export class TenantOperator
     switch (type)
     {
       case K8sWatchEventType.Added:
+        if (tenant.spec.suspended)
+        {
+          await this.suspendTenant(tenant);
+        }
+        else
+        {
+          await this.provisionTenant(tenant);
+          await this.reconcileTenant(tenant);
+        }
+        break;
       case K8sWatchEventType.Modified:
         if (tenant.spec.suspended)
         {
@@ -147,6 +165,30 @@ export class TenantOperator
       case K8sWatchEventType.Deleted:
         await this.cleanupTenant(tenant);
         break;
+    }
+  }
+
+  /**
+   * Run one-time provisioning steps for a newly observed tenant.
+   * Idempotent — each step short-circuits when its target resource already exists,
+   * so operator restarts that replay ADDED events are safe.
+   */
+  private async provisionTenant(tenant: Tenant): Promise<void>
+  {
+    const name = tenant.metadata!.name!;
+    const namespace = tenant.metadata!.namespace ?? "default";
+
+    // 1. LiteLLM team + virtual key — creates the team for spend tracking and
+    //    materialises the API key as a Secret. Skipped when LiteLLM is disabled
+    //    or the Secret already exists. Best-effort so transient LiteLLM issues
+    //    do not block tenant startup.
+    try
+    {
+      await this.liteLlmKeys.ensureLiteLlmKeySecret(tenant, namespace);
+    }
+    catch (err)
+    {
+      this.log.warn({ err, name }, "litellm key provisioning failed; tenant will reconcile without a key");
     }
   }
 
@@ -237,42 +279,54 @@ export class TenantOperator
       //    and stores it as a K8s Secret. Idempotent: existing secrets are not rotated.
       await this.encryptionKeys.ensureEncryptionKeySecret(name, namespace);
 
-      // 4. LiteLLM key Secret — creates a per-tenant virtual key in LiteLLM and stores
-      //    it in a tenant Secret mounted through env var. Skipped when LiteLLM is disabled.
-      //    Best-effort so transient LiteLLM backend issues do not block tenant startup.
-      try
-      {
-        await this.liteLlmKeys.ensureLiteLlmKeySecret(effectiveTenant, namespace);
-      }
-      catch (err)
-      {
-        this.log.warn({ err, name }, "litellm key provisioning failed; continuing reconcile");
-      }
-
-      // 5. ConfigMap — serialises the base OpenClaw JSON config merged with any
+      // 4. ConfigMap — serialises the base OpenClaw JSON config merged with any
       //    spec.configOverrides the tenant author provided.
       await __K8sApplyResource(this.coreApi, _BuildConfigMap(this.config, effectiveTenant, namespace, policyResolution.effectivePolicy), this.log);
 
-      // 6. State volume — adapter decides CSI mount (cloud) vs PVC (on-prem).
-      //    Create the PVC only when the adapter requests it (on-prem path).
-      const stateVolume = this.hosting.buildStateVolume(name);
-      if (stateVolume.requiresPvc)
-      {
-        await __K8sApplyResource(this.coreApi, _BuildStatePvc(name, namespace), this.log);
-      }
+	  // 5. State volume — adapter decides CSI mount (cloud) vs PVC (on-prem).
+	  //    Create the PVC only when the adapter requests it (on-prem path).
+	  const stateVolume = this.hosting.buildStateVolume(name);
+	  if (stateVolume.requiresPvc)
+	  {
+		await __K8sApplyResource(this.coreApi, _BuildStatePvc(name, namespace), this.log);
+	  }
 
-      // 7. Deployment — single-replica pod running the tenant's OpenClaw gateway.
+      // 6. Deployment — single-replica pod running the tenant's OpenClaw gateway.
       //    Mounts the ConfigMap, encryption key, state volume, and projected identity tokens.
       await __K8sApplyResource(this.appsApi, _BuildDeployment(this.config, stateVolume, effectiveTenant, namespace, compute), this.log);
 
-      // 8. Service — ClusterIP that makes the gateway reachable inside the cluster
+      // 7. Service — ClusterIP that makes the gateway reachable inside the cluster
       //    on the configured gateway port.
       await __K8sApplyResource(this.coreApi, _BuildService(this.config, effectiveTenant, namespace), this.log);
 
-      // 9. Ingress — routes external HTTPS traffic for {tenant}.{domain} to the Service.
+      // 8. Ingress — routes external HTTPS traffic for {tenant}.{domain} to the Service.
       //    Ingress class and annotations come from the adapter (nginx on-prem, gce on GKE).
       const ingressBinding = this.hosting.buildIngressBinding();
       await __K8sApplyResource(this.networkingApi, _BuildIngress(this.config, ingressBinding, effectiveTenant, namespace, ingressDomain), this.log);
+
+      // 9. Deployment readiness — avoid optimistic Running states when pods still fail to start.
+      const deploymentReady = await _WaitForTenantDeploymentReady(
+        this.appsApi,
+        name,
+        namespace,
+        _ReadPositiveIntEnv("TENANT_DEPLOYMENT_READY_TIMEOUT_MS", TENANT_DEPLOYMENT_READY_TIMEOUT_MS),
+        _ReadPositiveIntEnv("TENANT_DEPLOYMENT_READY_POLL_INTERVAL_MS", TENANT_DEPLOYMENT_READY_POLL_INTERVAL_MS),
+      );
+
+      if (!deploymentReady)
+      {
+        await this.statusWriter.patchStatus(tenant, crNamespace, {
+          phase: TenantStatusPhase.Pending,
+          podName: `openclaw-${name}`,
+          ingressHost: _BuildIngressHost(name, ingressDomain),
+          message: "Deployment is not ready yet",
+          effectivePolicyRef,
+          policyResolutionSource: policyResolution.source,
+          policyResolutionState: policyResolution.state,
+          lastReconciled: new Date().toISOString(),
+        });
+        return;
+      }
 
       // 10. Status — write the observed Running state back to the Tenant CR so that
       //    kubectl, the control-plane API, and the UI all see the current phase.
@@ -360,9 +414,11 @@ export class TenantOperator
     const stateVolume = this.hosting.buildStateVolume(name);
     const deployment = _BuildDeployment(this.config, stateVolume, tenant, namespace, compute);
     deployment.spec!.replicas = 0;
+
+    // 3. Apply — server-side apply the zero-replica deployment to the cluster.
     await __K8sApplyResource(this.appsApi, deployment, this.log);
 
-    // 3. Record the suspended phase against the CR namespace.
+    // 4. Status — mark the tenant as Suspended so controllers and the UI reflect the change.
     await this.statusWriter.patchStatus(tenant, crNamespace, {
       phase: TenantStatusPhase.Suspended,
       lastReconciled: new Date().toISOString(),
@@ -378,13 +434,81 @@ export class TenantOperator
     const name = tenant.metadata!.name!;
     const namespace = tenant.metadata!.namespace ?? "default";
 
+    // 1. Log — emit a structured log before cleanup begins for traceability.
     this.log.info({ name }, "cleaning up tenant resources");
 
+    // 2. Cleanup — remove tenant-owned K8s resources (Deployment, Service, Ingress, etc.).
+    //    External storage and encryption key Secrets are intentionally retained.
     await this.cleanup.cleanupTenant(name, namespace);
 
+    // 3. Log — confirm completion so operators can distinguish partial from full teardown.
     this.log.info({ name }, "tenant cleanup complete (storage + encryption key retained)");
   }
 
+}
+
+/**
+ * Wait until a tenant deployment reports all desired replicas as ready.
+ */
+async function _WaitForTenantDeploymentReady(appsApi: k8s.AppsV1Api, tenantName: string, namespace: string, timeoutMs: number, pollIntervalMs: number): Promise<boolean>
+{
+  const deploymentName = `openclaw-${tenantName}`;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() <= deadline)
+  {
+    try
+    {
+      const response = await appsApi.readNamespacedDeployment({
+        name: deploymentName,
+        namespace,
+      }) as DeploymentStatusSnapshot;
+
+      if (_IsDeploymentReady(response))
+      {
+        return true;
+      }
+    }
+    catch
+    {
+      // Ignore transient read errors while the deployment is settling.
+    }
+
+    await _Sleep(pollIntervalMs);
+  }
+
+  return false;
+}
+
+/**
+ * Decide whether the deployment has reached ready state.
+ */
+function _IsDeploymentReady(deployment: DeploymentStatusSnapshot): boolean
+{
+  const desiredReplicas = deployment.spec?.replicas ?? 1;
+  const readyReplicas = deployment.status?.readyReplicas ?? 0;
+  return readyReplicas >= desiredReplicas && desiredReplicas > 0;
+}
+
+/**
+ * Parse positive integer env vars with fallback values.
+ */
+function _ReadPositiveIntEnv(key: string, fallback: number): number
+{
+  const raw = process.env[key];
+  const parsed = raw ? Number(raw) : Number.NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+/**
+ * Sleep for the provided duration.
+ */
+async function _Sleep(durationMs: number): Promise<void>
+{
+  await new Promise(function _resolveAfterSleep(resolve)
+  {
+    setTimeout(resolve, durationMs);
+  });
 }
 
 /**
