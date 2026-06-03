@@ -13,7 +13,6 @@ RUN pnpm install --frozen-lockfile --filter @opencrane/control-plane --filter @o
 
 COPY apps/control-plane/src apps/control-plane/src
 COPY apps/control-plane-ui/src apps/control-plane-ui/src
-COPY apps/control-plane-ui/public apps/control-plane-ui/public
 RUN pnpm --filter @opencrane/control-plane-ui build
 RUN pnpm --filter @opencrane/control-plane build
 # Stage generated Prisma client to a fixed path for the runtime stage
