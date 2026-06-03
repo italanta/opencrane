@@ -199,4 +199,53 @@ describe("projection repair routes", function ()
     expect(res.body.entries[0]).toMatchObject({ name: "egress-policy", action: "updated", dryRun: true });
     expect(update).not.toHaveBeenCalled();
   });
+
+  it("applies tenant status projection updates for phase and ingressHost", async function ()
+  {
+    const customApi = {
+      listNamespacedCustomObject: vi.fn().mockResolvedValue({
+        items: [
+          {
+            metadata: { name: "epsilon" },
+            spec: { displayName: "Epsilon", email: "epsilon@example.com", team: "eng" },
+            status: { phase: "Running", ingressHost: "epsilon.opencrane.local" },
+          },
+        ],
+      }),
+    } as unknown as k8s.CustomObjectsApi;
+
+    const update = vi.fn().mockResolvedValue({});
+    const prisma = {
+      tenant: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            name: "epsilon",
+            displayName: "Epsilon",
+            email: "epsilon@example.com",
+            team: "eng",
+            phase: "Pending",
+            ingressHost: null,
+          },
+        ]),
+        create: vi.fn(),
+        update,
+      },
+    } as unknown as PrismaClient;
+
+    const res = await request(_BuildTenantRepairApp(customApi, prisma)).post("/repair?dryRun=false");
+
+    expect(res.status).toBe(200);
+    expect(res.body.mode).toBe("apply");
+    expect(res.body.repairedCount).toBe(1);
+    expect(update).toHaveBeenCalledWith({
+      where: { name: "epsilon" },
+      data: {
+        displayName: "Epsilon",
+        email: "epsilon@example.com",
+        team: "eng",
+        phase: "Running",
+        ingressHost: "epsilon.opencrane.local",
+      },
+    });
+  });
 });

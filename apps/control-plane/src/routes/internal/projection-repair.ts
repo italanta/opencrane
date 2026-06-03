@@ -27,6 +27,15 @@ interface TenantCrd
     email?: string;
     team?: string;
   };
+
+  /** Tenant runtime status written by the operator reconcile loop. */
+  status?: {
+    /** Lifecycle phase currently observed by the operator. */
+    phase?: string;
+
+    /** Ingress host currently assigned to this tenant. */
+    ingressHost?: string;
+  };
 }
 
 /** Minimal AccessPolicy CRD shape needed for repair. */
@@ -85,6 +94,8 @@ export async function _RepairTenantProjection(customApi: k8s.CustomObjectsApi, p
     const displayName = crd.spec?.displayName ?? "";
     const email = crd.spec?.email ?? "";
     const team = crd.spec?.team ?? null;
+    const phase = crd.status?.phase ?? "Pending";
+    const ingressHost = crd.status?.ingressHost ?? null;
     const existing = rowByName.get(name);
 
     if (!existing)
@@ -92,7 +103,16 @@ export async function _RepairTenantProjection(customApi: k8s.CustomObjectsApi, p
       // 3a. Projection row is missing — insert from CRD state.
       if (!dryRun)
       {
-        await prisma.tenant.create({ data: { name, displayName, email, team: team ?? undefined } });
+        await prisma.tenant.create({
+          data: {
+            name,
+            displayName,
+            email,
+            team: team ?? undefined,
+            phase,
+            ingressHost: ingressHost ?? undefined,
+          },
+        });
       }
 
       entries.push({ name, action: "created", reason: "missing projection row created from CRD", dryRun });
@@ -102,13 +122,24 @@ export async function _RepairTenantProjection(customApi: k8s.CustomObjectsApi, p
     // 3b. Both sides exist — check for field drift and update if needed.
     const drifted = existing.displayName !== displayName
       || existing.email !== email
-      || (existing.team ?? null) !== team;
+      || (existing.team ?? null) !== team
+      || existing.phase !== phase
+      || (existing.ingressHost ?? null) !== ingressHost;
 
     if (drifted)
     {
       if (!dryRun)
       {
-        await prisma.tenant.update({ where: { name }, data: { displayName, email, team: team ?? undefined } });
+        await prisma.tenant.update({
+          where: { name },
+          data: {
+            displayName,
+            email,
+            team: team ?? undefined,
+            phase,
+            ingressHost: ingressHost ?? undefined,
+          },
+        });
       }
 
       entries.push({ name, action: "updated", reason: "field drift corrected from CRD", dryRun });

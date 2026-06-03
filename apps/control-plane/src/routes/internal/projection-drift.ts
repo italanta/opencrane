@@ -86,6 +86,15 @@ interface TenantCustomResource
     /** Optional team ownership label. */
     team?: string;
   };
+
+  /** Observed tenant runtime status written by the operator. */
+  status?: {
+    /** Current lifecycle phase derived from reconciliation outcomes. */
+    phase?: string;
+
+    /** External ingress host assigned to the tenant gateway. */
+    ingressHost?: string;
+  };
 }
 
 /** Minimal AccessPolicy CRD shape needed for drift comparison. */
@@ -119,9 +128,8 @@ interface AccessPolicyCustomResource
 /**
  * Compare Tenant CRDs against their PostgreSQL projection rows.
  *
- * This intentionally compares only the fields that are already dual-written
- * by the request path today. Runtime-driven status fields such as ingress host
- * are excluded until a dedicated status projector exists.
+ * This compares desired-state fields and status fields that should be mirrored
+ * in the SQL projection so API reads do not drift from Kubernetes status.
  */
 export async function _DetectTenantProjectionDrift(
   customApi: k8s.CustomObjectsApi,
@@ -129,7 +137,7 @@ export async function _DetectTenantProjectionDrift(
   namespace: string,
 ): Promise<ProjectionDriftReport>
 {
-  const comparedFields = ["displayName", "email", "team"];
+  const comparedFields = ["displayName", "email", "team", "phase", "ingressHost"];
 
   // 1. Read the CRDs that remain the desired-state source of truth.
   const sourceResponse = await customApi.listNamespacedCustomObject({
@@ -156,6 +164,8 @@ export async function _DetectTenantProjectionDrift(
           displayName: item.spec?.displayName,
           email: item.spec?.email,
           team: item.spec?.team,
+          phase: item.status?.phase ?? "Pending",
+          ingressHost: item.status?.ingressHost ?? null,
         },
       };
     }),
@@ -167,6 +177,8 @@ export async function _DetectTenantProjectionDrift(
           displayName: item.displayName,
           email: item.email,
           team: item.team,
+          phase: item.phase,
+          ingressHost: item.ingressHost,
         },
       };
     }),

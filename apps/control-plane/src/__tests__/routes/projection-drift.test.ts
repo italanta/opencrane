@@ -57,6 +57,8 @@ describe("projection drift routes", function ()
             displayName: "Alpha From DB",
             email: "alpha@example.com",
             team: "platform",
+            phase: "Pending",
+            ingressHost: null,
           },
         ]),
       },
@@ -116,6 +118,54 @@ describe("projection drift routes", function ()
       {
         name: "default-deny",
         issue: "missing-projection",
+      },
+    ]);
+  });
+
+  it("detects tenant status drift for phase and ingressHost", async function ()
+  {
+    const customApi = {
+      listNamespacedCustomObject: vi.fn().mockResolvedValue({
+        items: [
+          {
+            metadata: { name: "delta" },
+            spec: {
+              displayName: "Delta",
+              email: "delta@example.com",
+              team: "platform",
+            },
+            status: {
+              phase: "Running",
+              ingressHost: "delta.opencrane.local",
+            },
+          },
+        ],
+      }),
+    } as unknown as k8s.CustomObjectsApi;
+
+    const prisma = {
+      tenant: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            name: "delta",
+            displayName: "Delta",
+            email: "delta@example.com",
+            team: "platform",
+            phase: "Pending",
+            ingressHost: null,
+          },
+        ]),
+      },
+    } as unknown as PrismaClient;
+
+    const res = await request(_BuildTenantDriftApp(customApi, prisma)).get("/drift");
+
+    expect(res.status).toBe(200);
+    expect(res.body.mismatches).toEqual([
+      {
+        name: "delta",
+        issue: "field-mismatch",
+        fields: ["phase", "ingressHost"],
       },
     ]);
   });
