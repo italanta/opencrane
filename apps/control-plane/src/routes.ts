@@ -61,8 +61,10 @@ function _BuildOciBundleStore(): OciBundleStore | null
  * @param authApi   - Kubernetes Authentication API for tenant contract TokenReview validation.
  * @returns The Express application instance with registered routes.
  */
-export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k8s.CustomObjectsApi, coreApi: k8s.CoreV1Api, authApi: k8s.AuthenticationV1Api): Express
-{
+export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k8s.CustomObjectsApi, coreApi: k8s.CoreV1Api, authApi: k8s.AuthenticationV1Api) {
+  const namespace = process.env.NAMESPACE ?? "default";
+  const orgSharedSecretsName = process.env.ORG_SHARED_SECRETS_NAME ?? "org-shared-secrets";
+
   // Internal routes — mounted before ___AuthMiddleware and not behind any token check.
   // Access is enforced by Kubernetes NetworkPolicy: only the Obot, skill-registry, and
   // tenant pods can reach the control-plane service on the cluster network.
@@ -103,7 +105,7 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
   app.use("/api/v1/awareness/participation", awarenessParticipationRouter(prisma));
   app.use("/api/v1/sessions", sessionsRouter(prisma));
   app.use("/api/v1/access-tokens", accessTokensRouter(prisma));
-  app.use("/api/v1/providers/keys", providerKeysRouter(prisma));
+  app.use("/api/v1/providers/keys", providerKeysRouter(prisma, coreApi, namespace, orgSharedSecretsName));
   app.use("/api/v1/openapi.json", openapiRouter());
   app.get("/healthz", _CheckDbHealth(prisma));
   app.use("/prom", prometheusMetricsRouter(prisma, customApi));
