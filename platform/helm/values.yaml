@@ -448,7 +448,8 @@ networkPolicy:
 
 # -- Org-wide secrets injected into all tenant pods
 orgSecrets:
-  # -- Name of the Kubernetes Secret containing org-wide API keys
+  # -- Name of the Kubernetes Secret containing org-wide API keys.
+  # -- Control-plane provider-key updates project OPENAI/ANTHROPIC keys into this Secret.
   secretName: org-shared-secrets
   # -- Keys to inject as env vars (key in Secret -> env var name)
   envMappings: {}
