@@ -77,18 +77,6 @@ export function _BuildDeployment(config: OpenClawTenantOperatorConfig, stateVolu
         },
       },
     });
-
-    // OpenClaw requires OPENAI_API_KEY for its internal OpenAI translator engine fallback
-    envVars.push({
-      name: "OPENAI_API_KEY",
-      valueFrom: {
-        secretKeyRef: {
-          name: `openclaw-${name}-openai-key`,
-          key: "apiKey",
-          optional: true,
-        },
-      },
-    });
   }
 
   // 2. Volume mounts — the state volume mount comes from the adapter;
@@ -187,6 +175,8 @@ export function _BuildDeployment(config: OpenClawTenantOperatorConfig, stateVolu
               ports: [{ name: "gateway", containerPort: config.gatewayPort }],
               env: envVars,
               envFrom: [
+                // OPENAI_API_KEY is delivered through org-shared-secrets so
+                // provider-key ownership can remain in the control plane.
                 { secretRef: { name: "org-shared-secrets", optional: true } },
               ],
               volumeMounts,
