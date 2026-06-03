@@ -174,6 +174,10 @@ describe("TenantResourceBuilder", () =>
     const podSpec = deployment.spec?.template?.spec;
     const container = podSpec?.containers?.[0];
     const envVars = Object.fromEntries((container?.env ?? []).map((entry) => [entry.name ?? "", entry.value ?? ""]));
+    const envVarNames = (container?.env ?? []).map((entry) => entry.name);
+    const envFromSecretNames = (container?.envFrom ?? [])
+      .map((entry) => entry.secretRef?.name)
+      .filter((name): name is string => name !== undefined);
     const volumeMounts = container?.volumeMounts ?? [];
     const volumes = podSpec?.volumes ?? [];
 
@@ -193,7 +197,8 @@ describe("TenantResourceBuilder", () =>
     expect(envVars.OPENCRANE_ALLOWED_SKILLS).toBeUndefined();
     expect(envVars.HOME).toBe("/tmp/opencrane-home");
     expect(envVars.NPM_CONFIG_CACHE).toBe("/tmp/npm-cache");
-    expect(envVars.OPENCLAW_GATEWAY_TOKEN).toBeUndefined();
+    expect(envVarNames).not.toContain("OPENAI_API_KEY");
+    expect(envFromSecretNames).toContain("org-shared-secrets");
     expect(volumeMounts.some((mount) => mount.name === "tmp" && mount.mountPath === "/tmp")).toBe(true);
     expect(volumeMounts.some((mount) => mount.name === "projected-identity" && mount.mountPath === "/var/run/opencrane/tokens")).toBe(true);
     expect(volumes.some((volume) => volume.name === "tmp" && volume.emptyDir !== undefined)).toBe(true);
