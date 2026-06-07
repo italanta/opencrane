@@ -46,7 +46,7 @@ export function thirdPartySourcesRouter(prisma: PrismaClient): Router
 
     if (!source)
     {
-      res.status(404).json({ error: "Third-party source not found" });
+      res.status(404).json({ error: "Third-party source not found", code: "THIRD_PARTY_SOURCE_NOT_FOUND" });
       return;
     }
 

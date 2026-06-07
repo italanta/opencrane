@@ -65,7 +65,7 @@ export function accessTokensRouter(prisma: PrismaClient): Router
 
     if (!existing)
     {
-      res.status(404).json({ error: "Token not found" });
+      res.status(404).json({ error: "Token not found", code: "TOKEN_NOT_FOUND" });
       return;
     }
 

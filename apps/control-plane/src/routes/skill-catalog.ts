@@ -46,7 +46,7 @@ export function skillCatalogRouter(prisma: PrismaClient): Router
 
     if (!bundle)
     {
-      res.status(404).json({ error: "Skill bundle not found" });
+      res.status(404).json({ error: "Skill bundle not found", code: "SKILL_BUNDLE_NOT_FOUND" });
       return;
     }
 

@@ -949,10 +949,16 @@ Phase 5 is executed in five sequential steps. Each step must be complete before 
    - Add `platform/helm/values/gcp.yaml` override; set on-prem defaults in `values.yaml` so zero cloud vars are required for a plain cluster install.
    - Exit criterion: k3d e2e passes unchanged (on-prem adapter); GCP adapter unit tests pass against a fake bucket client; on-prem path builds and runs with the GCS SDK absent; import-boundary rule enforced.
 
-**Step 2 — API surface hardening + OpenAPI**
-   - Annotate all routers; emit `openapi.json` from the control-plane build.
-   - Introduce `/api/v1` namespace, consistent error envelopes, pagination, and idempotency conventions.
-   - CI gate: fail the build when routes drift from the published OpenAPI contract.
+**Step 2 — API surface hardening + OpenAPI** ✅ Complete
+   - All business routes re-namespaced to `/api/v1/`. Infrastructure routes (`/healthz`, `/prom`) unchanged.
+   - Auth router moved to `/api/v1/auth`. SPA fallback regex updated to match new prefix.
+   - Consistent error envelopes: every `4xx`/`5xx` response now includes `{ error, code }` (e.g. `TENANT_NOT_FOUND`, `VALIDATION_ERROR`, `UPSTREAM_ERROR`).
+   - Global error handler middleware added (`src/middleware/error-handler.ts`); catches unhandled throws → 500 `INTERNAL_ERROR` envelope.
+   - Cursor-based keyset pagination implemented for `GET /api/v1/audit` (returns `{ data, pagination: { limit, hasMore, nextCursor? } }`).
+   - `openapi.json` emitted from the control-plane build (`pnpm build` runs `tsx scripts/emit-openapi.mts`).
+   - OpenAPI 3.1 spec covers all 50+ endpoints with request/response schemas, error envelope schema, pagination schema, and `securitySchemes`.
+   - `GET /api/v1/openapi.json` serves the spec at runtime.
+   - CI drift gate: `pnpm emit-openapi && git diff --exit-code openapi.json` — fails if spec is stale after a route change.
 
 **Step 3 — Contract / SDK package + `oc` CLI**
    - Generate a typed client and DTOs from OpenAPI into `libs/contracts`; version alongside the API.

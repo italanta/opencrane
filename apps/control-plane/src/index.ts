@@ -14,6 +14,7 @@ import { ___AuthRouter } from "./infra/auth/auth.router.js";
 import { ___CreateOidcAuthService } from "./infra/auth/oidc.service.js";
 import { ___CreatePrismaClient } from "./infra/db/db.js";
 import { ___AuthMiddleware } from "./infra/middleware/auth.middleware.js";
+import { _ErrorHandler } from "./middleware/error-handler.js";
 
 import { _RegisterRoutes } from "./routes.js";
 
@@ -38,11 +39,14 @@ export function createApp(prisma: PrismaClient, customApi: k8s.CustomObjectsApi,
   app.use(express.json());
   app.use(pinoHttp({ logger: log }));
   app.use(authService.createSessionMiddleware());
-  app.use("/api/auth", ___AuthRouter(authService));
+  app.use("/api/v1/auth", ___AuthRouter(authService));
   app.use(___AuthMiddleware());
 
   // Register API routes
   _RegisterRoutes(app, prisma, customApi, coreApi);
+
+  // Global error handler — must be registered after all routes.
+  app.use(_ErrorHandler(log));
 
   const currentDirectory = dirname(fileURLToPath(import.meta.url));
   const packageDirectory = resolve(currentDirectory, "..");
@@ -53,7 +57,7 @@ export function createApp(prisma: PrismaClient, customApi: k8s.CustomObjectsApi,
   {
     log.info({ uiDirectory }, "serving control-plane UI static assets");
     app.use(express.static(uiDirectory));
-    app.get(/^(?!\/api|\/healthz).*/, function _spaFallback(req, res)
+    app.get(/^(?!\/api\/v1|\/healthz|\/prom).*/, function _spaFallback(req, res)
     {
       res.sendFile(join(uiDirectory, "index.html"));
     });

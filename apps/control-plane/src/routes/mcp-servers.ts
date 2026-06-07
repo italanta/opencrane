@@ -26,7 +26,7 @@ export function mcpServersRouter(prisma: PrismaClient): Router
     const server = await getMcpServer(prisma, req.params.id);
     if (!server)
     {
-      res.status(404).json({ error: "MCP server not found" });
+      res.status(404).json({ error: "MCP server not found", code: "MCP_SERVER_NOT_FOUND" });
       return;
     }
 

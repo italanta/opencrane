@@ -26,7 +26,7 @@ export function groupsRouter(prisma: PrismaClient): Router
     const group = await getGroup(prisma, req.params.id);
     if (!group)
     {
-      res.status(404).json({ error: "Group not found" });
+      res.status(404).json({ error: "Group not found", code: "GROUP_NOT_FOUND" });
       return;
     }
 

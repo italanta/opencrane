@@ -43,7 +43,7 @@ export function providerKeysRouter(prisma: PrismaClient): Router
 
     if (!provider || !keyValue)
     {
-      res.status(400).json({ error: "Provider and value are required" });
+      res.status(400).json({ error: "Provider and value are required", code: "VALIDATION_ERROR" });
       return;
     }
 
@@ -63,7 +63,7 @@ export function providerKeysRouter(prisma: PrismaClient): Router
 
     if (!provider)
     {
-      res.status(400).json({ error: "Provider is required" });
+      res.status(400).json({ error: "Provider is required", code: "VALIDATION_ERROR" });
       return;
     }
 

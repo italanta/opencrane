@@ -69,7 +69,7 @@ export function policiesRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCl
 
     if (!policy)
     {
-      res.status(404).json({ error: "Policy not found" });
+      res.status(404).json({ error: "Policy not found", code: "POLICY_NOT_FOUND" });
       return;
     }
 

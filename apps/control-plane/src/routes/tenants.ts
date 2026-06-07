@@ -86,7 +86,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
 
       if (!tenant)
       {
-        res.status(404).json({ error: "Tenant not found" });
+        res.status(404).json({ error: "Tenant not found", code: "TENANT_NOT_FOUND" });
         return;
       }
 
@@ -102,7 +102,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
     }
     catch
     {
-      res.status(502).json({ error: "Failed to load tenant datasets" });
+      res.status(502).json({ error: "Failed to load tenant datasets", code: "UPSTREAM_ERROR" });
     }
   });
 
@@ -116,7 +116,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
 
     if (!membership)
     {
-      res.status(400).json({ error: "org, team, project, and personal must all be string arrays, and org may only contain 'default'" });
+      res.status(400).json({ error: "org, team, project, and personal must all be string arrays, and org may only contain 'default'", code: "VALIDATION_ERROR" });
       return;
     }
 
@@ -129,13 +129,13 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
       });
       if (!tenant)
       {
-        res.status(404).json({ error: "Tenant not found" });
+        res.status(404).json({ error: "Tenant not found", code: "TENANT_NOT_FOUND" });
         return;
       }
     }
     catch
     {
-      res.status(502).json({ error: "Failed to load tenant datasets" });
+      res.status(502).json({ error: "Failed to load tenant datasets", code: "UPSTREAM_ERROR" });
       return;
     }
 
@@ -146,7 +146,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
     }
     catch
     {
-      res.status(502).json({ error: "Failed to apply tenant datasets in Cognee" });
+      res.status(502).json({ error: "Failed to apply tenant datasets in Cognee", code: "UPSTREAM_ERROR" });
       return;
     }
 
@@ -164,7 +164,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
     }
     catch
     {
-      res.status(502).json({ error: "Failed to persist tenant datasets" });
+      res.status(502).json({ error: "Failed to persist tenant datasets", code: "UPSTREAM_ERROR" });
       return;
     }
 
@@ -202,7 +202,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
 
     if (!tenant)
     {
-      res.status(404).json({ error: "Tenant not found" });
+      res.status(404).json({ error: "Tenant not found", code: "TENANT_NOT_FOUND" });
       return;
     }
 
@@ -323,7 +323,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
 
     if (!tenant)
     {
-      res.status(404).json({ error: "Tenant not found" });
+      res.status(404).json({ error: "Tenant not found", code: "TENANT_NOT_FOUND" });
       return;
     }
 
@@ -381,13 +381,13 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
     }
     catch
     {
-      res.status(502).json({ error: "Failed to validate Tenant CR appearance in Kubernetes" });
+      res.status(502).json({ error: "Failed to validate Tenant CR appearance in Kubernetes", code: "UPSTREAM_ERROR" });
       return;
     }
 
     if (!tenantAppeared)
     {
-      res.status(504).json({ error: "Tenant CR did not appear in Kubernetes within 30 seconds" });
+      res.status(504).json({ error: "Tenant CR did not appear in Kubernetes within 30 seconds", code: "TIMEOUT" });
       return;
     }
 

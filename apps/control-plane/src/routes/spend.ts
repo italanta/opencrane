@@ -20,7 +20,7 @@ export function spendRouter(prisma: PrismaClient): Router
     const masterKey = process.env.LITELLM_MASTER_KEY ?? "";
     if (!masterKey)
     {
-      res.status(503).json({ error: "LITELLM_MASTER_KEY is not configured" });
+      res.status(503).json({ error: "LITELLM_MASTER_KEY is not configured", code: "DEPENDENCY_NOT_CONFIGURED" });
       return;
     }
 
@@ -36,7 +36,7 @@ export function spendRouter(prisma: PrismaClient): Router
     {
       if (err instanceof Error && err.message === "TENANT_NOT_FOUND")
       {
-        res.status(404).json({ error: "Tenant not found" });
+        res.status(404).json({ error: "Tenant not found", code: "TENANT_NOT_FOUND" });
         return;
       }
 

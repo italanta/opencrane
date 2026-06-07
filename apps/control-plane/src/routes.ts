@@ -8,6 +8,7 @@ import { auditRouter } from "./routes/audit.js";
 import { groupsRouter } from "./routes/groups.js";
 import { mcpServersRouter } from "./routes/mcp-servers.js";
 import { metricsRouter } from "./routes/metrics.js";
+import { openapiRouter } from "./routes/openapi-route.js";
 import { policiesRouter } from "./routes/policies.js";
 import { prometheusMetricsRouter } from "./routes/prometheus-metrics.js";
 import { providerKeysRouter } from "./routes/provider-keys.js";
@@ -19,6 +20,8 @@ import { _CheckDbHealth } from "./infra/db/healtcheck-db.js";
 
 /**
  * Registers all API routes on the given Express application instance.
+ * All business routes are namespaced under /api/v1/.
+ * Infrastructure routes (/healthz, /prom) remain at the root.
  *
  * @param app - Express application to register routes on.
  * @param prisma - Prisma ORM client for database access in route handlers.
@@ -28,18 +31,19 @@ import { _CheckDbHealth } from "./infra/db/healtcheck-db.js";
  */
 export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k8s.CustomObjectsApi, coreApi: k8s.CoreV1Api): Express
 {
-  app.use("/api/metrics", metricsRouter(customApi, prisma));
-  app.use("/api/audit", auditRouter(prisma));
-  app.use("/api/tenants", tenantsRouter(customApi, prisma));
-  app.use("/api/policies", policiesRouter(customApi, prisma));
-  app.use("/api/ai-budget", aiBudgetRouter(coreApi, prisma));
-  app.use("/api/token-usage", tokenUsageRouter(prisma));
-  app.use("/api/groups", groupsRouter(prisma));
-  app.use("/api/mcp-servers", mcpServersRouter(prisma));
-  app.use("/api/skills/catalog", skillCatalogRouter(prisma));
-  app.use("/api/third-party-sources", thirdPartySourcesRouter(prisma));
-  app.use("/api/access-tokens", accessTokensRouter(prisma));
-  app.use("/api/providers/keys", providerKeysRouter(prisma));
+  app.use("/api/v1/metrics", metricsRouter(customApi, prisma));
+  app.use("/api/v1/audit", auditRouter(prisma));
+  app.use("/api/v1/tenants", tenantsRouter(customApi, prisma));
+  app.use("/api/v1/policies", policiesRouter(customApi, prisma));
+  app.use("/api/v1/ai-budget", aiBudgetRouter(coreApi, prisma));
+  app.use("/api/v1/token-usage", tokenUsageRouter(prisma));
+  app.use("/api/v1/groups", groupsRouter(prisma));
+  app.use("/api/v1/mcp-servers", mcpServersRouter(prisma));
+  app.use("/api/v1/skills/catalog", skillCatalogRouter(prisma));
+  app.use("/api/v1/third-party-sources", thirdPartySourcesRouter(prisma));
+  app.use("/api/v1/access-tokens", accessTokensRouter(prisma));
+  app.use("/api/v1/providers/keys", providerKeysRouter(prisma));
+  app.use("/api/v1/openapi.json", openapiRouter());
   app.get("/healthz", _CheckDbHealth(prisma));
   app.use("/prom", prometheusMetricsRouter(prisma, customApi));
   return app;

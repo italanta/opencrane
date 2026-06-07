@@ -72,7 +72,7 @@ describe("spendRouter", () =>
     const res = await request(app).get("/api/spend/missing-tenant");
 
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({ error: "Tenant not found" });
+    expect(res.body).toEqual({ error: "Tenant not found", code: "TENANT_NOT_FOUND" });
   });
 
   it("returns normalized spend response from LiteLLM payload", async () =>
