@@ -33,7 +33,7 @@ This is an updated roadmap for shipping OpenCrane, the enterprise multi-tenant A
 - Removed duplicate LiteLLM rendering from the Helm chart so the root chart templates are the only deployment path.
 - Added a full local k3d bootstrap path with PostgreSQL, control-plane, LiteLLM, and Prisma migrations.
 - Added a `strict` local profile to exercise prod-style Helm validation and explicit LiteLLM secret wiring locally.
-- Captured a parity checklist clarifying that local validates core stack wiring, while GCP remains the only path that exercises cloud identity, GCS/Crossplane, External Secrets, GCE ingress, and DNS.
+- Captured a parity checklist clarifying that local validates core stack wiring, while GCP remains the only path that exercises cloud identity, GCS, External Secrets, GCE ingress, and DNS. (Crossplane is superseded by the GoF Adapter hosting architecture — see `docs/hosting-architecture.md`.)
 - Implemented deterministic tenant `policyRef` precedence in the operator: explicit `policyRef` wins, then single selector match, then configured default, with conflict and missing-policy error states written to Tenant status.
 - Added detect-only drift reporting for Tenant and AccessPolicy CRDs versus PostgreSQL projection rows in the control-plane as the first P0 dual-write visibility slice.
 - Published resolved AccessPolicy MCP allow/deny data into the tenant managed-runtime contract so runtime enforcement can consume concrete policy inputs instead of only a policy name.
@@ -217,8 +217,8 @@ These decisions are now effectively locked in by the current implementation and 
    - Runtime hardening beyond the current baseline remains a deferred hardening item, not a Phase 1 blocker.
 
 3. **Tenant Pod Isolation**
-   - GCP path uses GCS/Workload Identity/Crossplane when enabled.
-   - Local path uses PVC fallback and now has both `default` and `strict` profiles for validation.
+   - On-prem path (the default) uses PVC fallback; both `default` and `strict` k3d profiles validate this path.
+   - GCP path uses GCS/Workload Identity. Crossplane is superseded: per-tenant bucket provisioning moves into the operator via the GCP hosting adapter (see `docs/hosting-architecture.md`).
    - Baseline network policy is created by chart install; richer policy enforcement remains operator/policy work.
 
 4. **Control Plane Deployment**
@@ -226,7 +226,7 @@ These decisions are now effectively locked in by the current implementation and 
    - Local and GCP both use PostgreSQL-backed deployment flows; local now provisions an in-cluster database for full-stack bring-up.
 
 5. **Terraform & IaC**
-   - Terraform owns GCP infrastructure provisioning, including GKE, Crossplane bootstrap, Artifact Registry, in-cluster PostgreSQL install, app deploy, and DNS.
+   - Terraform owns cloud infrastructure provisioning (GKE, Artifact Registry, in-cluster PostgreSQL, app deploy, DNS). Layout is being migrated to `terraform/core/` (cloud-agnostic) + `terraform/cloud/gcp/` (GCP-specific) per `docs/hosting-architecture.md`. The Crossplane module is retired.
    - Local full-stack install is handled by the k3d bootstrap script, not Terraform.
 
 **Action**: Treat Phase 1 as closed. Any remaining changes here should be tracked as hardening, parity, or Phase 2+ work rather than reopening Phase 1 design questions.
@@ -257,8 +257,8 @@ These decisions are now effectively locked in by the current implementation and 
    - `gke/`: GKE cluster, node pool, workload identity setup.
    - `cloud-sql/`: Cloud SQL instance, database, user.
    - `networking/`: VPC, subnet, Cloud NAT, Firewall rules.
-   - `crossplane/`: GCP provider + ProviderConfig with service account.
    - `artifact-registry/`: Container registry for images.
+   - ~~`crossplane/`~~ — retired; bucket provisioning moves into the operator GCP adapter (see `docs/hosting-architecture.md`).
 
 4. **Docker Images**
    - `tenant`: Node 22 + OpenClaw npm + entrypoint script (mount GCS, link skills, start gateway).
@@ -921,6 +921,12 @@ OpenCrane's control plane becomes a **fully headless, API-first system**. The ad
    - The Helm chart and installers no longer build, bundle, or serve an admin UI. External consumers deploy their own admin surface against the API.
    - The platform stays operable end-to-end with **zero UI present** (API + CLI only).
 
+4. **Hosting adapter migration** (co-deliverable with Phase 5)
+   - The scattered `storageProvider`/`csiDriver`/`crossplaneEnabled` config flags and cloud branches are replaced by the GoF Adapter pattern described in `docs/hosting-architecture.md`.
+   - On-prem (PVC + plain ServiceAccounts) becomes the explicit default. GCP, Azure, and AWS are opt-in adapters in `hosting/adapters/<cloud>/`.
+   - Terraform layout migrates to `terraform/core/` (cloud-agnostic) + `terraform/cloud/gcp/` (GCP-specific). The Crossplane module is removed.
+   - Helm gains `values/gcp.yaml` (and future `values/azure.yaml`, `values/aws.yaml`) overrides; `values.yaml` defaults to on-prem with no cloud vars required.
+
 ### Decisions (Lock Before Execution)
 
 - [ ] API versioning scheme and deprecation policy (`/api/v1` + sunset headers).
@@ -932,48 +938,54 @@ OpenCrane's control plane becomes a **fully headless, API-first system**. The ad
 
 ### Deliverables
 
-1. **API surface hardening + OpenAPI**
+Phase 5 is executed in five sequential steps. Each step must be complete before the next starts.
+
+**Step 1 — Hosting adapter migration** (see `docs/hosting-architecture.md` for full design)
+   - Introduce `HostingAdapter` interface + `OnPremHostingAdapter` (Null Object default) in `apps/operator/src/hosting/`.
+   - Refactor `operator.ts` and all deploy builders to call the adapter; remove `storageProvider`/`csiDriver`/`crossplaneEnabled` config branches.
+   - Implement `GcpHostingAdapter` with in-operator GCS bucket provisioning via `@google-cloud/storage` + Workload Identity; delete the Crossplane `BucketClaim` path.
+   - Split Terraform: carve `terraform/core/` (cloud-agnostic) from `terraform/cloud/gcp/`; remove the Crossplane module.
+   - Add `platform/helm/opencrane/values/gcp.yaml` override; set on-prem defaults in `values.yaml` so zero cloud vars are required for a plain cluster install.
+   - Exit criterion: k3d e2e passes unchanged (on-prem adapter); GCP adapter unit tests pass against a fake bucket client; import-boundary rule enforced.
+
+**Step 2 — API surface hardening + OpenAPI**
    - Annotate all routers; emit `openapi.json` from the control-plane build.
    - Introduce `/api/v1` namespace, consistent error envelopes, pagination, and idempotency conventions.
    - CI gate: fail the build when routes drift from the published OpenAPI contract.
 
-2. **Contract / SDK package (`libs/contracts`)**
-   - Generate a typed client and DTOs from OpenAPI; keep existing hand-written domain types in sync.
-   - Version the package alongside the API; document the integration boundary for external consumers.
-
-3. **`oc` CLI (`apps/cli`)**
-   - Command groups for tenants, policies, datasets, budgets/spend, MCP servers, skills (incl. promotion/demotion), schedules, audit, and awareness-contract rollout/rollback.
+**Step 3 — Contract / SDK package + `oc` CLI**
+   - Generate a typed client and DTOs from OpenAPI into `libs/contracts`; version alongside the API.
+   - New `apps/cli` package: command groups for tenants, policies, datasets, budgets/spend, MCP servers, skills (incl. promotion/demotion), schedules, audit, and awareness-contract rollout/rollback.
    - Human and machine output modes (`--output table|json`); OIDC/projected-token auth; non-interactive automation support.
 
-4. **Capability parity audit**
-   - Enumerate every action currently exposed only in `control-plane-ui`; ensure each has an API + CLI path before extraction.
-   - Close gaps where the UI previously called undocumented or internal endpoints.
+**Step 4 — Capability parity audit + auth alignment**
+   - Enumerate every action currently exposed only in `control-plane-ui`; ensure each has an API + CLI path.
+   - Close any gaps where the UI called undocumented or internal endpoints.
+   - Human operators authenticate via OIDC; automation via projected/short-lived tokens; bearer paths documented as break-glass with a removal target.
 
-5. **UI extraction + chart cleanup**
-   - Remove `apps/control-plane-ui` from `pnpm-workspace.yaml` and the repo after parity.
-   - Remove UI build/serve wiring from Helm, installers, and CI; document the external-consumer integration path.
-
-6. **Auth alignment**
-   - Human operators authenticate via OIDC; automation via projected/short-lived tokens.
-   - Bearer-token control paths are documented as break-glass only, with a removal target.
-
-7. **Documentation**
-   - `docs/api.md` (reference + OpenAPI link), `docs/cli.md` (command reference), and an integration guide for building external surfaces against the contract.
+**Step 5 — UI extraction + chart cleanup**
+   - Remove `apps/control-plane-ui` from `pnpm-workspace.yaml` and the repo once parity is confirmed.
+   - Remove UI build/serve wiring from Helm, installers, and CI.
+   - Document the external-consumer integration path (`docs/api.md`, `docs/cli.md`, integration guide).
 
 ### Key Tasks (Phase 5)
 
-| Task | Owner | Effort | Dependency |
-|------|-------|--------|-----------|
-| OpenAPI emission + `/api/v1` namespace + error/pagination conventions | Backend | 18h | Phase 4 routes |
-| CI contract-drift gate (routes ↔ OpenAPI) | Backend + QA | 8h | OpenAPI emission |
-| `libs/contracts` SDK generation + versioning | Backend | 14h | OpenAPI emission |
-| `oc` CLI scaffold + auth (OIDC/projected token) | Backend | 16h | SDK package |
-| CLI command groups (full admin surface) | Backend | 24h | CLI scaffold |
-| Capability parity audit (UI → API + CLI) | Backend + QA | 12h | CLI command groups |
-| UI extraction + workspace/Helm/CI cleanup | DevOps | 12h | Parity audit complete |
-| Auth alignment (OIDC operators, token retirement plan) | Backend | 12h | SDK + CLI auth |
-| Docs: API reference, CLI reference, integration guide | Backend | 10h | All above |
-| **Phase 5 Total** | | **126h** | |
+| Step | Task | Owner | Effort | Dependency |
+|------|------|-------|--------|-----------|
+| 1 | `HostingAdapter` interface + `OnPremHostingAdapter` + operator refactor | Backend | 10h | — |
+| 1 | `GcpHostingAdapter` + `GcpBucketClient`; remove Crossplane path | Backend | 12h | seam in place |
+| 1 | Terraform `core/` + `cloud/gcp/` split; remove Crossplane module | DevOps | 10h | GCP adapter |
+| 1 | Helm `values/gcp.yaml` + on-prem defaults; update installers | DevOps | 6h | Terraform split |
+| 2 | OpenAPI emission + `/api/v1` namespace + error/pagination conventions | Backend | 18h | Step 1 done |
+| 2 | CI contract-drift gate (routes ↔ OpenAPI) | Backend + QA | 8h | OpenAPI emission |
+| 3 | `libs/contracts` SDK generation + versioning | Backend | 14h | OpenAPI emission |
+| 3 | `oc` CLI scaffold + auth (OIDC/projected token) | Backend | 16h | SDK package |
+| 3 | CLI command groups (full admin surface) | Backend | 24h | CLI scaffold |
+| 4 | Capability parity audit (UI → API + CLI) | Backend + QA | 12h | CLI command groups |
+| 4 | Auth alignment (OIDC operators, token retirement plan) | Backend | 12h | parity audit |
+| 5 | UI extraction + workspace/Helm/CI cleanup | DevOps | 12h | Step 4 done |
+| 5 | Docs: API reference, CLI reference, integration guide | Backend | 10h | UI extracted |
+| **Total** | | | **164h** | |
 
 ### Success Criteria
 
@@ -984,6 +996,9 @@ OpenCrane's control plane becomes a **fully headless, API-first system**. The ad
 - [ ] `oc` CLI authenticates via OIDC/projected tokens; no command requires a static bearer token by default.
 - [ ] `apps/control-plane-ui` is removed from this repository and the Helm chart/installers no longer reference it.
 - [ ] An external repository can integrate this repo as a git submodule, run the full stack locally, and drive every operation through the published contract.
+- [ ] A clean Kubernetes cluster deploys the full platform with zero cloud env vars required (`HOSTING_PROVIDER` defaults to `onprem`).
+- [ ] The GCP adapter provisions per-tenant GCS buckets directly in the operator; no Crossplane dependency.
+- [ ] `terraform/core/` applies to any cluster; `terraform/cloud/gcp/` is the only GCP-specific path.
 - [ ] All new code conforms to `AGENTS.md`.
 
 ---
