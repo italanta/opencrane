@@ -268,7 +268,7 @@ export const spec = {
   info: {
     title: "OpenCrane Control Plane API",
     version: "1.0.0",
-    description: "Multi-tenant AI agent platform management API. All resources require bearer-token authentication unless noted.",
+    description: "Multi-tenant AI agent platform management API.\n\n**Authentication**\n\n- *Human operators* — OIDC browser flow via `GET /auth/login` → `/auth/callback`. Session cookie is set server-side.\n- *Automation* — Bearer token (`Authorization: Bearer <token>`). Create tokens via `POST /access-tokens`. This is the current break-glass path; removal target is once Kubernetes projected ServiceAccount token support lands.\n- Endpoints tagged *Auth* and *Meta* (`/auth/*`, `/openapi.json`) require no credentials.",
   },
   servers: [
     { url: "/api/v1", description: "Versioned API prefix" },
@@ -1088,6 +1088,29 @@ export const spec = {
     // Metrics
     // ------------------------------------------------------------------
 
+    "/metrics/server": {
+      get: {
+        operationId: "getServerMetrics",
+        summary: "Get latest server utilisation snapshot (CPU, memory, storage, active tenants)",
+        tags: ["Metrics"],
+        responses: {
+          200: ok("Server utilisation snapshot.", {
+            type: "object",
+            required: ["cpuPercent", "memoryUsedBytes", "memoryTotalBytes", "storageUsedBytes", "storageTotalBytes", "activeTenants", "sampledAt"],
+            properties: {
+              cpuPercent: { type: "number", description: "CPU utilisation percentage (0–100)." },
+              memoryUsedBytes: { type: "integer", format: "int64" },
+              memoryTotalBytes: { type: "integer", format: "int64" },
+              storageUsedBytes: { type: "integer", format: "int64" },
+              storageTotalBytes: { type: "integer", format: "int64" },
+              activeTenants: { type: "integer" },
+              sampledAt: { type: "string", format: "date-time" },
+            },
+          }),
+        },
+      },
+    },
+
     "/metrics/projection-drift": {
       get: {
         operationId: "getProjectionDriftMetrics",
@@ -1095,6 +1118,89 @@ export const spec = {
         tags: ["Metrics"],
         responses: {
           200: ok("Projection drift metrics.", { $ref: "#/components/schemas/ProjectionDrift" }),
+        },
+      },
+    },
+
+    // ------------------------------------------------------------------
+    // Auth (OIDC browser flow + session introspection)
+    // Human operators use the OIDC flow. Automation uses bearer tokens
+    // (break-glass path — removal target once projected-token auth lands).
+    // ------------------------------------------------------------------
+
+    "/auth/me": {
+      get: {
+        operationId: "getAuthStatus",
+        summary: "Return current auth mode and authenticated user identity (if any)",
+        description: "No authentication required. Returns 200 with the current session or an anonymous identity when no session is established.",
+        tags: ["Auth"],
+        security: [],
+        responses: {
+          200: ok("Auth status.", {
+            type: "object",
+            required: ["mode", "authenticated"],
+            properties: {
+              mode: { type: "string", enum: ["oidc", "none"], description: "Active authentication mode for this instance." },
+              authenticated: { type: "boolean" },
+              user: {
+                type: "object",
+                nullable: true,
+                properties: {
+                  sub: { type: "string" },
+                  email: { type: "string" },
+                  name: { type: "string" },
+                },
+              },
+            },
+          }),
+        },
+      },
+    },
+
+    "/auth/login": {
+      get: {
+        operationId: "startOidcLogin",
+        summary: "Redirect the browser to the configured OIDC identity provider to start login",
+        description: "Browser redirect — not intended for programmatic use. Returns 503 when OIDC is not configured.",
+        tags: ["Auth"],
+        security: [],
+        parameters: [
+          { name: "returnTo", in: "query", schema: { type: "string" }, description: "Path to redirect back to after a successful login." },
+        ],
+        responses: {
+          302: { description: "Redirect to identity provider." },
+          503: { description: "OIDC not configured.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        },
+      },
+    },
+
+    "/auth/callback": {
+      get: {
+        operationId: "completeOidcLogin",
+        summary: "OIDC authorization callback — validates the response and establishes a session",
+        description: "Called by the identity provider after a successful login. Redirects back to the SPA.",
+        tags: ["Auth"],
+        security: [],
+        parameters: [
+          { name: "code", in: "query", schema: { type: "string" } },
+          { name: "state", in: "query", schema: { type: "string" } },
+        ],
+        responses: {
+          302: { description: "Redirect back into the application." },
+          503: { description: "OIDC not configured.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        },
+      },
+    },
+
+    "/auth/logout": {
+      post: {
+        operationId: "logout",
+        summary: "Destroy the current session",
+        description: "Invalidates the server-side session. Does not perform IdP-side logout (RP-initiated logout is out of scope for Phase 5).",
+        tags: ["Auth"],
+        security: [],
+        responses: {
+          204: { description: "Session destroyed." },
         },
       },
     },

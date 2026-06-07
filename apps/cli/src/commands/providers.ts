@@ -1,11 +1,11 @@
 import type { Command } from "commander";
 
 import type { CliConfig } from "../config.js";
-import { makeClient } from "../config.js";
-import { print, printApiError, printSuccess, type OutputFormat } from "../format.js";
+import { _MakeClient } from "../config.js";
+import { _Print, _PrintApiError, _PrintSuccess, type OutputFormat } from "../format.js";
 
 /** Register all `oc providers *` sub-commands on the given parent Command. */
-export function registerProviders(parent: Command, getConfig: () => CliConfig): void
+export function _RegisterProviders(parent: Command, getConfig: () => CliConfig): void
 {
   const providers = parent
     .command("providers")
@@ -17,10 +17,10 @@ export function registerProviders(parent: Command, getConfig: () => CliConfig): 
     .option("-o, --output <format>", "Output format: table|json", "table")
     .action(async function _list(opts: { output: OutputFormat })
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { data, error } = await client.GET("/providers/keys");
-      if (error) printApiError("providers list", error);
-      print(data, opts.output, ["provider", "configured", "updatedAt"]);
+      if (error) _PrintApiError("providers list", error);
+      _Print(data, opts.output, ["provider", "configured", "updatedAt"]);
     });
 
   providers
@@ -28,12 +28,12 @@ export function registerProviders(parent: Command, getConfig: () => CliConfig): 
     .description("Create or update a provider API key (openai, claude, etc.)")
     .action(async function _set(provider: string, key: string)
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { error } = await client.PUT("/providers/keys", {
         body: { provider, apiKey: key },
       });
-      if (error) printApiError("providers set", error);
-      printSuccess(`Provider key for "${provider}" updated`);
+      if (error) _PrintApiError("providers set", error);
+      _PrintSuccess(`Provider key for "${provider}" updated`);
     });
 
   providers
@@ -41,11 +41,11 @@ export function registerProviders(parent: Command, getConfig: () => CliConfig): 
     .description("Delete a configured provider API key")
     .action(async function _delete(provider: string)
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { error } = await client.DELETE("/providers/keys/{provider}", {
         params: { path: { provider } },
       });
-      if (error) printApiError("providers delete", error);
-      printSuccess(`Provider key for "${provider}" deleted`);
+      if (error) _PrintApiError("providers delete", error);
+      _PrintSuccess(`Provider key for "${provider}" deleted`);
     });
 }

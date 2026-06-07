@@ -1,4 +1,4 @@
-export { createControlPlaneClient, type ControlPlaneClient, type paths } from "./client.js";
+export { ___CreateControlPlaneClient, type ControlPlaneClient, type paths } from "./client.js";
 export { GrantAccess, GrantScope, GrantSubjectType, type Grant } from "./grant.types.js";
 export { type Group } from "./group.types.js";
 export { McpServerStatus, McpServerTransport, type McpServer, type McpServerCredential } from "./mcp-server.types.js";

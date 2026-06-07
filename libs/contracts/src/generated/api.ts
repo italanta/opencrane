@@ -571,6 +571,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metrics/server": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get latest server utilisation snapshot (CPU, memory, storage, active tenants) */
+        get: operations["getServerMetrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/metrics/projection-drift": {
         parameters: {
             query?: never;
@@ -582,6 +599,86 @@ export interface paths {
         get: operations["getProjectionDriftMetrics"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Return current auth mode and authenticated user identity (if any)
+         * @description No authentication required. Returns 200 with the current session or an anonymous identity when no session is established.
+         */
+        get: operations["getAuthStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Redirect the browser to the configured OIDC identity provider to start login
+         * @description Browser redirect — not intended for programmatic use. Returns 503 when OIDC is not configured.
+         */
+        get: operations["startOidcLogin"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * OIDC authorization callback — validates the response and establishes a session
+         * @description Called by the identity provider after a successful login. Redirects back to the SPA.
+         */
+        get: operations["completeOidcLogin"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Destroy the current session
+         * @description Invalidates the server-side session. Does not perform IdP-side logout (RP-initiated logout is out of scope for Phase 5).
+         */
+        post: operations["logout"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2248,6 +2345,40 @@ export interface operations {
             };
         };
     };
+    getServerMetrics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server utilisation snapshot. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description CPU utilisation percentage (0–100). */
+                        cpuPercent: number;
+                        /** Format: int64 */
+                        memoryUsedBytes: number;
+                        /** Format: int64 */
+                        memoryTotalBytes: number;
+                        /** Format: int64 */
+                        storageUsedBytes: number;
+                        /** Format: int64 */
+                        storageTotalBytes: number;
+                        activeTenants: number;
+                        /** Format: date-time */
+                        sampledAt: string;
+                    };
+                };
+            };
+        };
+    };
     getProjectionDriftMetrics: {
         parameters: {
             query?: never;
@@ -2265,6 +2396,116 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ProjectionDrift"];
                 };
+            };
+        };
+    };
+    getAuthStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Auth status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * @description Active authentication mode for this instance.
+                         * @enum {string}
+                         */
+                        mode: "oidc" | "none";
+                        authenticated: boolean;
+                        user?: {
+                            sub?: string;
+                            email?: string;
+                            name?: string;
+                        } | null;
+                    };
+                };
+            };
+        };
+    };
+    startOidcLogin: {
+        parameters: {
+            query?: {
+                /** @description Path to redirect back to after a successful login. */
+                returnTo?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to identity provider. */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description OIDC not configured. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    completeOidcLogin: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect back into the application. */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description OIDC not configured. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Session destroyed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -1,11 +1,11 @@
 import type { Command } from "commander";
 
 import type { CliConfig } from "../config.js";
-import { makeClient } from "../config.js";
-import { print, printApiError, printSuccess, type OutputFormat } from "../format.js";
+import { _MakeClient } from "../config.js";
+import { _Print, _PrintApiError, _PrintSuccess, type OutputFormat } from "../format.js";
 
 /** Register all `oc skills *` sub-commands on the given parent Command. */
-export function registerSkills(parent: Command, getConfig: () => CliConfig): void
+export function _RegisterSkills(parent: Command, getConfig: () => CliConfig): void
 {
   const skills = parent
     .command("skills")
@@ -17,10 +17,10 @@ export function registerSkills(parent: Command, getConfig: () => CliConfig): voi
     .option("-o, --output <format>", "Output format: table|json", "table")
     .action(async function _list(opts: { output: OutputFormat })
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { data, error } = await client.GET("/skills/catalog");
-      if (error) printApiError("skills list", error);
-      print(data, opts.output, ["id", "name", "scope", "status", "version", "digest"]);
+      if (error) _PrintApiError("skills list", error);
+      _Print(data, opts.output, ["id", "name", "scope", "status", "version", "digest"]);
     });
 
   skills
@@ -29,10 +29,10 @@ export function registerSkills(parent: Command, getConfig: () => CliConfig): voi
     .option("-o, --output <format>", "Output format: table|json", "table")
     .action(async function _get(id: string, opts: { output: OutputFormat })
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { data, error } = await client.GET("/skills/catalog/{id}", { params: { path: { id } } });
-      if (error) printApiError("skills get", error);
-      print(data, opts.output);
+      if (error) _PrintApiError("skills get", error);
+      _Print(data, opts.output);
     });
 
   skills
@@ -68,10 +68,10 @@ export function registerSkills(parent: Command, getConfig: () => CliConfig): voi
             ...(opts.tags ? { tags: opts.tags.split(",").map(function _trim(t) { return t.trim(); }) } : {}),
           };
 
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { data, error } = await client.POST("/skills/catalog", { body });
-      if (error) printApiError("skills create", error);
-      print(data, opts.output);
+      if (error) _PrintApiError("skills create", error);
+      _Print(data, opts.output);
     });
 
   skills
@@ -104,10 +104,10 @@ export function registerSkills(parent: Command, getConfig: () => CliConfig): voi
             ...(opts.status ? { status: opts.status } : {}),
           };
 
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { data, error } = await client.PUT("/skills/catalog/{id}", { params: { path: { id } }, body });
-      if (error) printApiError("skills update", error);
-      print(data, opts.output);
+      if (error) _PrintApiError("skills update", error);
+      _Print(data, opts.output);
     });
 
   skills
@@ -115,9 +115,9 @@ export function registerSkills(parent: Command, getConfig: () => CliConfig): voi
     .description("Delete a skill bundle and its linked entitlement grants")
     .action(async function _delete(id: string)
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { error } = await client.DELETE("/skills/catalog/{id}", { params: { path: { id } } });
-      if (error) printApiError("skills delete", error);
-      printSuccess(`Skill bundle "${id}" deleted`);
+      if (error) _PrintApiError("skills delete", error);
+      _PrintSuccess(`Skill bundle "${id}" deleted`);
     });
 }

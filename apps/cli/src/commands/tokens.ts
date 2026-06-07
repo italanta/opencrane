@@ -1,11 +1,11 @@
 import type { Command } from "commander";
 
 import type { CliConfig } from "../config.js";
-import { makeClient } from "../config.js";
-import { print, printApiError, printSuccess, type OutputFormat } from "../format.js";
+import { _MakeClient } from "../config.js";
+import { _Print, _PrintApiError, _PrintSuccess, type OutputFormat } from "../format.js";
 
 /** Register all `oc tokens *` sub-commands on the given parent Command. */
-export function registerTokens(parent: Command, getConfig: () => CliConfig): void
+export function _RegisterTokens(parent: Command, getConfig: () => CliConfig): void
 {
   const tokens = parent
     .command("tokens")
@@ -17,10 +17,10 @@ export function registerTokens(parent: Command, getConfig: () => CliConfig): voi
     .option("-o, --output <format>", "Output format: table|json", "table")
     .action(async function _list(opts: { output: OutputFormat })
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { data, error } = await client.GET("/access-tokens");
-      if (error) printApiError("tokens list", error);
-      print(data, opts.output, ["id", "name", "owner", "createdAt", "expiresAt"]);
+      if (error) _PrintApiError("tokens list", error);
+      _Print(data, opts.output, ["id", "name", "owner", "createdAt", "expiresAt"]);
     });
 
   tokens
@@ -31,7 +31,7 @@ export function registerTokens(parent: Command, getConfig: () => CliConfig): voi
     .option("--expires-at <iso>", "Expiry datetime in ISO-8601 format")
     .action(async function _create(opts: { name: string; owner: string; expiresAt?: string })
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { data, error } = await client.POST("/access-tokens", {
         body: {
           name: opts.name,
@@ -39,7 +39,7 @@ export function registerTokens(parent: Command, getConfig: () => CliConfig): voi
           ...(opts.expiresAt ? { expiresAt: opts.expiresAt } : {}),
         },
       });
-      if (error) printApiError("tokens create", error);
+      if (error) _PrintApiError("tokens create", error);
 
       const result = data as { id?: string; plainTextToken?: string } | undefined;
       console.log(`Token ID:    ${result?.id ?? "(unknown)"}`);
@@ -52,9 +52,9 @@ export function registerTokens(parent: Command, getConfig: () => CliConfig): voi
     .description("Revoke and permanently delete an access token")
     .action(async function _revoke(id: string)
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { error } = await client.DELETE("/access-tokens/{id}", { params: { path: { id } } });
-      if (error) printApiError("tokens revoke", error);
-      printSuccess(`Token "${id}" revoked`);
+      if (error) _PrintApiError("tokens revoke", error);
+      _PrintSuccess(`Token "${id}" revoked`);
     });
 }

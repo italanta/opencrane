@@ -1,11 +1,11 @@
 import type { Command } from "commander";
 
 import type { CliConfig } from "../config.js";
-import { makeClient } from "../config.js";
-import { print, printApiError, type OutputFormat } from "../format.js";
+import { _MakeClient } from "../config.js";
+import { _Print, _PrintApiError, type OutputFormat } from "../format.js";
 
 /** Register all `oc audit *` sub-commands on the given parent Command. */
-export function registerAudit(parent: Command, getConfig: () => CliConfig): void
+export function _RegisterAudit(parent: Command, getConfig: () => CliConfig): void
 {
   const audit = parent
     .command("audit")
@@ -25,7 +25,7 @@ export function registerAudit(parent: Command, getConfig: () => CliConfig): void
       output: OutputFormat;
     })
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { data, error } = await client.GET("/audit", {
         params: {
           query: {
@@ -35,7 +35,7 @@ export function registerAudit(parent: Command, getConfig: () => CliConfig): void
           },
         },
       });
-      if (error) printApiError("audit list", error);
+      if (error) _PrintApiError("audit list", error);
 
       if (opts.output === "json")
       {
@@ -44,8 +44,9 @@ export function registerAudit(parent: Command, getConfig: () => CliConfig): void
       }
 
       const response = data as { data?: unknown[]; pagination?: { hasMore?: boolean; nextCursor?: string } } | undefined;
-      print(response?.data, opts.output, ["timestamp", "tenant", "action", "resource", "message"]);
+      _Print(response?.data, opts.output, ["timestamp", "tenant", "action", "resource", "message"]);
 
+      // Show the next-cursor hint so operators can script paginated fetches.
       if (response?.pagination?.hasMore)
       {
         console.log(`\nMore results available. Next cursor: ${response.pagination.nextCursor ?? "(none)"}`);

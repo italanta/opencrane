@@ -1,11 +1,11 @@
 import type { Command } from "commander";
 
 import type { CliConfig } from "../config.js";
-import { makeClient } from "../config.js";
-import { print, printApiError, printSuccess, type OutputFormat } from "../format.js";
+import { _MakeClient } from "../config.js";
+import { _Print, _PrintApiError, _PrintSuccess, type OutputFormat } from "../format.js";
 
 /** Register all `oc tenants *` sub-commands on the given parent Command. */
-export function registerTenants(parent: Command, getConfig: () => CliConfig): void
+export function _RegisterTenants(parent: Command, getConfig: () => CliConfig): void
 {
   const tenants = parent
     .command("tenants")
@@ -17,10 +17,10 @@ export function registerTenants(parent: Command, getConfig: () => CliConfig): vo
     .option("-o, --output <format>", "Output format: table|json", "table")
     .action(async function _list(opts: { output: OutputFormat })
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { data, error } = await client.GET("/tenants");
-      if (error) printApiError("tenants list", error);
-      print(data, opts.output, ["name", "phase", "email", "team", "ingressHost", "createdAt"]);
+      if (error) _PrintApiError("tenants list", error);
+      _Print(data, opts.output, ["name", "phase", "email", "team", "ingressHost", "createdAt"]);
     });
 
   tenants
@@ -29,10 +29,10 @@ export function registerTenants(parent: Command, getConfig: () => CliConfig): vo
     .option("-o, --output <format>", "Output format: table|json", "table")
     .action(async function _get(name: string, opts: { output: OutputFormat })
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { data, error } = await client.GET("/tenants/{name}", { params: { path: { name } } });
-      if (error) printApiError("tenants get", error);
-      print(data, opts.output);
+      if (error) _PrintApiError("tenants get", error);
+      _Print(data, opts.output);
     });
 
   tenants
@@ -55,7 +55,7 @@ export function registerTenants(parent: Command, getConfig: () => CliConfig): vo
       output: OutputFormat;
     })
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { data, error } = await client.POST("/tenants", {
         body: {
           name: opts.name,
@@ -66,8 +66,8 @@ export function registerTenants(parent: Command, getConfig: () => CliConfig): vo
           ...(opts.policyRef ? { policyRef: opts.policyRef } : {}),
         },
       });
-      if (error) printApiError("tenants create", error);
-      print(data, opts.output);
+      if (error) _PrintApiError("tenants create", error);
+      _Print(data, opts.output);
     });
 
   tenants
@@ -88,7 +88,7 @@ export function registerTenants(parent: Command, getConfig: () => CliConfig): vo
       output: OutputFormat;
     })
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { data, error } = await client.PUT("/tenants/{name}", {
         params: { path: { name } },
         body: {
@@ -99,8 +99,8 @@ export function registerTenants(parent: Command, getConfig: () => CliConfig): vo
           ...(opts.policyRef ? { policyRef: opts.policyRef } : {}),
         },
       });
-      if (error) printApiError("tenants update", error);
-      print(data, opts.output);
+      if (error) _PrintApiError("tenants update", error);
+      _Print(data, opts.output);
     });
 
   tenants
@@ -108,10 +108,10 @@ export function registerTenants(parent: Command, getConfig: () => CliConfig): vo
     .description("Delete a tenant")
     .action(async function _delete(name: string)
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { error } = await client.DELETE("/tenants/{name}", { params: { path: { name } } });
-      if (error) printApiError("tenants delete", error);
-      printSuccess(`Tenant "${name}" deleted`);
+      if (error) _PrintApiError("tenants delete", error);
+      _PrintSuccess(`Tenant "${name}" deleted`);
     });
 
   tenants
@@ -119,10 +119,10 @@ export function registerTenants(parent: Command, getConfig: () => CliConfig): vo
     .description("Suspend a tenant (scale deployment to zero)")
     .action(async function _suspend(name: string)
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { error } = await client.POST("/tenants/{name}/suspend", { params: { path: { name } } });
-      if (error) printApiError("tenants suspend", error);
-      printSuccess(`Tenant "${name}" suspended`);
+      if (error) _PrintApiError("tenants suspend", error);
+      _PrintSuccess(`Tenant "${name}" suspended`);
     });
 
   tenants
@@ -130,10 +130,10 @@ export function registerTenants(parent: Command, getConfig: () => CliConfig): vo
     .description("Resume a suspended tenant")
     .action(async function _resume(name: string)
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { error } = await client.POST("/tenants/{name}/resume", { params: { path: { name } } });
-      if (error) printApiError("tenants resume", error);
-      printSuccess(`Tenant "${name}" resumed`);
+      if (error) _PrintApiError("tenants resume", error);
+      _PrintSuccess(`Tenant "${name}" resumed`);
     });
 
   tenants
@@ -142,10 +142,10 @@ export function registerTenants(parent: Command, getConfig: () => CliConfig): vo
     .option("-o, --output <format>", "Output format: table|json", "table")
     .action(async function _datasets(name: string, opts: { output: OutputFormat })
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { data, error } = await client.GET("/tenants/{name}/datasets", { params: { path: { name } } });
-      if (error) printApiError("tenants datasets", error);
-      print(data, opts.output);
+      if (error) _PrintApiError("tenants datasets", error);
+      _Print(data, opts.output);
     });
 
   tenants
@@ -154,10 +154,10 @@ export function registerTenants(parent: Command, getConfig: () => CliConfig): vo
     .option("-o, --output <format>", "Output format: table|json", "table")
     .action(async function _contract(name: string, opts: { output: OutputFormat })
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { data, error } = await client.GET("/tenants/{name}/effective-contract", { params: { path: { name } } });
-      if (error) printApiError("tenants contract", error);
-      print(data, opts.output);
+      if (error) _PrintApiError("tenants contract", error);
+      _Print(data, opts.output);
     });
 
   tenants
@@ -166,10 +166,10 @@ export function registerTenants(parent: Command, getConfig: () => CliConfig): vo
     .option("-o, --output <format>", "Output format: table|json", "table")
     .action(async function _drift(opts: { output: OutputFormat })
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { data, error } = await client.GET("/tenants/drift");
-      if (error) printApiError("tenants drift", error);
-      print(data, opts.output);
+      if (error) _PrintApiError("tenants drift", error);
+      _Print(data, opts.output);
     });
 
   tenants
@@ -179,11 +179,11 @@ export function registerTenants(parent: Command, getConfig: () => CliConfig): vo
     .option("-o, --output <format>", "Output format: table|json", "table")
     .action(async function _repair(opts: { apply: boolean; output: OutputFormat })
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { data, error } = await client.POST("/tenants/repair", {
         params: { query: { dryRun: !opts.apply } },
       });
-      if (error) printApiError("tenants repair", error);
-      print(data, opts.output);
+      if (error) _PrintApiError("tenants repair", error);
+      _Print(data, opts.output);
     });
 }

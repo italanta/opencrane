@@ -1,11 +1,11 @@
 import type { Command } from "commander";
 
 import type { CliConfig } from "../config.js";
-import { makeClient } from "../config.js";
-import { print, printApiError, printSuccess, type OutputFormat } from "../format.js";
+import { _MakeClient } from "../config.js";
+import { _Print, _PrintApiError, _PrintSuccess, type OutputFormat } from "../format.js";
 
 /** Register all `oc mcp *` sub-commands on the given parent Command. */
-export function registerMcpServers(parent: Command, getConfig: () => CliConfig): void
+export function _RegisterMcpServers(parent: Command, getConfig: () => CliConfig): void
 {
   const mcp = parent
     .command("mcp")
@@ -17,10 +17,10 @@ export function registerMcpServers(parent: Command, getConfig: () => CliConfig):
     .option("-o, --output <format>", "Output format: table|json", "table")
     .action(async function _list(opts: { output: OutputFormat })
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { data, error } = await client.GET("/mcp-servers");
-      if (error) printApiError("mcp list", error);
-      print(data, opts.output, ["id", "name", "transport", "endpoint"]);
+      if (error) _PrintApiError("mcp list", error);
+      _Print(data, opts.output, ["id", "name", "transport", "endpoint"]);
     });
 
   mcp
@@ -29,10 +29,10 @@ export function registerMcpServers(parent: Command, getConfig: () => CliConfig):
     .option("-o, --output <format>", "Output format: table|json", "table")
     .action(async function _get(id: string, opts: { output: OutputFormat })
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { data, error } = await client.GET("/mcp-servers/{id}", { params: { path: { id } } });
-      if (error) printApiError("mcp get", error);
-      print(data, opts.output);
+      if (error) _PrintApiError("mcp get", error);
+      _Print(data, opts.output);
     });
 
   mcp
@@ -55,10 +55,10 @@ export function registerMcpServers(parent: Command, getConfig: () => CliConfig):
         ? JSON.parse(opts.body)
         : { name: opts.name, endpoint: opts.endpoint, transport: opts.transport };
 
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { data, error } = await client.POST("/mcp-servers", { body });
-      if (error) printApiError("mcp create", error);
-      print(data, opts.output);
+      if (error) _PrintApiError("mcp create", error);
+      _Print(data, opts.output);
     });
 
   mcp
@@ -85,10 +85,10 @@ export function registerMcpServers(parent: Command, getConfig: () => CliConfig):
             ...(opts.transport ? { transport: opts.transport } : {}),
           };
 
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { data, error } = await client.PUT("/mcp-servers/{id}", { params: { path: { id } }, body });
-      if (error) printApiError("mcp update", error);
-      print(data, opts.output);
+      if (error) _PrintApiError("mcp update", error);
+      _Print(data, opts.output);
     });
 
   mcp
@@ -96,9 +96,9 @@ export function registerMcpServers(parent: Command, getConfig: () => CliConfig):
     .description("Delete an MCP server and its linked grants")
     .action(async function _delete(id: string)
     {
-      const client = makeClient(getConfig());
+      const client = _MakeClient(getConfig());
       const { error } = await client.DELETE("/mcp-servers/{id}", { params: { path: { id } } });
-      if (error) printApiError("mcp delete", error);
-      printSuccess(`MCP server "${id}" deleted`);
+      if (error) _PrintApiError("mcp delete", error);
+      _PrintSuccess(`MCP server "${id}" deleted`);
     });
 }

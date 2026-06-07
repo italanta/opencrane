@@ -968,10 +968,14 @@ Phase 5 is executed in five sequential steps. Each step must be complete before 
    - Non-interactive automation: every destructive command is non-interactive (no confirmation prompts); `--output json` + exit code semantics for scripting.
    - `/providers/keys/{provider}` DELETE endpoint added to spec, route, and CLI.
 
-**Step 4 — Capability parity audit + auth alignment**
-   - Enumerate every action currently exposed only in `control-plane-ui`; ensure each has an API + CLI path.
-   - Close any gaps where the UI called undocumented or internal endpoints.
-   - Human operators authenticate via OIDC; automation via projected/short-lived tokens; bearer paths documented as break-glass with a removal target.
+**Step 4 — Capability parity audit + auth alignment** ✅ Complete
+   - Audit of `control-plane-ui` API calls revealed four gaps: `/metrics/server`, `/auth/me`, `/auth/login`, `/auth/callback`, `/auth/logout` — all implemented in the backend but undocumented.
+   - All five endpoints added to the OpenAPI spec with full schemas (tags: Metrics, Auth; `security: []` on auth endpoints).
+   - `oc metrics server` and `oc metrics drift` commands added to the CLI.
+   - `oc auth me` (session introspection) and `oc auth logout` commands added to the CLI.
+   - The UI uses `/api/...` paths; the backend now exposes all routes at `/api/v1/...` (path migration from Step 2). The UI is intentionally broken — Step 5 removes it.
+   - Auth alignment: OIDC is the documented human-operator path (`GET /auth/login` → `/auth/callback` → session). Bearer token auth is the current automation path (break-glass; `OPENCRANE_TOKEN`/`--token`). Removal target: once Kubernetes projected ServiceAccount token support lands, bearer tokens will be retired. This is documented in `apps/cli/src/index.ts` and the OpenAPI spec info description.
+   - `/providers/keys/{provider}` DELETE (gap found during Step 3 close-out) was already added.
 
 **Step 5 — UI extraction + chart cleanup**
    - Remove `apps/control-plane-ui` from `pnpm-workspace.yaml` and the repo once parity is confirmed.
