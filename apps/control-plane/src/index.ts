@@ -1,7 +1,3 @@
-import { existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
 import * as k8s from "@kubernetes/client-node";
 
 import pino from "pino";
@@ -47,23 +43,6 @@ export function createApp(prisma: PrismaClient, customApi: k8s.CustomObjectsApi,
 
   // Global error handler — must be registered after all routes.
   app.use(_ErrorHandler(log));
-
-  const currentDirectory = dirname(fileURLToPath(import.meta.url));
-  const packageDirectory = resolve(currentDirectory, "..");
-  const uiDirectory = resolve(packageDirectory, "../control-plane-ui/dist/control-plane-ui/browser");
-  const hasUiBuild = existsSync(uiDirectory);
-
-  if (hasUiBuild)
-  {
-    log.info({ uiDirectory }, "serving control-plane UI static assets");
-    app.use(express.static(uiDirectory));
-    app.get(/^(?!\/api\/v1|\/healthz|\/prom).*/, function _spaFallback(req, res)
-    {
-      res.sendFile(join(uiDirectory, "index.html"));
-    });
-  }
-  else
-    log.warn({ uiDirectory }, "control-plane UI build directory not found; serving API routes only");
 
   return app;
 }
