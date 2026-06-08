@@ -7,6 +7,7 @@ WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY tsconfig.base.json ./
 COPY libs/contracts/package.json libs/contracts/tsconfig.json libs/contracts/
+COPY apps/control-plane/scripts apps/control-plane/scripts
 COPY apps/control-plane/openapi.json apps/control-plane/openapi.json
 COPY apps/control-plane/package.json apps/control-plane/tsconfig.json apps/control-plane/
 COPY apps/control-plane/prisma apps/control-plane/prisma
