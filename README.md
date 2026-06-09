@@ -72,7 +72,7 @@ OpenCrane orchestrates all of this by:
 - **Skill sharing**: Managing skill updates and deployments across the organization.
 - **Secure storage**: All data stored in your organization's infrastructure, encrypted at rest.
 
-See [**Current State** and **Roadmap**](#current-state-phase-1) below for implementation details and future capabilities.
+See [**Current State** and **Roadmap**](#current-state-phase-5--headless-api--cli) below for implementation details and future capabilities.
 
 ## Architecture
 
@@ -82,10 +82,10 @@ OpenCrane is represented here as a clean operating model: a central **Control Pl
 ┌──────────────────────────────────────────────────┐      ┌──────────────────────────────┐
 │                  Control Plane                   │◄────►│  Cloud SQL + Skills Repo     │
 │                admin.opencrane.ai                │      │  org / dept / team /         │
-│     Express + Prisma + absorbed Obot admin UI    │      │  tenant / individual / state │
-│  • MCP install + in-cluster registry (desired)   │      └──────────────────────────────┘
+│      Express + Prisma · headless API-first       │      │  tenant / individual / state │
+│  • Versioned REST API (/api/v1) + OpenAPI spec   │      └──────────────────────────────┘
 │  • Obot control & config authority               │
-│  • Control-plane UI manages Obot + skills        │
+│  • oc CLI · external UI consumers via contract   │
 │  • Permission compiler · effective-contract API  │
 └──────────────────────┬───────────────────────────┘
                        │  (0) config   (1) grants   (2) contract
@@ -192,10 +192,11 @@ During Agentic Loop:
 - **Skills sharing protocol**: Explicit promotion/demotion flow across personal, project, department, and org scopes with immutable digest-pinned versions.
 - **Legacy removal target**: Filesystem-only sharing path and `OPENCLAW_GATEWAY_TOKEN` removed after cutover.
 - Full specification: `mcp-skills-platform-brief.md`.
+- **Note**: The `apps/control-plane-ui` Angular admin frontend was extracted out of this repository in Phase 5. Administrative operations are now performed entirely through the versioned HTTP API and the `oc` CLI.
 
-### Current State (Phase 1)
+### Current State (Phase 5 — Headless API + CLI)
 
-OpenCrane Phase 1 delivers a **production-ready multi-tenant control plane** with isolated assistant deployments, skill sharing, and governance.
+OpenCrane is a **fully headless, API-first control plane**. There is no bundled admin UI. Every administrative capability is reachable through the versioned REST API and the `oc` CLI.
 
 **What's working today:**
 - ✅ **Multi-tenant isolation**: Each employee gets an isolated Kubernetes pod with dedicated storage (private drive)
@@ -204,17 +205,23 @@ OpenCrane Phase 1 delivers a **production-ready multi-tenant control plane** wit
 - ✅ **Network policies**: Domain allowlisting and IP restrictions enforced via Kubernetes NetworkPolicy and CiliumNetworkPolicy
 - ✅ **Cost control**: Per-tenant budgets and token tracking via LiteLLM integration
 - ✅ **Audit trail**: All tenant and policy changes dual-written to K8s (source of truth) and PostgreSQL (queryable)
-- ✅ **IAM-first identity**: Workload Identity for pod authentication; no shared bearer tokens
+- ✅ **IAM-first identity**: Workload Identity for pod authentication; OIDC for human operators
 - ✅ **Self-hosted**: Deploy on your infrastructure (Kubernetes 1.28+); full data sovereignty
-- ✅ **Helm & Terraform IaC**: Production-ready deployment templates
+- ✅ **Helm & Terraform IaC**: Production-ready deployment templates; `values/gcp.yaml` for GCP, `values.yaml` defaults to on-prem with zero cloud vars required
 - ✅ **Direct retrieval cutover**: Retrieval path is direct from OpenClaw/Clawdbot to Cognee
 - ✅ **Permission sync boundary**: Control-plane manages Cognee dataset memberships and grants (no retrieval proxy)
+- ✅ **Hosting adapter**: `HostingAdapter` interface with `OnPremHostingAdapter` (default) and `GcpHostingAdapter`; cloud SDKs are lazy-loaded optional dependencies — on-prem runs with no cloud SDK present
+- ✅ **Versioned REST API**: All routes under `/api/v1/`; consistent `{ error, code }` envelopes; cursor-based pagination on audit log
+- ✅ **OpenAPI 3.1 spec**: Emitted at build time (`openapi.json`); served at runtime (`GET /api/v1/openapi.json`); CI drift gate enforced
+- ✅ **`oc` CLI**: Full administrative surface — tenants, policies, MCP servers, skills, budget, audit, tokens, providers, metrics, auth
+- ✅ **Typed SDK**: `libs/contracts` publishes a generated TypeScript client (`openapi-typescript` + `openapi-fetch`) consumed by the CLI and available to external consumers
 
-**Retrieval plugin foundation (basic):**
+**Retrieval plugin foundation:**
 - ✅ Static skill discovery from filesystem during agentic loop
 - ✅ Skill metadata indexed in PostgreSQL for discovery
+- ✅ Skill catalog CRUD with promotion/demotion and entitlement management via API + CLI
 - ⏳ **In progress**: Uniform awareness contract SDK + control-plane effective-contract delivery
-- ⏳ **In progress**: Skill-sharing protocol runtime and OCI-backed bundle distribution
+- ⏳ **In progress**: OCI-backed skill registry and delivery service
 
 ### Roadmap (Plan-Aligned)
 
@@ -232,7 +239,7 @@ OpenCrane Phase 1 delivers a **production-ready multi-tenant control plane** wit
 - ✅ AccessPolicy-compatible dataset permission sync to Cognee is active.
 - ⏸️ Explicitly deferred: approval workflow expansion, optional approval 2FA, OIDC migration, and freshness/invalidation implementation details controlled from Clawdbot.
 
-**Phase 4 (Fleet Organizational Awareness + MCP & Skills Platform, current focus):**
+**Phase 4 (Fleet Organizational Awareness + MCP & Skills Platform, substantially delivered):**
 - 🎯 Uniform Awareness Contract across all OpenClaws using a hybrid model:
   - declarative contract schema,
   - shared OpenClaw SDK execution layer,
@@ -243,25 +250,38 @@ OpenCrane Phase 1 delivers a **production-ready multi-tenant control plane** wit
 - 🎯 Fleet evaluation harness and awareness SLO dashboards (policy safety, freshness, citation coverage, latency).
 - ⏳ Obot MCP Gateway deployment pending: headless, config-slaved, and backed by in-cluster service endpoints.
 - ⏳ Skill Registry & Delivery app pending over OCI/ORAS with per-read entitlement enforcement.
-- ⏳ Control-plane MCP server management, skill catalog with promotion/demotion, and third-party source installation pipeline pending implementation.
+- ✅ Control-plane MCP server management and skill catalog with promotion/demotion and entitlement grants: delivered via API + CLI in Phase 5.
+- ✅ Third-party source management routes and ingest pipeline: delivered.
 - ✅ Operator + identity migration delivered: projected-token audiences (`aud=obot-gateway`, `aud=skill-registry`) now replace `OPENCLAW_GATEWAY_TOKEN`.
 - ✅ Managed runtime contract scaffolding delivered: `contractVersion`, `mcp.gateway`, `mcp.servers`, `skills.registry`, and `skills.entitled` are now present.
-- 🎯 Control-plane frontend (`apps/control-plane-ui`) is the single admin surface for Obot config, MCP install, and skill catalog management.
 - 🎯 Central per-tenant scheduler with job dispatch as tenant identity.
 - 🎯 Hierarchical skill registry (org/department/project/personal) with immutable OCI digest-pinned bundles.
 - 🎯 Legacy filesystem-only skill sharing and static gateway tokens removed after cutover, with optional pull-through cache retained for startup resilience.
+
+**Phase 5 (Headless API + CLI, complete):**
+- ✅ **Hosting adapter migration**: `HostingAdapter` interface + `OnPremHostingAdapter` (Null Object default) + `GcpHostingAdapter`; cloud SDKs are lazy-loaded optional dependencies; on-prem runs with no cloud SDK present.
+- ✅ **Terraform split**: `terraform/core/` (cloud-agnostic) + `terraform/cloud/gcp/`; Crossplane module removed.
+- ✅ **Helm**: `platform/helm/values/gcp.yaml` override; `values.yaml` defaults to on-prem with zero cloud vars required.
+- ✅ **API surface hardening**: All routes under `/api/v1/`; consistent `{ error, code }` error envelopes; cursor-based keyset pagination on audit log; global error handler middleware.
+- ✅ **OpenAPI 3.1**: Hand-authored spec covering all 55+ endpoints; emitted at build time; served at runtime; CI drift gate (`pnpm emit-openapi && git diff --exit-code`).
+- ✅ **`libs/contracts` SDK**: `openapi-typescript` generates typed paths; `openapi-fetch` typed client factory; consumed by CLI and available to external consumers.
+- ✅ **`oc` CLI** (`apps/cli`): Commander-based binary covering tenants, policies, MCP servers, skills, budget, audit, tokens, providers, metrics, and auth. `--output table|json`; `OPENCRANE_TOKEN`/`--token` and `OPENCRANE_URL`/`--url`.
+- ✅ **Capability parity audit**: All UI-only endpoints (`/metrics/server`, `/auth/me`, `/auth/login`, `/auth/callback`, `/auth/logout`) added to the OpenAPI spec and CLI.
+- ✅ **Auth alignment**: OIDC for human operators; projected ServiceAccount tokens for automation.
+- ✅ **UI extraction**: `apps/control-plane-ui` removed from this repository; platform is fully operable with zero UI deployed.
 
 ## Components
 
 | Component | Path | Description |
 |-----------|------|-------------|
-| Helm chart | `helm/opencrane/` | K8s manifests, CRDs, operator + control plane deployments |
-| Operator | `operator/` | Watches Tenant/AccessPolicy CRDs, reconciles per-tenant resources |
-| Control Plane | `control-plane/` | Express REST API with Prisma ORM for tenant/skill/policy management |
-| Control Plane UI | `apps/control-plane-ui/` | Angular admin frontend for Obot control, MCP install, and skills catalog/entitlements |
+| Helm chart | `platform/helm/` | K8s manifests, CRDs, operator + control plane deployments |
+| Operator | `apps/operator/` | Watches Tenant/AccessPolicy CRDs, reconciles per-tenant resources via `HostingAdapter` |
+| Control Plane | `apps/control-plane/` | Headless Express REST API (`/api/v1`) with Prisma ORM; emits `openapi.json` at build time |
+| CLI | `apps/cli/` | `oc` binary — full administrative surface over the control-plane API |
+| Contracts | `libs/contracts/` | Generated TypeScript client + DTOs from `openapi.json`; consumed by CLI and external surfaces |
 | Docker | `docker/` | Container images for tenant pods, operator, and control plane |
 | Skills | `skills/shared/` | Org/team shared skill library |
-| Terraform | `terraform/` | GCP infrastructure: GKE, Cloud SQL, VPC, Crossplane |
+| Terraform | `terraform/` | `core/` (cloud-agnostic) + `cloud/gcp/` (GCP-specific); Crossplane removed |
 
 ## Quick Start
 
@@ -303,13 +323,22 @@ cp terraform.tfvars.example terraform.tfvars  # edit with your GCP project
 terraform init && terraform apply
 
 # 2. Install the platform
-helm install opencrane helm/opencrane \
-  -f helm/opencrane/values/gcp.yaml \
+helm install opencrane platform/helm/opencrane \
+  -f platform/helm/opencrane/values/gcp.yaml \
   --set tenant.storage.gcpProject=my-project \
   --set ingress.domain=opencrane.ai \
   --set controlPlane.database.existingSecret=opencrane-cloudsql
 
-# 3. Create a tenant
+# 3. Create a tenant via the oc CLI
+export OPENCRANE_URL=https://admin.opencrane.ai
+export OPENCRANE_TOKEN=<your-access-token>
+
+oc tenants create \
+  --name jente \
+  --display-name "Jente" \
+  --email jente@example.com
+
+# Or via CRD directly
 kubectl apply -f - <<EOF
 apiVersion: opencrane.io/v1alpha1
 kind: Tenant
@@ -322,6 +351,32 @@ EOF
 ```
 
 The operator creates a GCS bucket, Workload Identity service account, encryption key, deployment, service, and ingress. Access at `https://jente.opencrane.ai`.
+
+### CLI Quick Reference
+
+```bash
+# Point the CLI at your control plane
+export OPENCRANE_URL=https://admin.opencrane.ai
+export OPENCRANE_TOKEN=<your-access-token>
+
+oc tenants list                         # list all tenants
+oc tenants get jente                    # inspect a tenant
+oc tenants suspend jente                # scale to zero
+oc tenants resume jente                 # bring back
+
+oc policies list                        # list access policies
+oc mcp list                             # list MCP servers
+oc skills list                          # list skill catalog
+oc budget spend jente                   # current spend for a tenant
+
+oc audit list --tenant jente --limit 50 # query the audit log
+oc metrics server                       # server utilisation snapshot
+oc auth me                              # current auth identity
+
+oc tenants list --output json | jq '.[].name'   # machine-readable output
+```
+
+See `docs/cli.md` for the full command reference and `docs/api.md` for the HTTP API reference.
 
 ### Version Pinning
 

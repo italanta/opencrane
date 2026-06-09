@@ -49,6 +49,13 @@ This is an updated roadmap for shipping OpenCrane, the enterprise multi-tenant A
 - Memory adoption gate is now explicit: dataset granularity choice, AccessPolicy-to-Cognee permission mapping, source-permission propagation, and freshness invalidation strategy are mandatory before production cutover. Self-hosted audit parity is tracked as an operational hardening item.
 - `docs/memory.md` is now the canonical target-state design for the memory layer.
 
+**Live update (2026-06-09) — plan reconciled against code**:
+- **Phase 5 (headless API + CLI + hosting adapter) shipped and is the current branch.** `oc` CLI, emitted OpenAPI, generated `libs/contracts` client, and removal of `apps/control-plane-ui` are all in place.
+- **Phase 5 is not fully closed:** Crossplane was never torn down. The Terraform `modules/crossplane/` module, `crossplane-provider.yaml` Helm template, and `values.yaml` references still exist, so the "no Crossplane / clean on-prem cluster / Terraform-only-GCP" exit criteria remain open.
+- **Phase 4 was paused mid-flight, not completed.** Built: org-index schema v2 metadata, Slack lineage/freshness, projected-token Deployment migration, and the control-plane MCP/Skills/third-party **management layer** (Prisma models + CRUD routes + `effective-contract` endpoint). Not built: the runtime enforcement planes (Obot gateway deploy, skill registry service, operator config-slaving + drift repair, real grant compilation) and the entire fleet-awareness track (Org Context SDK, awareness contract, eval harness, skills-sharing protocol).
+- **Phase 5 deleted the admin UI that Phase 4 partially targeted**, so Phase 4 success criteria referencing `control-plane-ui` are re-scoped to API + CLI parity.
+- Section-level reconciliation notes added inline to Phase 4 (progress, reality check, success criteria) and Phase 5 (Step 1, success criteria).
+
 **Strategic approach**: OpenCrane differentiates by combining:
 - **Architectural advantages**: GCS Fuse CSI + Workload Identity (cloud-native isolation), dual-write pattern (CRDs + PostgreSQL), policy-first governance (AccessPolicy CRDs → CiliumNetworkPolicy).
 - **Tactical features**: Cost control (LiteLLM), self-service UX (web portal), memory cutover (Cognee write-through).
@@ -827,21 +834,29 @@ apps/
 
 ### Current Implementation Progress
 
+> **Reconciled against code 2026-06-09.** Phase 4 was paused mid-flight to deliver Phase 5 (headless API/CLI + hosting adapter). The control-plane **management/data layer** for MCP & Skills is further along than this section previously claimed; the **runtime enforcement planes** and the **fleet-awareness track** are not started. The Phase 5 UI removal also invalidated the earlier control-plane-ui progress item.
+
 - [x] Org index schema v2 metadata fields now exist in the harvesting pipeline and control-plane persistence model for department/project scope, confidentiality, jurisdiction, retention class, ACL lineage, freshness markers, and ingest cursor tracking.
 - [x] Slack harvesting now emits the required lineage/freshness metadata, and ingestion rejects non-conformant org index records before they enter the shared awareness corpus.
 - [x] Operator tenant Deployment projected-token migration for `aud=obot-gateway` and `aud=skill-registry` is implemented (`apps/operator/src/tenants/deploy/3-deployment.ts`).
-- [x] Managed runtime contract Phase 4 scaffolding (`contractVersion`, `mcp.gateway`, `mcp.servers`, `skills.registry`, `skills.entitled`) is implemented (`apps/operator/src/tenants/deploy/2-config-map.ts`).
-- [x] Control-plane UI Phase 4 slice now includes MCP servers, skill catalog, and schedules pages plus reusable grant, skill, and MCP card components under `apps/control-plane-ui/src/app/`.
+- [~] Managed runtime contract Phase 4 scaffolding (`contractVersion`, `mcp.gateway`, `mcp.servers`, `skills.registry`, `skills.entitled`) exists in `apps/operator/src/tenants/deploy/2-config-map.ts`, **but `mcp.servers`/`skills.entitled` are explicitly advisory stubs** — real grant compilation at `GET /tenants/:name/effective-contract` is not wired into the runtime planes yet.
+- [x] Control-plane MCP/Skills/third-party **management surface** is implemented: Prisma models (`McpServer`, `McpServerGrant`, `McpServerCredential`, `SkillBundle`, `SkillEntitlement`, `SkillPromotion`, `ThirdPartySource`, `ThirdPartySourceItem`) plus CRUD routes (`routes/mcp-servers.ts`, `routes/skill-catalog.ts`, `routes/third-party-sources.ts`) and a `GET /tenants/:name/effective-contract` endpoint in the OpenAPI spec.
+- [⛔] ~~Control-plane UI Phase 4 slice (MCP servers, skill catalog, schedules pages + components)~~ — **removed by Phase 5.** `apps/control-plane-ui` no longer exists in this repo; admin surfaces are now API + `oc` CLI only. Any external admin UI lives in a consumer repo.
 - [ ] Connector rollout beyond Slack and the final conformance enforcement bar remain blocked on the open Phase 4 connector-adoption and department-scope decisions.
 
 ### Phase 4 Reality Check (Current Gaps)
 
-- [ ] Obot MCP Gateway is not yet deployed in-cluster; current config would point to non-existent endpoints.
-- [ ] Skill Registry & Delivery service (skills app) is not implemented yet.
-- [ ] Operator reconcile logic has not yet been updated for MCP + skills plane config/grants and drift repair.
-- [ ] Control-plane MCP/skills CRUD and third-party ingest routes are not yet implemented.
-- [ ] Control-plane frontend CRUD/install flows for Obot control, MCP install, and skill catalog publication are not implemented yet; the admin read/list slice now exists in `apps/control-plane-ui`.
+- [ ] **Obot MCP Gateway is not correctly implemented** (verified 2026-06-09). The Helm deployment (`obot-mcp-gateway-deployment.yaml`) is a non-functional placeholder:
+  - Image `ghcr.io/opencrane/obot-mcp-gateway:latest` is never built/published (registry returns 401; no in-repo Dockerfile or source).
+  - Env vars `OBOT_ADMIN_ENABLED` / `OBOT_HEADLESS` are **invented** — real Obot (`github.com/obot-platform/obot`) uses `OBOT_SERVER_ENABLE_AUTHENTICATION`, `OBOT_BOOTSTRAP_TOKEN`, `OBOT_SERVER_AUTH_OWNER_EMAILS`/`ADMIN_EMAILS`, requires a **PostgreSQL backend**, and an OIDC/auth config. None of that is wired.
+  - No config-slaving: the operator does not push the MCP server registry/grants to Obot, and there is no `aud=obot-gateway` projected-token validation or RFC 8693 downstream-credential brokering.
+  - **Decision (2026-06-09): MCP uses Obot (off-the-shelf, not self-built).** Action: deploy the real upstream Obot image with a correct config contract (Postgres, bootstrap token, auth), then build the operator reconcile path that slaves Obot's MCP server registry to the control-plane `McpServer` rows + compiled grants, and the projected-token / credential-broker integration.
+- [ ] **Skill Registry & Delivery service must be built in-house** (decision 2026-06-09 — *self-made*, unlike MCP). No in-repo service exists; `skill-registry-deployment.yaml` points at the never-published `ghcr.io/opencrane/skill-registry:latest`. Build a new `apps/skill-registry` (OCI/ORAS over Zot per Phase 4 design): per-read entitlement enforcement, `get-by-entitled-digest` only (no list/search on the pod-facing endpoint), existence-hiding 404s, `aud=skill-registry` projected-token validation, and Trivy/Grype ingest scanning. It consumes the existing control-plane `SkillBundle`/`SkillEntitlement` grant compiler output via the effective-contract.
+- [ ] Operator reconcile logic has **not** been updated for MCP + skills plane config/grants and drift repair — `apps/operator/src/tenants/operator.ts` reconcile contains no plane config-slaving or drift-repair path.
+- [x] Control-plane MCP/skills CRUD and third-party ingest routes **are** implemented (see Current Implementation Progress above). What remains is wiring these grants to the live planes and enforcing entitlement at the registry boundary, not the routes themselves.
+- [⛔] ~~Control-plane frontend CRUD/install flows~~ — out of scope after Phase 5 UI removal; delivered (if at all) by an external consumer UI against the published API.
 - [x] Helm manifests/NetworkPolicies/CRDs for both ingress planes are now scaffolded under `platform/helm/`, including plane services, plane deployments, ingress NetworkPolicies, and the `MCPServer`/`SkillRegistry`/`Schedule` CRDs.
+- [ ] Fleet-awareness track (Org Context SDK, awareness contract + versioned rollout, AccessPolicy→Cognee compiler, fleet evaluation harness, awareness SLO dashboards, skills-sharing protocol runtime) — **not started.**
 
 ### Key Tasks (Phase 4)
 
@@ -895,9 +910,11 @@ apps/
 - [ ] MCP servers are manageable via control-plane CRUD with per-scope entitlement grants.
 - [ ] Third-party MCP servers and skills can be installed from upstream sources via the ingest pipeline (scan → validate → register → entitle).
 - [ ] Skill catalog supports authoring, promotion/demotion with admin review, and Cognee-backed semantic search.
-- [ ] Control-plane UI supports Obot config, MCP install, skill catalog/entitlements, and third-party source installation without direct plane admin access.
+- [⛔] ~~Control-plane UI supports Obot config, MCP install, skill catalog/entitlements, and third-party source installation~~ — **superseded by Phase 5:** the admin UI was removed from this repo. Re-scope this criterion to "every Obot/MCP/skill admin action is reachable via the published API + `oc` CLI"; UI parity (if desired) is an external-consumer concern.
 - [ ] Per-tenant schedules survive pod suspension and restarts; claws run no self-owned cron.
 - [ ] All new code conforms to `AGENTS.md`.
+
+> **Phase 4 reconciliation note (2026-06-09):** All success criteria above except the projected-token Deployment migration and org-index-schema-v2 metadata remain unmet. The control-plane management/data layer (models + CRUD routes + effective-contract endpoint) exists, but no criterion here is satisfied by it alone — they require the live planes, grant compilation, and enforcement that are still open.
 
 ---
 
@@ -948,6 +965,8 @@ Phase 5 is executed in five sequential steps. Each step must be complete before 
    - Split Terraform: carve `terraform/core/` (cloud-agnostic) from `terraform/cloud/gcp/`; remove the Crossplane module.
    - Add `platform/helm/values/gcp.yaml` override; set on-prem defaults in `values.yaml` so zero cloud vars are required for a plain cluster install.
    - Exit criterion: k3d e2e passes unchanged (on-prem adapter); GCP adapter unit tests pass against a fake bucket client; on-prem path builds and runs with the GCS SDK absent; import-boundary rule enforced.
+
+   > **Reconciled 2026-06-09 — partially complete.** The operator *code* path is migrated to the hosting adapter (`apps/operator/src/hosting/`), the Terraform split (`terraform/core/` + `terraform/cloud/gcp/`) exists, and `values/gcp.yaml` + on-prem defaults are in place. **However, Crossplane is NOT yet removed:** `platform/terraform/modules/crossplane/` still exists and is referenced from `terraform/main.tf`, `terraform/cloud/gcp/main.tf`, and `modules/app-deploy/main.tf`; `platform/helm/templates/crossplane-provider.yaml` is still a rendered template; and `platform/helm/values.yaml` + the k3d test values still carry Crossplane settings. The "remove the Crossplane module" exit item and the clean-cluster / GCP-adapter validation remain open.
 
 **Step 2 — API surface hardening + OpenAPI** ✅ Complete
    - All business routes re-namespaced to `/api/v1/`. Infrastructure routes (`/healthz`, `/prom`) unchanged.
@@ -1020,6 +1039,8 @@ Phase 5 is executed in five sequential steps. Each step must be complete before 
 - [ ] The GCP adapter provisions per-tenant GCS buckets directly in the operator; no Crossplane dependency.
 - [ ] `terraform/core/` applies to any cluster; `terraform/cloud/gcp/` is the only GCP-specific path.
 - [ ] All new code conforms to `AGENTS.md`.
+
+> **Phase 5 reconciliation note (2026-06-09):** The API/CLI/contract/UI-removal criteria (first 7) are met. The final three (clean-cluster deploy, no-Crossplane GCP adapter, Terraform-only-GCP path) remain open because the Crossplane Terraform module + Helm template + values references were never deleted (see Step 1 note above). Phase 5 is therefore **"done except Crossplane teardown + cloud-path validation"**, not fully closed.
 
 ---
 
