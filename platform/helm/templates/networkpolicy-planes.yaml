@@ -1,3 +1,68 @@
+{{- if .Values.networkPolicy.enabled }}
+# Ingress policy for the control-plane service.
+#
+# The /api/internal/* routes have no auth middleware — they rely exclusively on
+# this policy to prevent arbitrary pods from calling them.  Permitted sources:
+#   - Ingress controller: external API traffic routed through the cluster ingress.
+#   - Obot / mcp-gateway pod: polls /api/internal/obot-registry to sync the MCP catalog.
+#   - Skill-registry pod: calls /api/internal/bundles to deliver skill content.
+#   - Operator pod: reconciliation calls to /api/v1/* for tenant and policy state.
+#
+# NetworkPolicy cannot filter by URL path, so this policy covers all control-plane
+# ingress on a single port.  The per-route security boundary is the network layer
+# (only known pods reach the pod) rather than the application layer.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "opencrane.fullname" . }}-control-plane-ingress
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: control-plane
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "opencrane.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: control-plane
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow the cluster ingress controller to forward external API requests.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace | default "ingress-nginx" }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.controlPlane.service.port }}
+    # Allow Obot (mcp-gateway) to poll /api/internal/obot-registry.
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "opencrane.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: mcp-gateway
+      ports:
+        - protocol: TCP
+          port: {{ .Values.controlPlane.service.port }}
+    # Allow the skill-registry to call /api/internal/bundles.
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "opencrane.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: skill-registry
+      ports:
+        - protocol: TCP
+          port: {{ .Values.controlPlane.service.port }}
+    # Allow the operator to reach /api/v1/* for reconciliation.
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "opencrane.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: operator
+      ports:
+        - protocol: TCP
+          port: {{ .Values.controlPlane.service.port }}
+---
+{{- end }}
 {{- if and .Values.networkPolicy.enabled .Values.mcpGateway.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

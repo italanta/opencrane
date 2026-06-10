@@ -213,7 +213,8 @@ skillRegistry:
 projectedIdentity:
   ttlSeconds: 600
 
-# -- Network policy (default egress control for tenant pods)
+# -- Network policy (default egress control for tenant pods and ingress control
+# for internal platform services)
 networkPolicy:
   enabled: true
   # -- Allow DNS resolution
@@ -224,6 +225,10 @@ networkPolicy:
     - api.anthropic.com
   # -- CIDR-based egress rules (works with standard NetworkPolicy)
   egressAllowCIDRs: []
+  # -- Namespace where the ingress controller runs. Used by the control-plane
+  # ingress NetworkPolicy to permit external API traffic routed through it.
+  # Override for non-standard ingress namespaces (e.g. "traefik", "gateway").
+  ingressNamespace: ingress-nginx
 
 # -- Org-wide secrets injected into all tenant pods
 orgSecrets:
