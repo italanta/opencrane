@@ -47,6 +47,55 @@ describe("TenantResourceBuilder", () =>
     expect(runtimeContract.skills.registry).toBe(defaultConfig.skillRegistryUrl);
   });
 
+  it("pins workspace path and disables bootstrap even when agents block is overridden", () =>
+  {
+    const tenant = _makeTenant("ws", {
+      configOverrides: {
+        // Override the entire agents key — platform workspace settings must still survive.
+        agents: { defaults: { model: "claude-opus-4-8" } },
+      },
+    });
+
+    const configMap = _BuildConfigMap(defaultConfig, tenant, "default");
+    const payload = JSON.parse(configMap.data?.["openclaw.json"] ?? "{}");
+
+    expect(payload.agents.defaults.workspace).toBe("/data/openclaw/workspace");
+    expect(payload.agents.defaults.skipBootstrap).toBe(true);
+    // Tenant override must still be present alongside the platform settings.
+    expect(payload.agents.defaults.model).toBe("claude-opus-4-8");
+  });
+
+  it("emits L0 and L2 workspace file keys in the ConfigMap", () =>
+  {
+    const tenant = _makeTenant("identity-test", { team: "engineering" });
+    const configMap = _BuildConfigMap(defaultConfig, tenant, "default");
+    const data = configMap.data ?? {};
+
+    // L0 platform files must be present.
+    expect(data["AGENTS.md"]).toBeDefined();
+    expect(data["TOOLS.md"]).toBeDefined();
+
+    // L2 seed files must be present.
+    expect(data["SOUL.md.seed"]).toBeDefined();
+    expect(data["IDENTITY.md.seed"]).toBeDefined();
+    expect(data["USER.md.seed"]).toBeDefined();
+
+    // AGENTS.md must contain key platform concepts (static file — references env var names).
+    expect(data["AGENTS.md"]).toContain("managed");
+    expect(data["AGENTS.md"]).toContain("OPENCRANE_MCP_GATEWAY_URL");
+    expect(data["AGENTS.md"]).toContain("OPENCRANE_SKILL_REGISTRY_URL");
+    expect(data["AGENTS.md"]).toContain("Platform Invariants");
+
+    // TOOLS.md must reference the env var names (static file — no literal URLs injected).
+    expect(data["TOOLS.md"]).toContain("OPENCRANE_MCP_GATEWAY_URL");
+    expect(data["TOOLS.md"]).toContain("OPENCRANE_SKILL_REGISTRY_URL");
+
+    // L2 seed files must have non-empty content.
+    expect(data["SOUL.md.seed"]!.length).toBeGreaterThan(0);
+    expect(data["IDENTITY.md.seed"]!.length).toBeGreaterThan(0);
+    expect(data["USER.md.seed"]!.length).toBeGreaterThan(0);
+  });
+
   it("publishes policy reference metadata and defers grants to effective-contract", () =>
   {
     const tenant = _makeTenant("jente", {

@@ -104,14 +104,14 @@
   behaviour cannot be changed" is guaranteed by L0 re-stamping + the IAM planes (Obot gateway +
   skill registry), NOT by prompt prose (OpenClaw has no precedence between files).
 
-- [ ] **P4C.1 Workspace bootstrap + layered seeding (smallest first slice).** Operator
-  `_BuildConfigMap` emits the workspace files as ConfigMap keys and sets `agents.defaults.workspace`
-  to a persistent path under `/data/openclaw` + `skipBootstrap: true` in `openclaw.json`.
-  `entrypoint.sh` re-stamps L0 files (`AGENTS.md`, `TOOLS.md`) every boot and seeds L2 files
-  once-if-absent (reusing the `entrypoint.sh:248` copy pattern). Static content to start.
-  Anchor: `apps/operator/src/tenants/deploy/2-config-map.ts`, `apps/tenant/deploy/entrypoint.sh`.
-  Acceptance: a fresh pod boots with the workspace populated and no interactive bootstrap;
-  a tenant edit to `SOUL.md` survives restart; a tenant edit to `AGENTS.md` is reverted on restart.
+- [x] **P4C.1 Workspace bootstrap + layered seeding.** `_BuildConfigMap` emits L0 files
+  (`AGENTS.md`, `TOOLS.md`) and L2 seed files (`SOUL.md.seed`, `IDENTITY.md.seed`, `USER.md.seed`)
+  as ConfigMap keys; pins `agents.defaults.workspace = /data/openclaw/workspace` and
+  `skipBootstrap: true` after the tenant-override merge (so they survive any `agents` override).
+  `entrypoint.sh` re-stamps L0 files every boot and seeds L2 files once-if-absent.
+  AGENTS.md contains the full platform brief (managed mode, gateway/registry URLs, ownership
+  table, platform invariants). TOOLS.md lists live URLs (static for P4C.1).
+  L2 seeds are personalised with tenant name and team. 2 tests added; 54/54 operator tests pass.
 - [ ] **P4C.2 Contract-derived `TOOLS.md`.** Extend the effective contract + re-pull loop to render
   `TOOLS.md` from the tenant's entitled MCP servers + skills; SIGHUP + agent-awareness note on change.
   Anchor: `routes/internal/tenant-contract.ts`, `entrypoint.sh` poll loop. Acceptance: granting or

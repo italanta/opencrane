@@ -3,6 +3,8 @@ set -euo pipefail
 
 STATE_DIR="${OPENCLAW_STATE_DIR:-/data/openclaw}"
 RUNTIME_DIR="$STATE_DIR/runtime"
+# Persistent workspace dir — must match agents.defaults.workspace in openclaw.json.
+WORKSPACE_DIR="${OPENCLAW_WORKSPACE_DIR:-$STATE_DIR/workspace}"
 SECRETS_DIR="${OPENCLAW_SECRETS_DIR:-/data/secrets}"
 SHARED_SKILLS="${OPENCRANE_SHARED_SKILLS_DIR:-/shared-skills}"
 CONFIG_SOURCE="${OPENCRANE_CONFIG_SOURCE_PATH:-/config/openclaw.json}"
@@ -223,7 +225,7 @@ function _main()
   # Ensure GCS-backed directory structure
   mkdir -p "$STATE_DIR/agents/main/agent" "$SKILLS_DIR" \
            "$STATE_DIR/sessions" "$STATE_DIR/uploads" "$STATE_DIR/knowledge" \
-           "$RUNTIME_DIR"
+           "$RUNTIME_DIR" "$WORKSPACE_DIR"
 
   # Ensure pod-local secrets dir (emptyDir, Memory-backed)
   mkdir -p "$SECRETS_DIR"
@@ -249,6 +251,24 @@ function _main()
     cp "$CONFIG_SOURCE" "$STATE_DIR/openclaw.json"
     echo "[opencrane] Initialized config from base template"
   fi
+
+  # L0 workspace files — platform-managed, re-stamped on every boot so operator edits
+  # are always applied.  Tenant edits to these files are intentionally reverted.
+  for _l0_file in AGENTS.md TOOLS.md; do
+    if [ -f "/config/${_l0_file}" ]; then
+      cp -f "/config/${_l0_file}" "$WORKSPACE_DIR/${_l0_file}"
+    fi
+  done
+  echo "[opencrane] Workspace L0 files applied (AGENTS.md, TOOLS.md)"
+
+  # L2 workspace files — seeded from *.seed templates only when the target file does
+  # not yet exist.  Once present, they are tenant-owned and preserved across restarts.
+  for _seed_file in SOUL.md IDENTITY.md USER.md; do
+    if [ ! -f "$WORKSPACE_DIR/${_seed_file}" ] && [ -f "/config/${_seed_file}.seed" ]; then
+      cp "/config/${_seed_file}.seed" "$WORKSPACE_DIR/${_seed_file}"
+      echo "[opencrane] Seeded workspace file: ${_seed_file}"
+    fi
+  done
 
   # Symlink shared org skills
   _link_shared_skills \
