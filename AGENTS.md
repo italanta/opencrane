@@ -125,7 +125,7 @@ async function provision(tenant: Tenant): Promise<void>
 
 ### JSDoc Documentation
 
-All declarations must have JSDoc comments.
+All declarations must have JSDoc comments. This includes **every interface property and class field**, not just the containing type or class.
 
 ```typescript
 /** Service for managing tenant lifecycle */
@@ -152,6 +152,30 @@ interface OperatorConfig
 	watchNamespace: string;
 	/** Default container image for tenant pods */
 	tenantDefaultImage: string;
+}
+```
+
+**WRONG — properties undocumented:**
+```typescript
+interface McpServerEntry
+{
+	id: string;
+	name: string;
+	endpoint: string;
+}
+```
+
+**CORRECT — every property documented:**
+```typescript
+/** A registered MCP server entry returned by the catalog API. */
+interface McpServerEntry
+{
+	/** Stable identifier used for deduplication across polls. */
+	id: string;
+	/** Human-readable name shown in the UI. */
+	name: string;
+	/** Fully-qualified URL of the MCP server endpoint. */
+	endpoint: string;
 }
 ```
 
@@ -189,6 +213,53 @@ export function _Resolve(): ResolveResult
 {
 	return { status: "ok" };
 }
+```
+
+### Internal Routes Without Auth Middleware
+
+When a route is intentionally excluded from `___AuthMiddleware` and relies on Kubernetes NetworkPolicy for access control instead, the router function must:
+
+1. State this explicitly in its JSDoc with a bolded note.
+2. Include a `@see` tag pointing to the Helm NetworkPolicy template that enforces the restriction.
+3. Include a second `@see` pointing to the deployment template that wires the caller.
+
+```typescript
+/**
+ * Internal router for widget delivery.
+ *
+ * **This router is NOT behind `___AuthMiddleware`.**
+ * Access is enforced by Kubernetes NetworkPolicy.
+ *
+ * @see platform/helm/templates/networkpolicy-planes.yaml — policy restricting
+ *   which pods can reach the control-plane service.
+ * @see platform/helm/templates/widget-consumer-deployment.yaml — deployment
+ *   that sets WIDGET_URL to this endpoint.
+ */
+export function _RegisterInternalWidgets(prisma: PrismaClient): Router { ... }
+```
+
+### Custom HTTP Response Headers
+
+Non-standard response headers (the `X-*` prefix convention) must include an inline comment that explains:
+
+1. **Why** the header is being set — what the receiver does with it.
+2. **Which standard or convention** it follows, with a `@see` URL.
+
+The `X-` prefix was deprecated for IANA registration by RFC 6648 but remains the standard practice for private/internal headers.
+
+```typescript
+// Content-Type: standard HTTP header (RFC 9110 §8.3) — tells the consumer
+// how to parse the response body.
+// @see https://www.rfc-editor.org/rfc/rfc9110#section-8.3
+res.setHeader("Content-Type", bundle.contentType ?? "text/markdown");
+
+// X-Widget-Name / X-Widget-Digest: proprietary identification headers using
+// the informal X- prefix (RFC 6648 deprecated IANA use but convention remains
+// standard for private headers).  Allow the receiver to cache and forward
+// identity without parsing the URL.
+// @see https://www.rfc-editor.org/rfc/rfc6648
+res.setHeader("X-Widget-Name", widget.name);
+res.setHeader("X-Widget-Digest", digest);
 ```
 
 ### Function Naming Conventions

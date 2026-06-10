@@ -3,12 +3,7 @@ import { Router } from "express";
 import type { PrismaClient } from "@prisma/client";
 
 import type { OidcAuthService } from "./oidc.service.js";
-import {
-  _CreateDeviceGrant,
-  _FindGrantByUserCode,
-  _AuthorizeDeviceGrant,
-  _PollDeviceGrant,
-} from "./device-grant.js";
+import { _AuthorizeDeviceGrant, _CreateDeviceGrant, _FindGrantByUserCode, _PollDeviceGrant } from "./device-grant.js";
 
 /**
  * Build the auth router covering:

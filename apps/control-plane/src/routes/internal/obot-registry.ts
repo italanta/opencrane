@@ -1,69 +1,72 @@
 import { Router } from "express";
 import type { PrismaClient } from "@prisma/client";
 
-/**
- * Obot /v0.1/servers registry format — the shape Obot consumes when polling
- * OBOT_SERVER_PROVIDER_REGISTRIES to sync the MCP server catalog.
- */
-interface ObotRegistryItem
-{
-  id: string;
-  name: string;
-  description: string;
-  remotes?: Array<{ name: string; url: string }>;
-  configurationRequired?: boolean;
-  configurationMessage?: string;
-}
-
-interface ObotRegistryResponse
-{
-  items: ObotRegistryItem[];
-  cursor: string | null;
-}
+import type { ObotRegistryItem, ObotRegistryResponse } from "./obot-registry.types.js";
 
 /**
  * Internal router that exposes the OpenCrane MCP catalog in Obot's
- * /v0.1/servers registry format.
+ * `/v0.1/servers` registry format.
  *
- * Obot is configured via OBOT_SERVER_PROVIDER_REGISTRIES to poll this endpoint
- * and sync the McpServer rows from the control-plane database into its own registry.
+ * Obot polls this endpoint (configured via `OBOT_SERVER_PROVIDER_REGISTRIES`)
+ * to sync McpServer rows from the control-plane database into its own catalog.
  *
- * This route is NOT behind the bearer-token auth middleware — it is internal-only,
- * protected by Kubernetes NetworkPolicy (reachable only from the Obot pod).
+ * **This router is NOT behind `___AuthMiddleware`.**
+ * Access control is enforced at the network layer instead: only the Obot pod
+ * can reach this endpoint because the Kubernetes NetworkPolicy for the
+ * control-plane allows ingress only from known platform components.
+ *
+ * @see platform/helm/templates/networkpolicy-planes.yaml — NetworkPolicy
+ *   template that governs pod-to-pod reachability for runtime planes.
+ *   The control-plane ingress equivalent lives alongside it.
+ * @see platform/helm/templates/obot-mcp-gateway-deployment.yaml — where
+ *   `OBOT_SERVER_PROVIDER_REGISTRIES` is set to this endpoint's URL.
  *
  * @param prisma - Prisma client for database access.
- * @returns Configured Express router.
  */
-export function obotRegistryRouter(prisma: PrismaClient): Router
+export function _RegisterObotRegistry(prisma: PrismaClient): Router
 {
   const router = Router();
 
-  router.get("/v0.1/servers", async function _listObotServers(req, res)
+  /**
+   * Return all active MCP servers in the Obot registry wire format.
+   *
+   * Only `Active` servers are included so Obot never surfaces endpoints
+   * that are not yet live.  The response is a single page (cursor = null);
+   * Obot stops pagination when it sees a null cursor.
+   */
+  router.get("/v0.1/servers", async function _listObotServers(req, res, next)
   {
-    const servers = await prisma.mcpServer.findMany({
-      where: { status: "Active" },
-      orderBy: { name: "asc" },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        endpoint: true,
-        transport: true,
-      },
-    });
-
-    const items: ObotRegistryItem[] = servers.map(function _mapServer(server)
+    try
     {
-      return {
-        id: server.id,
-        name: server.name,
-        description: server.description,
-        remotes: [{ name: server.name, url: server.endpoint }],
-      };
-    });
+      // 1. Fetch only Active servers, ordered by name so the catalog is
+      //    deterministic across polls (Obot deduplicates by id, not position).
+      const servers = await prisma.mcpServer.findMany({
+        where: { status: "Active" },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, description: true, endpoint: true, transport: true },
+      });
 
-    const response: ObotRegistryResponse = { items, cursor: null };
-    res.json(response);
+      // 2. Map each database row to the Obot registry item shape, wrapping
+      //    the endpoint in a `remotes` array as the spec requires.
+      const items: ObotRegistryItem[] = servers.map(function _mapServer(server)
+      {
+        return {
+          id: server.id,
+          name: server.name,
+          description: server.description,
+          remotes: [{ name: server.name, url: server.endpoint }],
+        };
+      });
+
+      // 3. Return the paginated envelope; cursor is null because all active
+      //    servers fit in a single page.
+      const response: ObotRegistryResponse = { items, cursor: null };
+      res.json(response);
+    }
+    catch (err)
+    {
+      next(err);
+    }
   });
 
   return router;

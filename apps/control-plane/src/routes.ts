@@ -6,8 +6,8 @@ import { accessTokensRouter } from "./routes/access-tokens.js";
 import { aiBudgetRouter } from "./routes/ai-budget.js";
 import { auditRouter } from "./routes/audit.js";
 import { groupsRouter } from "./routes/groups.js";
-import { obotRegistryRouter } from "./routes/internal/obot-registry.js";
-import { internalSkillBundlesRouter } from "./routes/internal/skill-bundles.js";
+import { _RegisterObotRegistry } from "./routes/internal/obot-registry.js";
+import { _RegisterInternalBundles } from "./routes/internal/skill-bundles.js";
 import { mcpServersRouter } from "./routes/mcp-servers.js";
 import { metricsRouter } from "./routes/metrics.js";
 import { openapiRouter } from "./routes/openapi-route.js";
@@ -33,9 +33,13 @@ import { _CheckDbHealth } from "./infra/db/healtcheck-db.js";
  */
 export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k8s.CustomObjectsApi, coreApi: k8s.CoreV1Api): Express
 {
-  // Internal routes — no auth middleware; protected by Kubernetes NetworkPolicy.
-  app.use("/api/internal/obot-registry", obotRegistryRouter(prisma));
-  app.use("/api/internal/bundles", internalSkillBundlesRouter(prisma));
+  // Internal routes — mounted before ___AuthMiddleware and not behind any token check.
+  // Access is enforced by Kubernetes NetworkPolicy: only the Obot and skill-registry
+  // pods can reach the control-plane service on the cluster network.
+  // @see platform/helm/templates/networkpolicy-planes.yaml — runtime-plane policies.
+  // @see platform/helm/templates/obot-mcp-gateway-deployment.yaml — OBOT_SERVER_PROVIDER_REGISTRIES wiring.
+  app.use("/api/internal/obot-registry", _RegisterObotRegistry(prisma));
+  app.use("/api/internal/bundles", _RegisterInternalBundles(prisma));
 
   app.use("/api/v1/metrics", metricsRouter(customApi, prisma));
   app.use("/api/v1/audit", auditRouter(prisma));

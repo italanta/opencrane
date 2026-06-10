@@ -48,7 +48,10 @@ function _saveCredentials(token: string, baseUrl: string): void
  */
 async function _sleep(ms: number): Promise<void>
 {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise(function _resolve(resolve: () => void)
+  {
+    setTimeout(resolve, ms);
+  });
 }
 
 /** Register all `oc auth *` sub-commands on the given parent Command. */

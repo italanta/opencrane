@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import type { RequestHandler } from "express";
+import type { NextFunction, Request, RequestHandler, Response } from "express";
 import type { PrismaClient } from "@prisma/client";
 
 import { ___LoadOidcAuthConfig } from "../auth/oidc.config.js";
@@ -39,8 +39,6 @@ export function ___AuthMiddleware(prisma?: PrismaClient): RequestHandler
 // ---------------------------------------------------------------------------
 // Internal async resolution logic
 // ---------------------------------------------------------------------------
-
-import type { Request, Response, NextFunction } from "express";
 
 /**
  * Resolve authentication for a single request.
