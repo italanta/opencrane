@@ -21,14 +21,12 @@
   comment from `platform/helm/templates/operator-rbac.yaml`, removed stale Crossplane comments
   from `platform/terraform/cloud/gcp/main.tf` and `platform/deploy.sh`.
   Verified: `grep -ri crossplane platform/` returns nothing.
-- [ ] **P5.2 On-prem clean-cluster deploy validation.** Deploy the chart to a fresh k3d
-  cluster with `hosting.provider: onprem` and **zero cloud env vars**; run
-  `platform/tests/k3d-e2e.sh`. Acceptance: full reconcile passes; captured run log.
-  **[Needs Docker daemon running.]**
-- [ ] **P5.3 GCP adapter deploy validation.** Apply `terraform/cloud/gcp/` + `values/gcp.yaml`;
-  confirm the operator provisions a per-tenant GCS bucket via `GcpHostingAdapter` (no Crossplane).
-  Acceptance: a tenant CR yields a real bucket; evidence captured.
-  **[BLOCKED — needs GCP project + credentials.]**
+- [x] **P5.2 On-prem clean-cluster deploy validation.** Validated by user (2026-06-10).
+  `platform/tests/k3d-e2e.sh` passed on fresh k3d cluster with `hosting.provider: onprem`
+  and zero cloud env vars.
+- [x] **P5.3 GCP adapter deploy validation.** Validated by user (2026-06-10).
+  `terraform/cloud/gcp/` + `values/gcp.yaml` applied; operator provisioned a per-tenant GCS
+  bucket via `GcpHostingAdapter` (no Crossplane). Acceptance criteria met.
 
 ### Track P4-A — Finish Phase 4 runtime-plane enforcement gaps
 
