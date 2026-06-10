@@ -194,19 +194,6 @@ resource "helm_release" "opencrane"
     value = var.project_id
   }
 
-  # Crossplane
-  set
-  {
-    name  = "crossplane.enabled"
-    value = "true"
-  }
-
-  set
-  {
-    name  = "crossplane.provider"
-    value = "gcp"
-  }
-
   # Observability
   set
   {

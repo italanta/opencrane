@@ -6,6 +6,8 @@ import { accessTokensRouter } from "./routes/access-tokens.js";
 import { aiBudgetRouter } from "./routes/ai-budget.js";
 import { auditRouter } from "./routes/audit.js";
 import { groupsRouter } from "./routes/groups.js";
+import { obotRegistryRouter } from "./routes/internal/obot-registry.js";
+import { internalSkillBundlesRouter } from "./routes/internal/skill-bundles.js";
 import { mcpServersRouter } from "./routes/mcp-servers.js";
 import { metricsRouter } from "./routes/metrics.js";
 import { openapiRouter } from "./routes/openapi-route.js";
@@ -31,6 +33,10 @@ import { _CheckDbHealth } from "./infra/db/healtcheck-db.js";
  */
 export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k8s.CustomObjectsApi, coreApi: k8s.CoreV1Api): Express
 {
+  // Internal routes — no auth middleware; protected by Kubernetes NetworkPolicy.
+  app.use("/api/internal/obot-registry", obotRegistryRouter(prisma));
+  app.use("/api/internal/bundles", internalSkillBundlesRouter(prisma));
+
   app.use("/api/v1/metrics", metricsRouter(customApi, prisma));
   app.use("/api/v1/audit", auditRouter(prisma));
   app.use("/api/v1/tenants", tenantsRouter(customApi, prisma));

@@ -2,6 +2,7 @@ import * as k8s from "@kubernetes/client-node";
 import pino from "pino";
 
 import { _LoadOperatorConfig } from "./config.js";
+import { ObotHealthChecker } from "./mcp-gateway/obot-health-checker.js";
 import { _CreateTenantOperator, IdleChecker } from "./tenants/index.js";
 import { PolicyOperator } from "./policies/operator.js";
 import { _ReadTenantRolloutConfig, TenantUpdateWithCanaryStrategyController } from "./tenant-rollout/tenant-update-with-canary-strategy.controller.js";
@@ -68,6 +69,14 @@ async function main(): Promise<void>
   else
   {
     log.info("tenant rollout auto-update disabled (OPENCRANE_AUTO_UPDATE_ENABLED not set to true)");
+  }
+
+  // Start Obot MCP gateway health checker (Obot self-syncs catalog via OBOT_SERVER_PROVIDER_REGISTRIES;
+  // the operator monitors reachability and logs warnings on failures).
+  if (config.mcpGatewayUrl)
+  {
+    const obotHealthChecker = new ObotHealthChecker(config.mcpGatewayUrl, log);
+    obotHealthChecker.start();
   }
 
   // Start idle-checker (runs on a timer, non-blocking)

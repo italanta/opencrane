@@ -4,3 +4,4 @@ packages:
   - apps/control-plane
   - apps/harvesting-agent
   - apps/cli
+  - apps/skill-registry

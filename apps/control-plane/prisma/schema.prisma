@@ -256,6 +256,8 @@ model SkillBundle {
   description  String               @default("")
   version      String
   digest       String
+  content      String?              @map("content")
+  contentType  String               @default("text/markdown") @map("content_type")
   scope        GrantScope
   status       SkillBundleStatus    @default(Draft)
   tags         String[]             @default([])
@@ -270,6 +272,7 @@ model SkillBundle {
 
   @@unique([name, version, digest])
   @@index([scope])
+  @@index([digest])
   @@map("skill_bundles")
 }
 

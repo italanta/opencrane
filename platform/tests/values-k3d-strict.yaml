@@ -38,9 +38,6 @@ ingress:
   className: nginx
   domain: opencrane.local
 
-crossplane:
-  enabled: false
-
 externalSecrets:
   enabled: false
 

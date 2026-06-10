@@ -1,8 +1,8 @@
 # -----------------------------------------------------------------------------
 # OpenCrane GCP Infrastructure
 #
-# Provisions networking, GKE, Artifact Registry, Crossplane, in-cluster
-# PostgreSQL, the OpenCrane platform, and Cloud DNS for wildcard routing.
+# Provisions networking, GKE, Artifact Registry, in-cluster PostgreSQL,
+# the OpenCrane platform, and Cloud DNS for wildcard routing.
 #
 # Usage:
 #   cd platform/terraform
@@ -67,18 +67,7 @@ module "artifact_registry"
   repository_id = "opencrane"
 }
 
-# ---- Phase 4: Crossplane ----
-
-module "crossplane"
-{
-  source = "./modules/crossplane"
-
-  project_id = var.project_id
-
-  depends_on = [module.gke]
-}
-
-# ---- Phase 5: Application (PostgreSQL + OpenCrane + DB migration) ----
+# ---- Phase 4: Application (PostgreSQL + OpenCrane + DB migration) ----
 
 module "app_deploy"
 {
@@ -90,7 +79,7 @@ module "app_deploy"
   domain       = var.domain
   namespace    = "opencrane"
 
-  depends_on = [module.gke, module.crossplane]
+  depends_on = [module.gke]
 }
 
 # ---- Phase 6: Cloud DNS (wildcard → ingress IP) ----

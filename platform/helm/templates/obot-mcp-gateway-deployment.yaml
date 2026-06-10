@@ -31,22 +31,44 @@ spec:
             - name: http
               containerPort: {{ .Values.mcpGateway.service.port }}
           env:
-            - name: PORT
-              value: {{ .Values.mcpGateway.service.port | quote }}
-            - name: OBOT_ADMIN_ENABLED
+            # Database — Obot requires a PostgreSQL DSN. Provide via the opencrane-obot secret.
+            - name: OBOT_SERVER_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: opencrane-obot
+                  key: dsn
+            # Hostname — used by Obot for OAuth callbacks; set to the in-cluster service URL.
+            - name: OBOT_SERVER_HOSTNAME
+              value: "http://{{ include "opencrane.fullname" . }}-mcp-gateway.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.mcpGateway.service.port }}"
+            # Disable authentication — Obot is in-cluster only; access is controlled by NetworkPolicy.
+            - name: OBOT_SERVER_ENABLE_AUTHENTICATION
               value: "false"
-            - name: OBOT_HEADLESS
-              value: "true"
+            # MCP runtime backend — run MCP server containers as Kubernetes pods.
+            - name: OBOT_SERVER_MCPRUNTIME_BACKEND
+              value: "kubernetes"
+            - name: OBOT_SERVER_MCPCLUSTER_DOMAIN
+              value: "cluster.local"
+            # No credential encryption at rest in the Phase 4 baseline.
+            - name: OBOT_SERVER_ENCRYPTION_PROVIDER
+              value: "none"
+            # Control-plane registry — Obot polls this endpoint to sync the MCP server catalog
+            # with OpenCrane McpServer rows. The control-plane exposes /api/internal/obot-registry
+            # in Obot's /v0.1/servers format.
+            - name: OBOT_SERVER_PROVIDER_REGISTRIES
+              value: "http://{{ include "opencrane.fullname" . }}-control-plane.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.controlPlane.service.port }}/api/internal/obot-registry"
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 4
+          readinessProbe:
+            httpGet:
+              path: /healthz
               port: http
             initialDelaySeconds: 10
             periodSeconds: 10
-          readinessProbe:
-            tcpSocket:
-              port: http
-            initialDelaySeconds: 5
-            periodSeconds: 5
           resources:
             {{- toYaml .Values.mcpGateway.resources | nindent 12 }}
 {{- end }}

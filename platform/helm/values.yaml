@@ -146,21 +146,22 @@ ingress:
     # -- Secret name for wildcard TLS cert (*.domain)
     secretName: opencrane-wildcard-tls
 
-# -- Obot MCP gateway plane settings
+# -- Obot MCP gateway plane settings.
+# Uses the upstream obot-platform/obot image. Requires an `opencrane-obot` k8s Secret
+# with key `dsn` containing the PostgreSQL DSN for Obot's own database.
+# Authentication is disabled; access is controlled by NetworkPolicy (in-cluster only).
+# Obot polls the control-plane /api/internal/obot-registry endpoint to sync the MCP catalog.
 mcpGateway:
   enabled: true
   image:
-    repository: ghcr.io/opencrane/obot-mcp-gateway
+    repository: ghcr.io/obot-platform/obot
     tag: latest
     pullPolicy: IfNotPresent
   replicas: 1
   service:
     port: 8080
   podSecurityContext:
-    runAsNonRoot: true
-    runAsUser: 10001
-    runAsGroup: 10001
-    fsGroup: 10001
+    runAsNonRoot: false
     seccompProfile:
       type: RuntimeDefault
   securityContext:
@@ -171,13 +172,13 @@ mcpGateway:
     readOnlyRootFilesystem: false
   resources:
     requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
-      cpu: 500m
+      cpu: 250m
       memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
 
-# -- Skill registry delivery plane settings
+# -- Skill registry delivery plane settings (self-built; source in apps/skill-registry).
 skillRegistry:
   enabled: true
   image:
@@ -232,12 +233,6 @@ orgSecrets:
   envMappings: {}
   #   openai-api-key: OPENAI_API_KEY
   #   anthropic-api-key: ANTHROPIC_API_KEY
-
-# -- Crossplane is no longer on the default path.
-# Bucket provisioning is handled in-operator via the cloud SDK (GcpHostingAdapter etc).
-# If you need Crossplane for other resource types, deploy it separately as an optional component.
-crossplane:
-  enabled: false
 
 # -- External Secrets Operator integration
 externalSecrets:
