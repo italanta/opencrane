@@ -3,9 +3,10 @@
 ## Current State (2026-06-10)
 
 - **Phases 1–3**: complete and validated.
-- **Phase 5** (headless API + CLI + hosting adapter): code-complete. Two deploy-validation runs pending (P5.2 on-prem, P5.3 GCP). See Open Backlog.
-- **Phase 4 Track A** (MCP & Skills runtime planes): ~90% built and wired. Three narrow gaps remain (P4A.1–P4A.3). See Open Backlog.
+- **Phase 5** (headless API + CLI + hosting adapter): complete. P5.2 (on-prem) and P5.3 (GCP) deploy-validation runs validated by user (2026-06-10).
+- **Phase 4 Track A** (MCP & Skills runtime planes): complete. P4A.1–P4A.3 implemented, tested, and Helm/NetworkPolicy wired (2026-06-10).
 - **Phase 4 Track B** (fleet organizational awareness): not started. Blocked on product decisions (P4B.0). See Phase 4 Decisions below before building anything in Track B.
+- **Track P4-C** (agent identity & personalisation via OpenClaw workspace files): scoped, design decisions locked. P4C.1–P4C.5 in Open Backlog; not yet started.
 - **Branch**: `phase-4-5-fixes`, 6 commits ahead of `main`.
 
 ---
@@ -70,6 +71,66 @@
   exist; the fleet protocol layer does not.)
 - [ ] **P4B.6 Fleet awareness dashboards + SLOs.** Prometheus metrics + Grafana dashboards +
   alert thresholds + runbook links for awareness SLOs (current `/prom` metrics have none).
+
+### Track P4-C — Agent Identity & Personalisation (OpenClaw workspace files)
+
+> New track scoped 2026-06-10. Lets tenants personalise their agents while platform
+> core behaviour stays immutable. Decisions below are **LOCKED** (no P4B.0-style block).
+> OpenClaw has no native file layering/precedence/includes (verified against docs.openclaw.ai),
+> so OpenCrane implements the layering at the operator + entrypoint + control-plane layer.
+
+**Locked design decisions (2026-06-10):**
+- **Three ownership layers.**
+  - *L0 Platform* — `AGENTS.md`, `TOOLS.md`. OpenCrane-owned, re-stamped every boot. Encodes
+    system mechanics (managed mode, MCP routes via Obot gateway, per-entitlement skill pulls,
+    contract semantics). Never editable by company or tenant.
+  - *L1 Company* — company `SOUL.md` + curated policy/voice docs. Org-owned, editable via
+    control-plane API, versioned v1…vN (immutable versions). Must carry **no** system mechanics.
+  - *L2 Tenant* — effective workspace docs (`SOUL.md`, `USER.md`, `IDENTITY.md`, `MEMORY.md`,
+    `HEARTBEAT.md`) under the persistent `/data/openclaw` workspace. Seeded from L1, then edited
+    live in-pod; persists across restarts.
+- **`TOOLS.md` is contract-derived** — rendered from the tenant's entitled MCP servers + skills.
+- **Company→tenant reconciliation = agent-driven 3-way merge** (base = tenant's
+  `lastReconciledVersion`, ours = new company version, theirs = tenant current). Conflict policy:
+  company wins, tenant intent preserved where compatible. Idempotent/resumable like `migrate up`.
+- **Propose-and-approve** — reconciler emits a proposed merge + diff; admin/tenant approves before
+  it lands. No silent prompt changes.
+- **Server-side execution, delivered via the P4A.3 re-pull loop** — control-plane reads the tenant's
+  current doc through the internal token-authenticated endpoint, the merge agent (LiteLLM-backed)
+  reconciles, and the result rides the existing contract delivery into the pod.
+- **OpenClaw is made aware of doc changes** — on apply, the agent is notified and can view the
+  change/diff (no silent identity swap-out).
+- **Invariant guard:** the reconciliation agent is sandboxed to L1/L2 and can never edit L0. "Core
+  behaviour cannot be changed" is guaranteed by L0 re-stamping + the IAM planes (Obot gateway +
+  skill registry), NOT by prompt prose (OpenClaw has no precedence between files).
+
+- [ ] **P4C.1 Workspace bootstrap + layered seeding (smallest first slice).** Operator
+  `_BuildConfigMap` emits the workspace files as ConfigMap keys and sets `agents.defaults.workspace`
+  to a persistent path under `/data/openclaw` + `skipBootstrap: true` in `openclaw.json`.
+  `entrypoint.sh` re-stamps L0 files (`AGENTS.md`, `TOOLS.md`) every boot and seeds L2 files
+  once-if-absent (reusing the `entrypoint.sh:248` copy pattern). Static content to start.
+  Anchor: `apps/operator/src/tenants/deploy/2-config-map.ts`, `apps/tenant/deploy/entrypoint.sh`.
+  Acceptance: a fresh pod boots with the workspace populated and no interactive bootstrap;
+  a tenant edit to `SOUL.md` survives restart; a tenant edit to `AGENTS.md` is reverted on restart.
+- [ ] **P4C.2 Contract-derived `TOOLS.md`.** Extend the effective contract + re-pull loop to render
+  `TOOLS.md` from the tenant's entitled MCP servers + skills; SIGHUP + agent-awareness note on change.
+  Anchor: `routes/internal/tenant-contract.ts`, `entrypoint.sh` poll loop. Acceptance: granting or
+  denying an MCP server updates `TOOLS.md` within one poll interval without a pod restart, and
+  OpenClaw is notified.
+- [ ] **P4C.3 Company doc API + versioning (L1).** `companyDoc` / `companyDocVersion` Prisma models
+  + migration; CRUD at `/api/v1/org/workspace-docs/:name` with immutable version history + audit;
+  an allowlist guard rejecting company docs that carry L0 system-mechanic directives. Acceptance:
+  publishing a new version stores it immutably and is retrievable by version; covered by tests.
+- [ ] **P4C.4 Agent-driven reconciliation (propose).** LiteLLM-backed reconciler (follow
+  `apps/harvesting-agent` shape) computes the 3-way merge, produces a per-tenant proposed merge +
+  diff stored as a pending proposal, and tracks per-tenant `lastReconciledVersion`. Sandboxed to
+  L1/L2. Acceptance: a company version bump generates a per-tenant proposal with a diff; the run is
+  idempotent/resumable; the reconciler cannot alter L0; covered by a test.
+- [ ] **P4C.5 Approval + delivery + agent awareness.** Approve/reject API; on approval the reconciled
+  doc rides the re-pull loop into the workspace, bumps `lastReconciledVersion`, and audits; OpenClaw
+  is notified and can view the change (e.g. a `BOOT.md`/`HEARTBEAT.md` note or system message + the
+  diff). Acceptance: approving delivers the doc without a pod restart and the agent surfaces/can view
+  the change; rejecting leaves the tenant doc untouched.
 
 ---
 
