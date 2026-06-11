@@ -212,9 +212,9 @@ OpenCrane is a **fully headless, API-first control plane**. There is no bundled 
 - ✅ **Permission sync boundary**: Control-plane manages Cognee dataset memberships and grants (no retrieval proxy)
 - ✅ **Hosting adapter**: `HostingAdapter` interface with `OnPremHostingAdapter` (default) and `GcpHostingAdapter`; cloud SDKs are lazy-loaded optional dependencies — on-prem runs with no cloud SDK present
 - ✅ **Versioned REST API**: All routes under `/api/v1/`; consistent `{ error, code }` envelopes; cursor-based pagination on audit log
-- ✅ **OpenAPI 3.1 spec**: Emitted at build time (`openapi.json`); served at runtime (`GET /api/v1/openapi.json`); CI drift gate enforced
+- ✅ **OpenAPI 3.1 spec**: Emitted at build time (`openapi.json`); served at runtime (`GET /api/v1/openapi.json`); published as a `openapi.json` asset on each tagged release; CI drift gate enforced
 - ✅ **`oc` CLI**: Full administrative surface — tenants, policies, MCP servers, skills, budget, audit, tokens, providers, metrics, auth
-- ✅ **Typed SDK**: `libs/contracts` publishes a generated TypeScript client (`openapi-typescript` + `openapi-fetch`) consumed by the CLI and available to external consumers
+- ✅ **Typed SDK**: `libs/contracts` publishes a generated TypeScript client (`openapi-typescript` + `openapi-fetch`) consumed by the CLI and available to external consumers. Licensed **MIT** (the rest of the platform is AGPL-3.0-or-later) so proprietary frontends can consume the contract — see `libs/contracts/README.md`
 
 **Retrieval plugin foundation:**
 - ✅ Static skill discovery from filesystem during agentic loop

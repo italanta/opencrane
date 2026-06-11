@@ -1,0 +1,45 @@
+name: Release
+
+# Publishes the OpenCrane Control Plane OpenAPI contract as a release asset.
+# External consumers (e.g. private frontends) pin a tagged `openapi.json` and
+# generate their own typed client from it — see libs/contracts/README.md.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  openapi-asset:
+    name: Publish openapi.json release asset
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Regenerate the spec from source so the asset always matches the tagged
+      # commit, even if the committed openapi.json had drifted.
+      - name: Emit OpenAPI spec
+        run: pnpm --filter @opencrane/control-plane build
+
+      - name: Verify committed spec is up to date
+        run: git diff --exit-code apps/control-plane/openapi.json
+
+      - name: Attach openapi.json to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: apps/control-plane/openapi.json
+          fail_on_unmatched_files: true
