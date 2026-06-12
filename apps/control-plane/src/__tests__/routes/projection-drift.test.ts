@@ -35,18 +35,16 @@ describe("projection drift routes", function ()
   {
     const customApi = {
       listNamespacedCustomObject: vi.fn().mockResolvedValue({
-        body: {
-          items: [
-            {
-              metadata: { name: "alpha" },
-              spec: {
-                displayName: "Alpha From CRD",
-                email: "alpha@example.com",
-                team: "platform",
-              },
+        items: [
+          {
+            metadata: { name: "alpha" },
+            spec: {
+              displayName: "Alpha From CRD",
+              email: "alpha@example.com",
+              team: "platform",
             },
-          ],
-        },
+          },
+        ],
       }),
     } as unknown as k8s.CustomObjectsApi;
 
@@ -86,17 +84,15 @@ describe("projection drift routes", function ()
   {
     const customApi = {
       listNamespacedCustomObject: vi.fn().mockResolvedValue({
-        body: {
-          items: [
-            {
-              metadata: { name: "default-deny" },
-              spec: {
-                description: "Default deny policy",
-                domains: { deny: ["*"] },
-              },
+        items: [
+          {
+            metadata: { name: "default-deny" },
+            spec: {
+              description: "Default deny policy",
+              domains: { deny: ["*"] },
             },
-          ],
-        },
+          },
+        ],
       }),
     } as unknown as k8s.CustomObjectsApi;
 

@@ -31,14 +31,12 @@ describe("projection repair routes", function ()
   {
     const customApi = {
       listNamespacedCustomObject: vi.fn().mockResolvedValue({
-        body: {
-          items: [
-            {
-              metadata: { name: "alpha" },
-              spec: { displayName: "Alpha Fixed", email: "alpha@example.com", team: "platform" },
-            },
-          ],
-        },
+        items: [
+          {
+            metadata: { name: "alpha" },
+            spec: { displayName: "Alpha Fixed", email: "alpha@example.com", team: "platform" },
+          },
+        ],
       }),
     } as unknown as k8s.CustomObjectsApi;
 
@@ -69,14 +67,12 @@ describe("projection repair routes", function ()
   {
     const customApi = {
       listNamespacedCustomObject: vi.fn().mockResolvedValue({
-        body: {
-          items: [
-            {
-              metadata: { name: "beta" },
-              spec: { displayName: "Beta", email: "beta@example.com", team: null },
-            },
-          ],
-        },
+        items: [
+          {
+            metadata: { name: "beta" },
+            spec: { displayName: "Beta", email: "beta@example.com", team: null },
+          },
+        ],
       }),
     } as unknown as k8s.CustomObjectsApi;
 
@@ -105,14 +101,12 @@ describe("projection repair routes", function ()
   {
     const customApi = {
       listNamespacedCustomObject: vi.fn().mockResolvedValue({
-        body: {
-          items: [
-            {
-              metadata: { name: "gamma" },
-              spec: { displayName: "Gamma", email: "gamma@example.com", team: "eng" },
-            },
-          ],
-        },
+        items: [
+          {
+            metadata: { name: "gamma" },
+            spec: { displayName: "Gamma", email: "gamma@example.com", team: "eng" },
+          },
+        ],
       }),
     } as unknown as k8s.CustomObjectsApi;
 
@@ -137,7 +131,7 @@ describe("projection repair routes", function ()
   it("skips a tenant projection row that has no matching CRD source", async function ()
   {
     const customApi = {
-      listNamespacedCustomObject: vi.fn().mockResolvedValue({ body: { items: [] } }),
+      listNamespacedCustomObject: vi.fn().mockResolvedValue({ items: [] }),
     } as unknown as k8s.CustomObjectsApi;
 
     const prisma = {
@@ -162,20 +156,18 @@ describe("projection repair routes", function ()
   {
     const customApi = {
       listNamespacedCustomObject: vi.fn().mockResolvedValue({
-        body: {
-          items: [
-            {
-              metadata: { name: "egress-policy" },
-              spec: {
-                description: "Updated description",
-                tenantSelector: null,
-                domains: null,
-                egressRules: null,
-                mcpServers: { allow: ["skills"] },
-              },
+        items: [
+          {
+            metadata: { name: "egress-policy" },
+            spec: {
+              description: "Updated description",
+              tenantSelector: null,
+              domains: null,
+              egressRules: null,
+              mcpServers: { allow: ["skills"] },
             },
-          ],
-        },
+          },
+        ],
       }),
     } as unknown as k8s.CustomObjectsApi;
 

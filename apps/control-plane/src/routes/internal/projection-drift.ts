@@ -54,14 +54,16 @@ interface NamedSnapshot
   fields: Record<string, unknown>;
 }
 
-/** Minimal Kubernetes list payload shape returned by the client. */
+/**
+ * Minimal Kubernetes list payload shape returned by the client.
+ *
+ * @see https://github.com/kubernetes-client/javascript/releases/tag/v1.0.0 — release
+ *   specifying the removal of the request/response body wrapper.
+ */
 interface KubernetesList<TItem>
 {
-  /** List body returned by the generated client. */
-  body?: {
-    /** Items present in the list response. */
-    items?: TItem[];
-  };
+  /** Items present in the list response. */
+  items: TItem[];
 }
 
 /** Minimal Tenant CRD shape needed for drift comparison. */
@@ -304,10 +306,12 @@ function _BuildSnapshotMap(items: NamedSnapshot[]): Map<string, NamedSnapshot>
 
 /**
  * Extract list items from the Kubernetes client response payload.
+ *
+ * @see https://kubernetes.io/docs/reference/using-api/api-concepts/#collections - API reference
  */
 function _ReadKubernetesListItems<TItem>(response: KubernetesList<TItem>): TItem[]
 {
-  return response.body?.items ?? [];
+  return response.items;
 }
 
 /**

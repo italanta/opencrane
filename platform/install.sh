@@ -150,7 +150,7 @@ function _run_local()
   _require_cmd k3d
 
   echo "[install] Running local full-stack install on k3d..."
-  KEEP_CLUSTER="$keep_cluster" CLUSTER_NAME="$cluster_name" NAMESPACE="$namespace" LOCAL_PROFILE="$profile" "$ROOT_DIR/platform/tests/k3d-local.sh"
+  KEEP_CLUSTER="$keep_cluster" CLUSTER_NAME="$cluster_name" NAMESPACE="$namespace" LOCAL_PROFILE="$profile" bash "$ROOT_DIR/platform/tests/k3d-local.sh"
   echo "[install] Local install complete."
   echo "[install] Cluster: $cluster_name, Namespace: $namespace, Profile: $profile"
 }

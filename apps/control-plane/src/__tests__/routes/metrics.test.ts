@@ -46,26 +46,22 @@ describe("metrics routes", function ()
         if (args.plural === "tenants")
         {
           return {
-            body: {
-              items: [
-                {
-                  metadata: { name: "alpha" },
-                  spec: { displayName: "Alpha", email: "alpha@example.com", team: "platform" },
-                },
-              ],
-            },
+            items: [
+              {
+                metadata: { name: "alpha" },
+                spec: { displayName: "Alpha", email: "alpha@example.com", team: "platform" },
+              },
+            ],
           };
         }
 
         return {
-          body: {
-            items: [
-              {
-                metadata: { name: "default-deny" },
-                spec: { description: "Default deny", domains: { deny: ["*"] } },
-              },
-            ],
-          },
+          items: [
+            {
+              metadata: { name: "default-deny" },
+              spec: { description: "Default deny", domains: { deny: ["*"] } },
+            },
+          ],
         };
       }),
     } as unknown as k8s.CustomObjectsApi;
@@ -130,26 +126,22 @@ describe("metrics routes", function ()
         if (args.plural === "tenants")
         {
           return {
-            body: {
-              items: [
-                {
-                  metadata: { name: "alpha" },
-                  spec: { displayName: "Alpha", email: "alpha@example.com", team: "platform" },
-                },
-              ],
-            },
+            items: [
+              {
+                metadata: { name: "alpha" },
+                spec: { displayName: "Alpha", email: "alpha@example.com", team: "platform" },
+              },
+            ],
           };
         }
 
         return {
-          body: {
-            items: [
-              {
-                metadata: { name: "default-deny" },
-                spec: { description: "Default deny", domains: { deny: ["*"] } },
-              },
-            ],
-          },
+          items: [
+            {
+              metadata: { name: "default-deny" },
+              spec: { description: "Default deny", domains: { deny: ["*"] } },
+            },
+          ],
         };
       }),
     } as unknown as k8s.CustomObjectsApi;

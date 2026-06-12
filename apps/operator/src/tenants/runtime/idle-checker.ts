@@ -94,6 +94,8 @@ export class IdleChecker
    * 5. The operator's existing watch loop picks up the MODIFIED event
    *    and scales the Deployment to 0 replicas.
    * 6. On GKE Autopilot the now-idle node is automatically reclaimed.
+   *
+   * @see https://kubernetes.io/docs/reference/using-api/api-concepts/#collections - API reference
    */
   private async _checkAll(): Promise<void>
   {
@@ -103,7 +105,7 @@ export class IdleChecker
       ? await this.customApi.listNamespacedCustomObject({ group: OPENCRANE_API_GROUP, version: OPENCRANE_API_VERSION, namespace: ns, plural: TENANT_CRD_PLURAL })
       : await this.customApi.listClusterCustomObject({ group: OPENCRANE_API_GROUP, version: OPENCRANE_API_VERSION, plural: TENANT_CRD_PLURAL });
 
-    const tenants = ((response as Record<string, unknown>).items ?? []) as Tenant[];
+    const tenants = (response as { items: Tenant[] }).items;
     const now = Date.now();
     const thresholdMs = this.config.idleTimeoutMinutes * 60 * 1000;
 

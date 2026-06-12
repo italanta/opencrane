@@ -26,11 +26,13 @@ function _makePolicy(name: string, options?: { matchTeam?: string; matchLabels?:
 
 /**
  * Build a custom API mock that returns the provided policy list.
+ *
+ * @see https://kubernetes.io/docs/reference/using-api/api-concepts/#collections - API reference
  */
 function _makeCustomApi(policies: AccessPolicy[]): k8s.CustomObjectsApi
 {
   return {
-    listNamespacedCustomObject: vi.fn().mockResolvedValue({ body: { items: policies } }),
+    listNamespacedCustomObject: vi.fn().mockResolvedValue({ items: policies }),
   } as unknown as k8s.CustomObjectsApi;
 }
 

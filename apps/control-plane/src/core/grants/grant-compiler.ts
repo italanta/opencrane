@@ -1,7 +1,7 @@
 import {
   type PrismaClient,
 } from "@prisma/client";
-import { some as ___some, sortBy as ___sortBy } from "lodash";
+import { ___SomeArray, ___SomeRecord, ___SortBy } from "../utils/collections.js";
 
 import {
   GrantCompilerAccess,
@@ -181,7 +181,7 @@ export async function compile(
   }
 
   // 5. Emit a stable payload ordering so callers can cache and diff compiled contracts deterministically.
-  return ___sortBy(Array.from(winnerByPayloadId.values()), "payloadId");
+  return ___SortBy(Array.from(winnerByPayloadId.values()), "payloadId");
 }
 
 /**
@@ -238,7 +238,7 @@ function _GroupHasPrincipal(members: unknown, principalId: string): boolean
 {
   if (Array.isArray(members))
   {
-    return ___some(members, function _matchMember(member)
+    return ___SomeArray(members, function _matchMember(member)
     {
       return _MemberMatchesPrincipal(member, principalId);
     });
@@ -250,13 +250,13 @@ function _GroupHasPrincipal(members: unknown, principalId: string): boolean
 
     if (Array.isArray(record.items))
     {
-      return ___some(record.items, function _matchRecordItem(member)
+      return ___SomeArray(record.items, function _matchRecordItem(member)
       {
         return _MemberMatchesPrincipal(member, principalId);
       });
     }
 
-    return ___some(record, function _matchRecordValue(value, key)
+    return ___SomeRecord(record, function _matchRecordValue(value, key)
     {
       return key === principalId || _MemberMatchesPrincipal(value, principalId);
     });
@@ -287,7 +287,7 @@ function _MemberMatchesPrincipal(member: unknown, principalId: string): boolean
   const record = member as Record<string, unknown>;
   const candidateValues = [record.id, record.principalId, record.tenant, record.userId, record.name];
 
-  return ___some(candidateValues, function _matchValue(candidateValue)
+  return ___SomeArray(candidateValues, function _matchValue(candidateValue)
   {
     return typeof candidateValue === "string" && candidateValue === principalId;
   });

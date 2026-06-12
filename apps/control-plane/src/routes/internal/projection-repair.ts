@@ -4,14 +4,15 @@ import type { PrismaClient } from "@prisma/client";
 import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL, POLICY_CRD_PLURAL } from "./crd-constants.js";
 import type { ProjectionRepairEntry, ProjectionRepairReport } from "./projection-repair.types.js";
 
-/** Minimal Kubernetes list payload shape returned by the client. */
+/**
+ * Minimal Kubernetes list payload shape returned by the client.
+ *
+ * @see https://kubernetes.io/docs/reference/using-api/api-concepts/#collections - API reference
+ */
 interface KubernetesList<TItem>
 {
-  /** List body from the generated client. */
-  body?: {
-    /** Items present in the list response. */
-    items?: TItem[];
-  };
+  /** Items present in the list response. */
+  items: TItem[];
 }
 
 /** Minimal Tenant CRD shape needed for repair. */
@@ -239,8 +240,12 @@ export async function _RepairPolicyProjection(customApi: k8s.CustomObjectsApi, p
   };
 }
 
-/** Extract items from a Kubernetes list response, defaulting to empty. */
+/**
+ * Extract items from a Kubernetes list response.
+ *
+ * @see https://kubernetes.io/docs/reference/using-api/api-concepts/#collections - API reference
+ */
 function _readItems<T>(response: KubernetesList<T>): T[]
 {
-  return response.body?.items ?? [];
+  return response.items;
 }

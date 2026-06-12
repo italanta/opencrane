@@ -148,20 +148,19 @@ async function _replaceResource(client: any, resource: k8s.KubernetesObject, nam
 /**
  * Extract response body returned by typed API calls; fallback to original
  * resource for generic object API return shapes.
+ *
+ * @see https://kubernetes.io/docs/reference/using-api/api-concepts/#collections - API reference
  */
 function _extractBody<T extends k8s.KubernetesObject>(response: unknown, fallback: T): T
 {
-  if (typeof response === "object" && response !== null && "body" in response)
-  {
-    return (response as { body: T }).body;
-  }
-
   return (response as T) ?? fallback;
 }
 
 /**
- * Pull metadata.resourceVersion from API responses that may be wrapped
- * ({ body }) or returned as raw Kubernetes objects.
+ * Pull metadata.resourceVersion from API responses that are returned as
+ * raw Kubernetes objects.
+ *
+ * @see https://kubernetes.io/docs/reference/using-api/api-concepts/#collections - API reference
  */
 function _extractResourceVersion(response: unknown): string
 {
@@ -170,16 +169,7 @@ function _extractResourceVersion(response: unknown): string
     throw new Error("unable to read current resource version from API response");
   }
 
-  const candidate = ("body" in response)
-    ? (response as { body?: unknown }).body
-    : response;
-
-  if (typeof candidate !== "object" || candidate === null)
-  {
-    throw new Error("unable to read current resource version from API response body");
-  }
-
-  const metadata = (candidate as { metadata?: unknown }).metadata;
+  const metadata = (response as { metadata?: unknown }).metadata;
   if (typeof metadata !== "object" || metadata === null)
   {
     throw new Error("resource metadata missing in current API object");

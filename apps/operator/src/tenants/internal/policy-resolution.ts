@@ -15,6 +15,8 @@ import { TenantPolicyResolutionState } from "../models/tenant-status.interface.j
  * 2) Exactly one selector match
  * 3) Optional configured default policy
  * 4) No policy
+ *
+ * @see https://kubernetes.io/docs/reference/using-api/api-concepts/#collections - API reference
  */
 export async function _ResolveTenantPolicy(customApi: k8s.CustomObjectsApi, config: OpenClawTenantOperatorConfig,
                                            tenant: Tenant, namespace: string): Promise<TenantPolicyResolutionResult>
@@ -25,9 +27,9 @@ export async function _ResolveTenantPolicy(customApi: k8s.CustomObjectsApi, conf
         version: OPENCRANE_API_VERSION,
         namespace,
         plural: ACCESS_POLICY_CRD_PLURAL,
-      }) as { body?: { items?: AccessPolicy[] } };
+      }) as { items: AccessPolicy[] };
 
-  const policies = policyListResponse.body?.items ?? [];
+  const policies = policyListResponse.items;
   const policiesByName = new Map(policies.map(function _toPolicyEntry(policy)
   {
     return [policy.metadata?.name ?? "", policy] as const;

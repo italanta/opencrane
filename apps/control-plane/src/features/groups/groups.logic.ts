@@ -1,6 +1,6 @@
 import { GrantAccess, GrantScope, GrantSubjectType, type Grant, type Group } from "@opencrane/contracts";
 import { Prisma, type PrismaClient } from "@prisma/client";
-import { sortBy as ___sortBy, uniq as ___uniq } from "lodash";
+import { ___SortBy } from "../../core/utils/collections.js";
 
 import type {
   GroupGrantInput,
@@ -285,7 +285,7 @@ function _NormalizeMembers(members: unknown): string[]
     uniqueMembers.add(normalizedMember);
   }
 
-  return ___sortBy(Array.from(uniqueMembers));
+  return ___SortBy(Array.from(uniqueMembers));
 }
 
 /**
