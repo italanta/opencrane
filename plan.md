@@ -49,9 +49,10 @@
   `entrypoint.sh` background polling loop (30s) calls the endpoint, diffs SHA256, updates writable
   contract copy, sends SIGHUP to OpenClaw when contract changes. 6 tests added; build + tests pass.
 
-### Track P4-B — Fleet Organizational Awareness (NOT STARTED — largest remaining effort)
+### Track P4-B — Fleet Organizational Awareness (STARTED — P4B.1 SDK landed; largest remaining effort)
 
-> This entire track is greenfield. All items are **[BLOCKED]** on P4B.0 — resolve that first.
+> Decision-unblocked (P4B.0 locked). **P4B.1 (the `@opencrane/awareness` SDK) landed 2026-06-13** —
+> the foundation P4B.2–P4B.6 build on. Remaining items are greenfield and sequence on the SDK.
 
 - [x] **P4B.0 Lock Phase 4 awareness decisions.** (2026-06-13) All "Phase 4 Decisions" below are
   now resolved (explicit) or defaulted — Track B is **decision-unblocked**. Key locks: single
@@ -60,9 +61,19 @@
   most-specific-wins+deny-overrides scope precedence · participation over control-plane API +
   A2A Agent-Card advertisement · violation=page/drift=warn · per-scope-node owners approve
   promotions · bootstrap governed by P4-C layering. (Build is still greenfield, ~324h — see Key Tasks.)
-- [ ] **P4B.1 Org Context / Awareness SDK.** New shared lib (`libs/awareness` or similar) that
-  every OpenClaw consumes, pinned to a contract version. Acceptance: tenant pods retrieve org
-  context through the SDK against Cognee with no control-plane retrieval mediation.
+- [x] **P4B.1 Org Context / Awareness SDK.** (2026-06-13) New shared lib `@opencrane/awareness`
+  (`libs/awareness`, added to `pnpm-workspace.yaml`) every OpenClaw consumes. `AwarenessClient.query`
+  retrieves org context **directly from the per-tenant Cognee** via an injectable
+  `CogneeSearchTransport` (default `fetch` → Cognee `/v1/search`) — no control-plane in the query
+  hot path (the acceptance criterion). Two fleet invariants enforced: (1) every returned hit carries
+  a complete **citation** (title + URI + freshness, the P4B.0 locked format) — uncitable hits are
+  dropped and counted (`droppedUncitable`), never surfaced unattributed; (2) every result is stamped
+  with the pinned `AWARENESS_CONTRACT_VERSION` (`awareness/v1alpha1`), and `___AssertContractCompatible`/
+  `___IsContractCompatible` (same-major) give P4B.3's canary/rollout its version-skew hook. Tests:
+  citation (4) + contract-version (3) + client incl. drop-uncitable / direct-endpoint / default
+  transport (6) = 13; lib build + tests clean. **Seam:** wiring the SDK into the live OpenClaw pod
+  runtime (skill/sidecar) + live Cognee `/v1/search` is the remaining live-infra step — the SDK is
+  the testable core and is consumption-ready.
 - [ ] **P4B.2 AccessPolicy → Cognee grant compiler.** Wire `Awareness` grants through the grant
   compiler and propagate AccessPolicy create/update/delete to Cognee grants within an SLO (today
   only dataset-membership sync exists). Anchor: `core/grants/grant-compiler.ts` (`Awareness` type),
