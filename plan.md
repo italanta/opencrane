@@ -7,7 +7,7 @@
 - **Phase 4 Track A** (MCP & Skills runtime planes): complete. P4A.1–P4A.3 implemented, tested, and Helm/NetworkPolicy wired (2026-06-10).
 - **Phase 4 Track B** (fleet organizational awareness): **decision-unblocked 2026-06-13** (P4B.0 closed — all Phase 4 Decisions resolved/defaulted). Build not yet started; greenfield, ~324h (P4B.1–P4B.6). See Phase 4 Decisions for the locked choices.
 - **Track P4-C** (agent identity & personalisation via OpenClaw workspace files): scoped, design decisions locked. P4C.1–P4C.5 in Open Backlog; not yet started.
-- **Track CONN** (OpenClaw connection auth & session security): pairing-broker endpoint implemented (2026-06-13); connection-security posture **decided = Option B** (short-lived re-brokered credentials + per-user kill-switch; control plane stays connection-stateless). Full trade-off in `docs/claw-security-considerations.md`. Transport hardening landed 2026-06-13 (CONN.2); `docs/auth.md` rewritten for the pairing broker (CONN.6); **CONN.8 wildcard TLS** first slice landed (operator Ingress `tls:` + cert-manager ClusterIssuer/Certificate Helm scaffold, dev selfSigned + prod ACME DNS-01) with onboarding-CLI/API + cross-namespace + dev-host + live-e2e as follow-ups. Remaining kill-switch / provisioning items (CONN.3–5) in Open Backlog. Proxy (Option C) deferred as a contingent vision.
+- **Track CONN** (OpenClaw connection auth & session security): pairing-broker endpoint implemented (2026-06-13); connection-security posture **decided = Option B** (short-lived re-brokered credentials + per-user kill-switch; control plane stays connection-stateless). Full trade-off in `docs/claw-security-considerations.md`. Transport hardening landed 2026-06-13 (CONN.2); `docs/auth.md` rewritten for the pairing broker (CONN.6); **CONN.8 wildcard TLS** first slice landed (operator Ingress `tls:` + cert-manager ClusterIssuer/Certificate Helm scaffold, dev selfSigned + prod ACME DNS-01) with onboarding-CLI/API + cross-namespace + dev-host + live-e2e as follow-ups. **Kill-switch chain landed 2026-06-13 (CONN.3 persistence+decode, CONN.4 device registry, CONN.5 cut + RBAC)** — testable spine complete; the gateway per-device revoke + CP-held operator device + in-pod mint exec are the remaining live-infra seams. Proxy (Option C) deferred as a contingent vision.
 - **Track P4-D** (MCP & Skills platform completion — the two 🔶 gaps): scoped + decisions locked 2026-06-13. P4D.2 OCI/Zot **foundation slice landed** (`OciBundleStore` + gated Zot Helm; runtime cutover deferred to a live-Zot slice). P4D.1 Obot RFC-8693 creds queued. See Open Backlog → Track P4-D.
 - **Review discipline** (2026-06-13): the `review` agent (`.claude/agents/review.md`) now has a mandatory **"verify every finding before reporting"** step — re-trace the cited code and construct a concrete repro before asserting; unconfirmed concerns go under *Open questions*, not *Findings*. Added after a review surfaced a finding that did not survive verification.
 - **Branch**: `phase-4-5-fixes`, 6 commits ahead of `main`.
@@ -192,8 +192,26 @@ standing per-frame audit choke point are **not** in scope → that is the proxy
     `openclaw devices`-family CLI) and capture the code into `configOverrides`. **TTL is NOT
     documented as configurable** ("short-lived single-device", "treat like a password") — so the
     "~30–60s settable" assumption is unconfirmed; treat bootstrap as short-lived-but-fixed.
-    Still **unconfirmed:** the exact programmatic mint command/API surface → needs the OpenClaw
-    CLI/admin contract (or a live pod). Partially unblocked.
+  - **Mint command RESOLVED (2026-06-13, openclaw CLI):** `openclaw qr --setup-code-only --json`
+    (with `--remote`/`--url` for a remote gateway) emits the setup code carrying the opaque
+    short-lived `bootstrapToken`. Provisioning runs this **in/against the tenant pod**, parses
+    `{ url, bootstrapToken }`, stores it in `Tenant.configOverrides.openclaw`. Approve a paired
+    device via `openclaw devices approve <requestId>`; gateway token via
+    `openclaw doctor --generate-gateway-token`. **Caveat (issue #19352):** chicken-and-egg — the
+    CLI may itself need a gateway token/pairing; mitigate by running in-pod with the gateway token
+    in env. Now **buildable** (modulo that provisioning detail).
+  - **Landed (2026-06-13):** the persistence + decode halves shipped. Control-plane
+    `PUT /api/v1/tenants/:name/pairing` (`routes/tenants.ts`) stores/rotates
+    `{ gatewayUrl?, bootstrapToken }` into `configOverrides.openclaw` (wss-only guard,
+    merges existing overrides, audits `PairingRotated`, never echoes the token);
+    `_ResolveOpenClawPairing` reads it back. Operator `_ParseOpenClawSetupCode`
+    (`tenants/internal/openclaw-pairing-provision.ts`) decodes the
+    base64(`{url,bootstrapToken}`) setup code (and tolerates the `--json` envelope).
+    Tests: 6 parser cases (operator 62/62) + pairing-rotate covered via tenants route.
+  - **Remaining (live seam):** the in-pod `openclaw qr --setup-code-only` **exec**
+    (k8s pod-exec, real binary, the issue-#19352 chicken-and-egg gateway token) and
+    wiring it into the operator reconcile to call the rotate endpoint — needs a live
+    pod. The control-plane + decode plumbing is ready to receive it.
 - [ ] **CONN.4 CP-held operator device + device registry.** OpenCrane holds one
   `operator.pairing`-scoped device per pod (paired server-side, key in a Secret), and a
   `BrokeredDevice` Prisma model + migration recording devices brokered per tenant.
@@ -204,11 +222,25 @@ standing per-frame audit choke point are **not** in scope → that is the proxy
     `operator.admin`/`operator.pairing`. So a CP device with `operator.pairing` needs an
     explicit elevation/**approval** step (`openclaw devices approve`, which itself may need
     `operator.admin`). `device.token.revoke`/`rotate` require `operator.pairing` (confirms CONN.5's
-    revoke half). B1 device-signature: docs confirm the **signed payload is the v2/v3 layout**
-    (v2 binds device/client/role/scopes/token/nonce; v3 adds `platform`+`deviceFamily`) and
-    **base64** key/sig encoding — so align the signer to the v2/v3 payload (prefer v3); the
-    **algorithm (Ed25519 vs ECDSA-P256) is still unspecified** and needs the gateway source or a
-    live handshake to confirm.
+    revoke half). **B1 device-signature RESOLVED (2026-06-13, openclaw source/issues):**
+    algorithm = **Ed25519** (NOT ECDSA-P256 — the weownai `WebCryptoDeviceSigner` is WRONG and
+    must switch to Ed25519, via WebCrypto Ed25519 or `@noble/ed25519`). **B1 fully VERIFIED against
+    the shipped `openclaw@2026.6.6` source** (`dist/client-C2g2lFC5.js`, `dist/device-identity-CEPJolq9.js`):
+    `deviceId = sha256(raw 32-byte pubkey).hex`; signed payload = pipe-joined
+    `["v3", deviceId, clientId, clientMode, role, scopes.join(","), String(signedAtMs), token, nonce, platform, deviceFamily]`
+    (v2 = same minus the last two; nonce in both; platform/deviceFamily trimmed+lowercased; token→`""`);
+    sign = `crypto.sign(null, utf8(payload), ed25519)` → **base64url**; `publicKey` = raw 32-byte key
+    **base64url**. **No remaining unknowns** — B1 no longer blocks CONN.4; CONN.4 needs the device
+    registry + CONN.3 flow. (Mint command CONN.3 verified: `openclaw qr --setup-code-only [--remote --url]`.)
+  - **Landed (2026-06-13) — device registry half:** `BrokeredDevice` Prisma model +
+    migration `0008_brokered_devices` (one row per (tenant, subject); `deviceId?`,
+    `revokedAt?`; cascade on tenant delete). Every `/auth/pod-token` broker now upserts
+    a row (`_RecordBrokeredDevice`, best-effort), so the kill-switch has an authoritative
+    list of brokered connections. Tests: 1 registry case + the broker path.
+  - **Remaining (live seam):** the **CP-held `operator.pairing` device** (paired
+    server-side, key in a Secret) needs a live gateway to pair + the Ed25519 signer
+    (B1, now byte-exact). Until then the gateway-revoke half of CONN.5 is the
+    `_NoopGatewayAdmin` (see below).
 - [ ] **CONN.5 "Cut tenant" kill-switch + RBAC.** Admin action + self-serve "sign out my
   other sessions": call `device.token.revoke` + `device.pair.remove`, then a **K8s
   force-disconnect** — pod-delete (CNI-independent) or a deny `NetworkPolicy` (only if the
@@ -216,6 +248,20 @@ standing per-frame audit choke point are **not** in scope → that is the proxy
   (create/delete) + `pods` (delete) in `platform/helm/templates/control-plane-rbac.yaml`.
   Acceptance: cutting a tenant severs live sockets **and** blocks re-auth; covered by a test
   (mocked k8s + gateway client). (security doc §4–§5)
+  - **Landed (2026-06-13):** `_CutTenant` (`core/connections/cut-tenant.ts`) orchestrates
+    gateway revoke (best-effort) → registry revoke (`BrokeredDevice.revokedAt`) → **K8s
+    force-disconnect via pod `deletecollection`** by the `opencrane.io/tenant=<name>`
+    label selector (CNI-independent — the authoritative cut). Admin route
+    `POST /api/v1/tenants/:name/cut` (full-tenant, audits `Cut`) + self-serve
+    `POST /api/v1/auth/pod-token/cut` (subject-scoped, **does not** delete the shared pod —
+    relies on per-device gateway revoke). RBAC adds `pods get/list/delete/deletecollection`
+    to the control-plane ClusterRole (helm-rendered). The gateway-revoke half is the
+    `_NoopGatewayAdmin` (`core/connections/gateway-admin.ts`) until a CP operator device is
+    paired (CONN.4 live seam) — pod-delete already severs live sockets, so this is safe; the
+    no-op only defers the *re-auth-block* half. Tests: 4 `_CutTenant` cases (mocked k8s +
+    gateway spy + no-op admin), control-plane 90/90. The deny-`NetworkPolicy` variant is
+    **not** added — pod-delete supersedes it (only useful if a CNI fails to drop established
+    flows; revisit if a future CNI needs it).
 - [x] **CONN.6 Rewrite `docs/auth.md` for the pairing broker.** (2026-06-13) Replaced the
   stale `aud=openclaw` K8s-SA-token / RFC-8693 token-exchange description with the pairing-link
   broker + OpenClaw `connect` handshake (challenge → signed device assertion → `hello-ok`):
@@ -328,8 +374,10 @@ standing per-frame audit choke point are **not** in scope → that is the proxy
   Obot's DB/token store. Acceptance: a tenant call to a credential-bearing MCP server
   succeeds with the secret injected **server-side in Obot**; the secret never appears in
   the pod env/filesystem (covered by a test); encryption-at-rest is on. **DECIDED (2026-06-13):**
-  P4D-Q2 encryption-at-rest = **K8s-Secret-backed key** (`OBOT_SERVER_ENCRYPTION_PROVIDER=custom`,
-  key from an `opencrane-obot-enc` Secret — cloud-agnostic, on-prem-safe).
+  P4D-Q2 encryption-at-rest = **K8s-Secret-backed key** (intent: cloud-agnostic, on-prem-safe).
+  ⚠️ The exact knob (`OBOT_SERVER_ENCRYPTION_PROVIDER=custom` + key-from-`opencrane-obot-enc`-Secret)
+  is **ASSUMED, not verified** — Obot's valid encryption-provider values + key-mounting mechanism
+  aren't in public docs; confirm against a live Obot before building.
   P4D-Q1 brokering mechanism = **per-user RFC 8693 token exchange** (preferred): Obot
   exchanges the caller identity for a short-lived, user-delegated downstream token per call,
   rather than injecting a static secret. **Caveat (must design for):** RFC 8693 requires the

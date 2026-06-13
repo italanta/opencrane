@@ -7,6 +7,7 @@ import type { Express } from "express";
 import type { PrismaClient } from "@prisma/client";
 
 import { ___AuthRouter } from "./infra/auth/auth.router.js";
+import { _BuildGatewayAdmin } from "./core/connections/gateway-admin.js";
 import { ___CreateOidcAuthService } from "./infra/auth/oidc.service.js";
 import { ___CreatePrismaClient } from "./infra/db/db.js";
 import { ___AuthMiddleware } from "./infra/middleware/auth.middleware.js";
@@ -44,7 +45,7 @@ export function createApp(prisma: PrismaClient, customApi: k8s.CustomObjectsApi,
   // Auth router is mounted before the auth middleware so its endpoints are
   // inherently public — the device-flow activate handler enforces its own
   // session check internally.
-  app.use("/api/v1/auth", ___AuthRouter(authService, prisma, coreApi));
+  app.use("/api/v1/auth", ___AuthRouter(authService, prisma, coreApi, _BuildGatewayAdmin()));
 
   // Pass prisma so DB-issued access tokens (from `oc auth login` and
   // POST /access-tokens) are validated in addition to the env-var token.

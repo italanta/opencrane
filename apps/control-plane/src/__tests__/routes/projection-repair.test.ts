@@ -6,13 +6,14 @@ import { describe, expect, it, vi } from "vitest";
 
 import { tenantsRouter } from "../../routes/tenants.js";
 import { policiesRouter } from "../../routes/policies.js";
+import { _NoopGatewayAdmin } from "../../core/connections/gateway-admin.js";
 
 /** Build a test app that mounts the tenants router with mocked dependencies. */
 function _BuildTenantRepairApp(customApi: k8s.CustomObjectsApi, prisma: PrismaClient)
 {
   const app = express();
   app.use(express.json());
-  app.use("/", tenantsRouter(customApi, prisma));
+  app.use("/", tenantsRouter(customApi, prisma, {} as k8s.CoreV1Api, new _NoopGatewayAdmin()));
   return app;
 }
 

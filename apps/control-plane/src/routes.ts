@@ -20,6 +20,7 @@ import { tenantsRouter } from "./routes/tenants.js";
 import { thirdPartySourcesRouter } from "./routes/third-party-sources.js";
 import { tokenUsageRouter } from "./routes/token-usage.js";
 import { OciBundleStore } from "./core/oci/oci-bundle-store.js";
+import { _BuildGatewayAdmin } from "./core/connections/gateway-admin.js";
 import { _CheckDbHealth } from "./infra/db/healtcheck-db.js";
 
 /**
@@ -61,6 +62,10 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
   // Optional OCI store for skill-bundle content (P4D.2); null → DB-only delivery.
   const ociBundleStore = _BuildOciBundleStore();
 
+  // Gateway admin for the connection kill-switch (CONN.5); no-op until a
+  // control-plane operator device is paired (CONN.4 — needs live infra).
+  const gatewayAdmin = _BuildGatewayAdmin();
+
   app.use("/api/internal/obot-registry", _RegisterObotRegistry(prisma));
   app.use("/api/internal/bundles", _RegisterInternalBundles(prisma, ociBundleStore));
   // Note: /api/internal/contract enforces per-tenant identity via TokenReview — not NetworkPolicy-only.
@@ -68,7 +73,7 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
 
   app.use("/api/v1/metrics", metricsRouter(customApi, prisma));
   app.use("/api/v1/audit", auditRouter(prisma));
-  app.use("/api/v1/tenants", tenantsRouter(customApi, prisma));
+  app.use("/api/v1/tenants", tenantsRouter(customApi, prisma, coreApi, gatewayAdmin));
   app.use("/api/v1/policies", policiesRouter(customApi, prisma));
   app.use("/api/v1/ai-budget", aiBudgetRouter(coreApi, prisma));
   app.use("/api/v1/token-usage", tokenUsageRouter(prisma));

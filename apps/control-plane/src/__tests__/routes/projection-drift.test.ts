@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { policiesRouter } from "../../routes/policies.js";
 import { tenantsRouter } from "../../routes/tenants.js";
+import { _NoopGatewayAdmin } from "../../core/connections/gateway-admin.js";
 
 /**
  * Build a test app that mounts the tenant drift route with mocked dependencies.
@@ -14,7 +15,7 @@ function _BuildTenantDriftApp(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
 {
   const app = express();
   app.use(express.json());
-  app.use("/", tenantsRouter(customApi, prisma));
+  app.use("/", tenantsRouter(customApi, prisma, {} as k8s.CoreV1Api, new _NoopGatewayAdmin()));
   return app;
 }
 

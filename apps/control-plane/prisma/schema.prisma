@@ -20,8 +20,41 @@ model Tenant {
   auditEntries       AuditEntry[]
   litellmKeys        TenantLiteLlmKey[]
   datasetMemberships TenantDatasetMembership[]
+  brokeredDevices    BrokeredDevice[]
 
   @@map("tenants")
+}
+
+/// A connection brokered to a tenant's OpenClaw pod gateway via `/auth/pod-token`.
+///
+/// The control plane stays *connection*-stateless (Option B): it does not hold
+/// the live WebSocket. This row is the registry the per-user kill-switch
+/// (`_CutTenant`, CONN.5) reads to know which brokered identities to revoke.
+/// One row per (tenant, subject); each broker call bumps `lastBrokeredAt`.
+model BrokeredDevice {
+  /// Surrogate key.
+  id             String    @id @default(cuid())
+  /// Tenant whose pod gateway the connection was brokered to.
+  tenant         String
+  /// IdP-verified human identity the connection was brokered for (OIDC sub, else email).
+  subject        String
+  /// The `wss://` gateway URL handed to the caller at broker time.
+  gatewayUrl     String    @map("gateway_url")
+  /// OpenClaw device id (`sha256(raw pubkey).hex`), filled once the paired device
+  /// reports it; null while only the bootstrap link has been brokered.
+  deviceId       String?   @map("device_id")
+  /// When this (tenant, subject) connection was first brokered.
+  brokeredAt     DateTime  @default(now()) @map("brokered_at")
+  /// When this connection was most recently re-brokered.
+  lastBrokeredAt DateTime  @updatedAt @map("last_brokered_at")
+  /// Set by the kill-switch when the connection is cut; null while active.
+  revokedAt      DateTime? @map("revoked_at")
+  /// Owning tenant; cascades on tenant delete so stale rows never linger.
+  tenantRef      Tenant    @relation(fields: [tenant], references: [name], onDelete: Cascade)
+
+  @@unique([tenant, subject])
+  @@index([tenant])
+  @@map("brokered_devices")
 }
 
 model TenantDatasetMembership {

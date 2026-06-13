@@ -26,6 +26,15 @@ rules:
   - apiGroups: [""]
     resources: ["serviceaccounts/token"]
     verbs: ["create"]
+  # Force-disconnect a tenant's live OpenClaw sockets for the connection
+  # kill-switch (CONN.5): deleting the pod severs every established WebSocket
+  # and is CNI-independent (a deny NetworkPolicy only helps if the CNI drops
+  # *established* flows). `deletecollection` lets the control-plane cut by the
+  # `opencrane.io/tenant=<name>` label selector in one call; `get`/`list` back
+  # the pre-delete lookup. No create/update — the operator owns pod creation.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "delete", "deletecollection"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

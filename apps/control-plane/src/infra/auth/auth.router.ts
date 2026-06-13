@@ -6,6 +6,9 @@ import type * as k8s from "@kubernetes/client-node";
 import type { OidcAuthService } from "./oidc.service.js";
 import { _AuthorizeDeviceGrant, _CreateDeviceGrant, _FindGrantByUserCode, _PollDeviceGrant } from "./device-grant.js";
 import { _ResolveOpenClawPairing } from "./openclaw-pairing.js";
+import { _RecordBrokeredDevice } from "./brokered-device.js";
+import { _CutTenant } from "../../core/connections/cut-tenant.js";
+import type { OpenClawGatewayAdmin } from "../../core/connections/gateway-admin.types.js";
 
 /**
  * Build the auth router covering:
@@ -17,13 +20,15 @@ import { _ResolveOpenClawPairing } from "./openclaw-pairing.js";
  * All routes in this router are mounted before `___AuthMiddleware` and are
  * therefore public — authentication is enforced per-handler where required.
  *
- * @param authService - OIDC auth service instance.
- * @param prisma      - Prisma client used to persist device-issued access tokens.
- * @param _coreApi    - Kubernetes Core V1 API client (reserved for future pod ops).
+ * @param authService  - OIDC auth service instance.
+ * @param prisma       - Prisma client used to persist device-issued access tokens.
+ * @param coreApi      - Kubernetes Core V1 API client (pod ops for the self-serve cut).
+ * @param gatewayAdmin - OpenClaw gateway revoke client for the self-serve kill-switch (CONN.5).
  */
-export function ___AuthRouter(authService: OidcAuthService, prisma: PrismaClient, _coreApi: k8s.CoreV1Api): Router
+export function ___AuthRouter(authService: OidcAuthService, prisma: PrismaClient, coreApi: k8s.CoreV1Api, gatewayAdmin: OpenClawGatewayAdmin): Router
 {
   const router = Router();
+  const namespace = process.env.NAMESPACE ?? "default";
 
   // --------------------------------------------------------------------------
   // Session introspection
@@ -108,13 +113,90 @@ export function ___AuthRouter(authService: OidcAuthService, prisma: PrismaClient
         return;
       }
 
-      // 4. Return the connection details for the gateway `connect` handshake.
+      // 4. Record the brokered connection so the per-user kill-switch (CONN.5)
+      //    knows which (tenant, subject) connections exist to revoke. Best-effort:
+      //    a registry write failure must not deny the caller their pod connection.
+      const subject = authUser.sub.length > 0 ? authUser.sub : email;
+      try
+      {
+        await _RecordBrokeredDevice(prisma, { tenant: tenant.name, subject, gatewayUrl: pairing.gatewayUrl });
+      }
+      catch (err)
+      {
+        // eslint-disable-next-line no-console
+        console.warn(`[auth] failed to record brokered device for ${tenant.name}/${subject}:`, err instanceof Error ? err.message : err);
+      }
+
+      // 5. Return the connection details for the gateway `connect` handshake.
       res.status(200).json({
         gatewayUrl: pairing.gatewayUrl,
         bootstrapToken: pairing.bootstrapToken,
         tenant: tenant.name,
         ingressHost: tenant.ingressHost,
       });
+    }
+    catch (err)
+    {
+      next(err);
+    }
+  });
+
+  /**
+   * Self-serve "sign out my other sessions" — the per-user half of the CONN.5
+   * kill-switch. Cuts only the caller's own brokered connections (subject-scoped),
+   * so it revokes the caller's device tokens/pairings at the gateway and marks
+   * their registry rows cut **without** deleting the shared per-tenant pod (which
+   * would sign out everyone). The target tenant is resolved from the session's
+   * IdP-verified email exactly as `/pod-token` — no request-supplied tenant input.
+   *
+   * **This route is mounted before `___AuthMiddleware`** (the whole auth router is
+   * public), so it enforces the session check inline.
+   */
+  router.post("/pod-token/cut", async function _podTokenCut(req, res, next)
+  {
+    try
+    {
+      // 1. Require an established OIDC browser session.
+      const authUser = req.session?.authUser;
+      if (!authUser)
+      {
+        res.status(401).json({ error: "Authentication required", code: "UNAUTHORIZED" });
+        return;
+      }
+
+      // 2. Resolve the caller's tenant by their verified email (one pod per user),
+      //    failing closed on a missing or ambiguous mapping — never cut another
+      //    user's connections.
+      const email = typeof authUser.email === "string" ? authUser.email.toLowerCase() : "";
+      if (!email)
+      {
+        res.status(403).json({ error: "Session has no email claim; cannot resolve a tenant", code: "FORBIDDEN" });
+        return;
+      }
+
+      const matches = await prisma.tenant.findMany({
+        where: { email: { equals: email, mode: "insensitive" } },
+        select: { name: true },
+      });
+
+      if (matches.length === 0)
+      {
+        res.status(403).json({ error: "No OpenClaw is provisioned for this account", code: "NO_TENANT" });
+        return;
+      }
+
+      if (matches.length > 1)
+      {
+        res.status(409).json({ error: "Multiple OpenClaw pods match this account; contact your administrator", code: "AMBIGUOUS_TENANT" });
+        return;
+      }
+
+      // 3. Cut only this subject's connections — subject-scoped, so the pod is not
+      //    force-deleted (see `_CutTenant`).
+      const subject = authUser.sub.length > 0 ? authUser.sub : email;
+      const result = await _CutTenant(coreApi, prisma, gatewayAdmin, { tenant: matches[0].name, namespace, subject, reason: "self-serve sign-out" });
+
+      res.status(200).json({ status: "cut", ...result });
     }
     catch (err)
     {

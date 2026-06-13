@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ___AuthRouter } from "../../infra/auth/auth.router.js";
 import type { OidcAuthService } from "../../infra/auth/oidc.service.js";
+import { _NoopGatewayAdmin } from "../../core/connections/gateway-admin.js";
 
 /** Session shape the pod-token route reads. */
 interface TestSession
@@ -15,7 +16,7 @@ interface TestSession
 	authUser?: { sub: string; email?: string };
 }
 
-/** The Kubernetes client is reserved for future pod ops; the broker doesn't use it. */
+/** Core V1 client stub; the broker records a device but never touches k8s. */
 const _CORE_API = {} as k8s.CoreV1Api;
 
 /** Build a Prisma stub whose tenant.findMany returns the given matches. */
@@ -23,6 +24,7 @@ function _buildPrisma(matches: unknown[]): PrismaClient
 {
 	return {
 		tenant: { findMany: vi.fn().mockResolvedValue(matches) },
+		brokeredDevice: { upsert: vi.fn().mockResolvedValue({}) },
 	} as unknown as PrismaClient;
 }
 
@@ -36,7 +38,7 @@ function _buildApp(session: TestSession, prisma: PrismaClient): Express
 		(req as unknown as { session: TestSession }).session = session;
 		next();
 	});
-	app.use("/auth", ___AuthRouter({} as OidcAuthService, prisma, _CORE_API));
+	app.use("/auth", ___AuthRouter({} as OidcAuthService, prisma, _CORE_API, new _NoopGatewayAdmin()));
 	return app;
 }
 

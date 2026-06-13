@@ -6,13 +6,14 @@ import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { tenantsRouter } from "../../routes/tenants.js";
+import { _NoopGatewayAdmin } from "../../core/connections/gateway-admin.js";
 
 /** Build an Express app containing only the tenants router. */
 function _buildTenantsApp(customApi: k8s.CustomObjectsApi, prisma: PrismaClient): Express
 {
   const app = express();
   app.use(express.json());
-  app.use("/api/tenants", tenantsRouter(customApi, prisma));
+  app.use("/api/tenants", tenantsRouter(customApi, prisma, {} as k8s.CoreV1Api, new _NoopGatewayAdmin()));
   return app;
 }
 
