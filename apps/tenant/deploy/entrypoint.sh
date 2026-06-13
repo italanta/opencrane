@@ -85,6 +85,31 @@ EOF
   done <<< "$policy_env"
 }
 
+function _apply_workspace_docs()
+{
+  local contract_file="$1"
+
+  if [ ! -f "$contract_file" ]; then
+    return 0
+  fi
+
+  # Write the contract-derived TOOLS.md (L1 workspace doc) when the control plane
+  # supplies one. Node writes the file directly (no shell capture) so the exact
+  # bytes — including the trailing newline — survive, and exits non-zero when the
+  # contract carries no doc so any existing TOOLS.md is left untouched.
+  if node - "$contract_file" "$WORKSPACE_DIR/TOOLS.md" <<'EOF'
+const fs = require("node:fs");
+const [, , contractPath, outPath] = process.argv;
+const contract = JSON.parse(fs.readFileSync(contractPath, "utf8"));
+const doc = contract?.workspace?.["TOOLS.md"];
+if (typeof doc !== "string") { process.exit(3); }
+fs.writeFileSync(outPath, doc);
+EOF
+  then
+    echo "[opencrane] Applied contract-derived TOOLS.md to workspace" >&2
+  fi
+}
+
 function _mcp_server_is_enabled()
 {
   local server_name="$1"
@@ -202,6 +227,10 @@ function _contract_poll_loop()
         mv "$tmp_path" "$writable_path"
         echo "[opencrane] Contract updated (sha256: ${new_sum}); reloading MCP policy" >&2
 
+        # Re-render contract-derived workspace docs (TOOLS.md) before the reload so the
+        # agent sees the new tool list as soon as it restarts.
+        _apply_workspace_docs "$writable_path"
+
         # Re-source the updated policy into local variables, then signal OpenClaw
         # to restart so the new policy takes effect without a full pod restart.
         # SIGHUP is used for graceful reload; if OpenClaw exits, the outer wait
@@ -287,6 +316,19 @@ function _main()
   # Copy the initial contract to the writable path so the polling loop can update it.
   if [ -f "$RUNTIME_CONTRACT_PATH" ] && [ ! -f "$RUNTIME_CONTRACT_WRITABLE" ]; then
     cp "$RUNTIME_CONTRACT_PATH" "$RUNTIME_CONTRACT_WRITABLE"
+  fi
+
+  # Apply contract-derived workspace docs at boot, AFTER L0 stamping above. The
+  # operator-mounted bootstrap contract carries no workspace docs today, so this is
+  # a no-op on a cold start and the static L0 TOOLS.md stands; the control-plane
+  # contract (which DOES include workspace docs) lands on the first poll below,
+  # refreshing TOOLS.md within one poll interval. The call is kept so a future
+  # contract that embeds workspace docs is applied immediately. Prefer the writable
+  # copy; fall back to the ConfigMap-mounted original.
+  if [ -f "$RUNTIME_CONTRACT_WRITABLE" ]; then
+    _apply_workspace_docs "$RUNTIME_CONTRACT_WRITABLE"
+  else
+    _apply_workspace_docs "$RUNTIME_CONTRACT_PATH"
   fi
 
   echo "[opencrane] Starting OpenClaw gateway"

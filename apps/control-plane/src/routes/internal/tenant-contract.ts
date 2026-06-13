@@ -4,6 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 
 import { compile } from "../../core/grants/grant-compiler.js";
 import { GrantCompilerAccess, GrantCompilerPayloadType } from "../../core/grants/grant-compiler.types.js";
+import { _RenderToolsMarkdown } from "../../core/contract/tools-markdown.js";
 
 /** Expected audience on the projected token the tenant pod uses to call this endpoint. */
 const _EXPECTED_AUDIENCE = "control-plane";
@@ -142,7 +143,22 @@ export function _RegisterInternalTenantContract(prisma: PrismaClient, authApi: k
         .filter(function _isAllow(d) { return d.access === GrantCompilerAccess.Allow; })
         .map(function _id(d) { return d.payloadId; });
 
-      // 6. Return a contract that the polling loop writes over the ConfigMap-mounted file.
+      // 6. Resolve display metadata for the entitled tools so the rendered TOOLS.md is
+      //    human-readable (the grant compiler only yields opaque ids). Skip the query
+      //    entirely when nothing is entitled to avoid a pointless empty-IN lookup.
+      const mcpServers = allowedMcp.length > 0
+        ? await prisma.mcpServer.findMany({ where: { id: { in: allowedMcp } }, select: { id: true, name: true, description: true } })
+        : [];
+      const skillBundles = allowedSkills.length > 0
+        ? await prisma.skillBundle.findMany({ where: { id: { in: allowedSkills } }, select: { id: true, name: true, description: true } })
+        : [];
+
+      // 7. Render the contract-derived TOOLS.md (L1 workspace doc). The entrypoint
+      //    poll loop writes this over the workspace file and SIGHUPs OpenClaw, so a
+      //    grant/deny reflects in the agent's tool list within one poll interval.
+      const toolsMarkdown = _RenderToolsMarkdown(mcpServers, skillBundles);
+
+      // 8. Return a contract that the polling loop writes over the ConfigMap-mounted file.
       res.json({
         version: "opencrane-runtime/v1alpha1",
         contractVersion: "2.1.0",
@@ -163,6 +179,12 @@ export function _RegisterInternalTenantContract(prisma: PrismaClient, authApi: k
         },
         capabilities: {
           mcpPolicyEnforced: allowedMcp.length > 0 || deniedMcp.length > 0,
+        },
+        workspace: {
+          // Platform-managed, contract-derived doc; the entrypoint writes this to the
+          // workspace TOOLS.md when the contract changes, then SIGHUPs OpenClaw
+          // (see apps/tenant/deploy/entrypoint.sh).
+          "TOOLS.md": toolsMarkdown,
         },
       });
     }

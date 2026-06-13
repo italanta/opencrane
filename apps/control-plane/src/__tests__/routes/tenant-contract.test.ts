@@ -44,6 +44,12 @@ function _buildPrismaStub(overrides: {
     tenantDatasetMembership: {
       findMany: vi.fn().mockResolvedValue([]),
     },
+    mcpServer: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
+    skillBundle: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
   } as unknown as PrismaClient;
 }
 
@@ -144,5 +150,22 @@ describe("_RegisterInternalTenantContract GET /:name", () =>
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.policy.mcpServers.allow)).toBe(true);
     expect(Array.isArray(res.body.policy.mcpServers.deny)).toBe(true);
+  });
+
+  it("includes a contract-derived TOOLS.md workspace doc", async () =>
+  {
+    const prisma = _buildPrismaStub({ tenant: { name: "team-alpha", team: null } });
+    const app = _buildApp(prisma, _validAuthApi);
+
+    const res = await request(app)
+      .get("/api/internal/contract/team-alpha")
+      .set("Authorization", "Bearer valid");
+
+    expect(res.status).toBe(200);
+    const tools = res.body.workspace?.["TOOLS.md"];
+    expect(typeof tools).toBe("string");
+    expect(tools).toContain("# TOOLS");
+    // With no entitlements the section renders an explicit "none" note rather than vanishing.
+    expect(tools).toContain("No MCP servers are currently entitled.");
   });
 });
