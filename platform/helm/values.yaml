@@ -148,6 +148,34 @@ ingress:
     # -- Secret name for wildcard TLS cert (*.domain)
     secretName: opencrane-wildcard-tls
 
+# -- cert-manager TLS issuance (CONN.8). When enabled, renders a ClusterIssuer +
+# a wildcard Certificate (*.ingress.domain, plus the apex) into ingress.tls.secretName.
+# k8s-native, cloud-agnostic + on-prem. Requires cert-manager installed in-cluster.
+certManager:
+  enabled: false
+  # -- Issuer mode: "acme" (production, public CA via DNS-01) or "selfSigned" (dev/local).
+  mode: selfSigned
+  # -- Name of the ClusterIssuer this chart creates and the Certificate references.
+  issuerName: opencrane-issuer
+  # -- Namespace the wildcard Certificate (and its Secret) are created in.
+  # Must match the namespace tenant Ingresses run in (TLS Secrets are namespace-scoped).
+  certificateNamespace: ""
+  acme:
+    # -- ACME directory URL (Let's Encrypt prod by default).
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # -- Contact email for the ACME account (required in acme mode).
+    email: ""
+    # -- Secret name cert-manager stores the ACME account private key in.
+    privateKeySecretName: opencrane-acme-account-key
+    # -- DNS-01 solver. Wildcards require DNS-01 (HTTP-01 cannot issue them).
+    # Set the block matching your provider; cloudflare shown as an example.
+    # On-prem: use rfc2136 (BIND/PowerDNS + TSIG). See cluster-issuer.yaml.
+    dns01:
+      # -- Provider key: cloudflare | route53 | clouddns | azuredns | rfc2136 | "".
+      provider: ""
+      # -- Provider-specific solver config, rendered verbatim under solvers[].dns01.
+      config: {}
+
 # -- Obot MCP gateway plane settings.
 # Uses the upstream obot-platform/obot image. Requires an `opencrane-obot` k8s Secret
 # with key `dsn` containing the PostgreSQL DSN for Obot's own database.

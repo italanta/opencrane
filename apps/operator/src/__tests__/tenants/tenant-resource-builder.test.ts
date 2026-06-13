@@ -227,4 +227,22 @@ describe("TenantResourceBuilder", () =>
     expect(ingress.spec?.ingressClassName).toBe("gce");
     expect(ingress.metadata?.annotations?.["kubernetes.io/ingress.class"]).toBe("gce");
   });
+
+  it("omits the tls block when ingress TLS is disabled (default)", () =>
+  {
+    const tenant = _makeTenant("sarah");
+    const ingress = _BuildIngress(defaultConfig, onPremAdapter.buildIngressBinding(), tenant, "default");
+
+    expect(ingress.spec?.tls).toBeUndefined();
+  });
+
+  it("adds a tls block referencing the wildcard secret when ingress TLS is enabled", () =>
+  {
+    const tenant = _makeTenant("sarah");
+    const tlsConfig = { ...defaultConfig, ingressTlsEnabled: true, ingressTlsSecretName: "opencrane-wildcard-tls" };
+
+    const ingress = _BuildIngress(tlsConfig, onPremAdapter.buildIngressBinding(), tenant, "default");
+
+    expect(ingress.spec?.tls).toEqual([{ hosts: ["sarah.opencrane.local"], secretName: "opencrane-wildcard-tls" }]);
+  });
 });

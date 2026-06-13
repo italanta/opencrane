@@ -29,6 +29,10 @@ spec:
               value: "{{ .Values.tenant.defaultImage.repository }}:{{ .Values.tenant.defaultImage.tag }}"
             - name: INGRESS_DOMAIN
               value: {{ .Values.ingress.domain | quote }}
+            - name: INGRESS_TLS_ENABLED
+              value: {{ .Values.ingress.tls.enabled | quote }}
+            - name: INGRESS_TLS_SECRET_NAME
+              value: {{ .Values.ingress.tls.secretName | quote }}
             - name: GATEWAY_PORT
               value: {{ .Values.tenant.gatewayPort | quote }}
             - name: HOSTING_PROVIDER

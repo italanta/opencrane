@@ -13,6 +13,8 @@ function _buildConfig(overrides: Partial<OpenClawTenantOperatorConfig> = {}): Op
     watchNamespace: "opencrane",
     tenantDefaultImage: "opencrane/tenant:latest",
     ingressDomain: "opencrane.local",
+    ingressTlsEnabled: false,
+    ingressTlsSecretName: "opencrane-wildcard-tls",
     gatewayPort: 18789,
     hostingProvider: HostingProvider.OnPrem,
     idleTimeoutMinutes: 0,

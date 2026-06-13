@@ -1,0 +1,66 @@
+{{- /*
+CONN.8 — k8s-native TLS issuance via cert-manager.
+
+Renders a ClusterIssuer + a wildcard Certificate so tenant Ingresses (which
+reference ingress.tls.secretName) are served over browser-trusted TLS. A single
+wildcard *.<domain> cert covers every <tenant>.<domain> pod, so adding a tenant
+needs no new issuance.
+
+- mode=selfSigned : dev/local — issues instantly, no DNS challenge, not browser-trusted.
+- mode=acme       : production — public CA via DNS-01 (wildcards require DNS-01).
+
+Requires cert-manager (cert-manager.io/v1) installed in-cluster.
+*/ -}}
+{{- if .Values.certManager.enabled }}
+{{- $cm := .Values.certManager }}
+{{- $certNs := default .Release.Namespace $cm.certificateNamespace }}
+{{- if and (eq $cm.mode "acme") (empty $cm.acme.email) }}
+{{- fail "certManager.mode=acme requires certManager.acme.email to be set." }}
+{{- end }}
+{{- if and (eq $cm.mode "acme") (empty $cm.acme.dns01.provider) }}
+{{- fail "certManager.mode=acme requires certManager.acme.dns01.provider (wildcards need a DNS-01 solver)." }}
+{{- end }}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ $cm.issuerName | quote }}
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+spec:
+{{- if eq $cm.mode "selfSigned" }}
+  selfSigned: {}
+{{- else if eq $cm.mode "acme" }}
+  acme:
+    server: {{ $cm.acme.server | quote }}
+    email: {{ $cm.acme.email | quote }}
+    privateKeySecretRef:
+      name: {{ $cm.acme.privateKeySecretName | quote }}
+    solvers:
+      - dns01:
+          {{- if $cm.acme.dns01.config }}
+          {{ $cm.acme.dns01.provider }}:
+            {{- toYaml $cm.acme.dns01.config | nindent 12 }}
+          {{- end }}
+{{- else }}
+{{- fail (printf "certManager.mode must be 'selfSigned' or 'acme', got %q" $cm.mode) }}
+{{- end }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Values.ingress.tls.secretName | quote }}
+  namespace: {{ $certNs | quote }}
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+spec:
+  # Secret cert-manager writes the issued cert into; tenant Ingresses reference it.
+  secretName: {{ .Values.ingress.tls.secretName | quote }}
+  issuerRef:
+    name: {{ $cm.issuerName | quote }}
+    kind: ClusterIssuer
+  # Wildcard covers every <tenant>.<domain>; the apex is added so anything served
+  # at the bare base domain is also covered (a wildcard does not match the apex).
+  dnsNames:
+    - {{ printf "*.%s" .Values.ingress.domain | quote }}
+    - {{ .Values.ingress.domain | quote }}
+{{- end }}

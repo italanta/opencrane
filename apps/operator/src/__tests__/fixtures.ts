@@ -14,6 +14,8 @@ export const defaultConfig: OpenClawTenantOperatorConfig = {
   watchNamespace: "default",
   tenantDefaultImage: "ghcr.io/opencrane/tenant:latest",
   ingressDomain: "opencrane.local",
+  ingressTlsEnabled: false,
+  ingressTlsSecretName: "opencrane-wildcard-tls",
   gatewayPort: 18789,
   hostingProvider: HostingProvider.OnPrem,
   idleTimeoutMinutes: 30,

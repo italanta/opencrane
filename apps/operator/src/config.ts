@@ -18,6 +18,12 @@ export interface OpenClawTenantOperatorConfig
   /** Base domain for tenant ingress hostnames. */
   ingressDomain: string;
 
+  /** When true, the tenant Ingress gets a `tls:` block referencing the wildcard cert. */
+  ingressTlsEnabled: boolean;
+
+  /** Name of the (wildcard) TLS Secret the tenant Ingress serves; must exist in the tenant namespace. */
+  ingressTlsSecretName: string;
+
   /** Port number exposed by the OpenClaw gateway inside tenant pods. */
   gatewayPort: number;
 
@@ -79,6 +85,8 @@ export function _LoadOperatorConfig(): OpenClawTenantOperatorConfig
     watchNamespace: _readEnvValue<string>("WATCH_NAMESPACE", "string"),
     tenantDefaultImage: _readEnvValue<string>("TENANT_DEFAULT_IMAGE", "string"),
     ingressDomain: _readEnvValue<string>("INGRESS_DOMAIN", "string"),
+    ingressTlsEnabled: _readEnvValue<boolean>("INGRESS_TLS_ENABLED", "boolean", false, false),
+    ingressTlsSecretName: _readEnvValue<string>("INGRESS_TLS_SECRET_NAME", "string", false, "opencrane-wildcard-tls"),
     gatewayPort: _readEnvValue<number>("GATEWAY_PORT", "number"),
     hostingProvider,
     gcp: hostingProvider === HostingProvider.Gcp
