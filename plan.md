@@ -55,7 +55,9 @@
 > the foundation it builds on. **P4B.2** (AccessPolicy→Cognee grant sync) and **P4B.3** (contract
 > versioning + canary rollout), **P4B.4** (golden-query eval harness + rollout gate), and **P4B.5**
 > (fleet participation protocol + monitoring), and **P4B.6** (awareness SLO metrics + dashboard +
-> alerts) landed; **P4B.7** (anti-spill scope plugin + session→scope binding) is the last item.
+> alerts) landed; **P4B.7** (anti-spill scope plugin + session→scope binding) is the last item —
+> **component 1 (CP session→scope binding API + CLI) landed**; components 2 (plugin) & 3 (memory
+> partitioning) remain, blocked on the two live seams below.
 
 - [x] **P4B.0 Lock Phase 4 awareness decisions.** (2026-06-13) All "Phase 4 Decisions" below are
   now resolved (explicit) or defaulted — Track B is **decision-unblocked**. Key locks: single
@@ -176,19 +178,32 @@
   the `sessionKey` level instead, governed by the control-plane **API** (CLI-first: `oc` and the
   WeOwnAI frontend are both clients of the same endpoint — the API is the source of truth, never a
   frontend-only path). Components:
-  1. **CP session→scope binding (API + CLI).** New `SessionScope` registry + endpoint
-     (`PUT/GET/DELETE /api/v1/sessions/:sessionKey/scope`, OpenAPI-spec'd so contracts/CLI types
-     regenerate) + `oc sessions scope set|show|clear` command. The CP **intersects the requested
+  1. **[x] CP session→scope binding (API + CLI). — LANDED 2026-06-14.** New `SessionScope` registry +
+     endpoint (`PUT/GET/DELETE /api/v1/sessions/:sessionKey/scope`, OpenAPI-spec'd so contracts/CLI
+     types regenerate) + `oc sessions scope set|show|clear` command. The CP **intersects the requested
      scope with the caller's compiled entitlements** (P4B.2) so a client can never over-scope beyond
      what grants allow — the frontend/CLI *propose*, the CP *authorises*.
-  2. **Scope-aware OpenClaw retrieval plugin.** Replace the stock single-dataset Cognee plugin
+     **Landed:** pure `_IntersectSessionScope` (allow-set from compiled awareness decisions;
+     deny/absent → rejected; granted selector adopts the *authoritative* grant scope, never the
+     client-claimed one → no scope-spoofing) + `_NormalizeScopeSelectors`
+     (`core/sessions/session-scope.ts`); `_BindSessionScope`/`_GetSessionScope`/`_ClearSessionScope`
+     store (`session-scope-store.ts`); `SessionScope` Prisma model + migration `0012_session_scope`
+     (no Tenant FK — principal may be a user); router (`routes/sessions.ts`, mounted
+     `/api/v1/sessions`) — PUT stores the granted subset + reports `rejected`, **403 OVER_SCOPE** when
+     nothing is entitled, GET 404s when unbound, DELETE idempotent; OpenAPI `SessionScope` +
+     `ScopeSelector` schemas; `oc sessions scope set|show|clear` (`--scope level:payloadId`,
+     repeatable). Tests: 4 pure intersection + 4 route = 8 (170 total green).
+     **Seam:** binding identity (`principal`) is supplied in the body on this admin/frontend control
+     surface (consistent with the rest of `/api/v1`); the *runtime* tenant-identity binding is the
+     plugin's job (component 2), which reads the live `sessionKey`.
+  2. **[ ] Scope-aware OpenClaw retrieval plugin.** Replace the stock single-dataset Cognee plugin
      (which is `datasetName`-singular, dataset-wide, no scope filtering — confirmed via
      docs.cognee.ai/integrations/openclaw-integration) with a plugin wrapping `@opencrane/awareness`:
      per turn it resolves the active `sessionKey`→scope binding (cached; via CP API or contract
      re-pull) and restricts the Cognee query to those datasets, so other-project context is **never
      retrieved or auto-injected**. Requires extending the P4B.1 SDK with a `ScopeContext` +
      most-specific-wins/deny-overrides merge across the active levels.
-  3. **(Separate vector) per-scope memory partitioning.** Scoped retrieval stops *knowledge-base*
+  3. **[ ] (Separate vector) per-scope memory partitioning.** Scoped retrieval stops *knowledge-base*
      spill; the pod-global L2 `MEMORY.md` + any cross-session summarisation are a second vector
      (window A's written notes readable by window B). Partition written memory per scope — track as
      its own sub-item.

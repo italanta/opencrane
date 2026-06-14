@@ -693,6 +693,32 @@ model TenantWorkspaceDoc {
   @@map("tenant_workspace_docs")
 }
 
+/// A session→scope binding that restricts an OpenClaw chat window's awareness
+/// retrieval to a specific scope set (P4B.7, anti-spill).
+///
+/// A chat window is a `sessionKey` multiplexed over one wss connection / device /
+/// pod principal, so nothing in the transport distinguishes windows. Binding scope
+/// at the `sessionKey` level is what stops one project's context from spilling into
+/// another window. `scopes` holds only the *authorised* set: the control plane
+/// intersects the client-proposed scope with the principal's compiled awareness
+/// entitlements before persisting, so a binding can never exceed what grants allow.
+/// `principal` may be a tenant or user, so there is no Tenant foreign key.
+model SessionScope {
+  /// OpenClaw chat-window session key (the binding's identity).
+  sessionKey String   @id @map("session_key")
+  /// Tenant/user that owns the session; entitlements are compiled against this.
+  principal  String
+  /// The authorised (post-intersection) scope selectors: [{ scope, payloadId }].
+  scopes     Json
+  /// When the binding was first created.
+  createdAt  DateTime @default(now()) @map("created_at")
+  /// When the binding was last updated.
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([principal])
+  @@map("session_scopes")
+}
+
 /// A pending/decided company→tenant reconciliation proposal (P4C.4/P4C.5).
 ///
 /// Produced by the agent-driven 3-way merge: it holds the proposed merged

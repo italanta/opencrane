@@ -108,6 +108,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/{sessionKey}/scope": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inspect a chat-window session's awareness scope binding */
+        get: operations["getSessionScope"];
+        /** Bind a session scope (CP intersects with the principal's entitlements) */
+        put: operations["setSessionScope"];
+        post?: never;
+        /** Clear a session's scope binding */
+        delete: operations["clearSessionScope"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tenants": {
         parameters: {
             query?: never;
@@ -991,6 +1010,20 @@ export interface components {
             shadowMode?: boolean;
             nextWave?: string | null;
         };
+        ScopeSelector: {
+            /** @enum {string} */
+            scope: "org" | "department" | "project" | "personal";
+            payloadId: string;
+        };
+        SessionScope: {
+            sessionKey?: string;
+            principal?: string;
+            scopes?: components["schemas"]["ScopeSelector"][];
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
         DatasetMembership: {
             org: string[];
             team: string[];
@@ -1292,6 +1325,120 @@ export interface operations {
                             severity?: "ok" | "warning" | "critical";
                         }[];
                     };
+                };
+            };
+        };
+    };
+    getSessionScope: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current session scope binding. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionScope"];
+                };
+            };
+            /** @description Session scope not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    setSessionScope: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    principal: string;
+                    scopes: components["schemas"]["ScopeSelector"][];
+                };
+            };
+        };
+        responses: {
+            /** @description Authorised binding; `rejected` lists any over-scope dropped. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionScope"] & {
+                        rejected?: components["schemas"]["ScopeSelector"][];
+                    };
+                };
+            };
+            /** @description Missing principal or empty scopes. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description None of the requested scopes are entitled (over-scope). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    clearSessionScope: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Binding cleared. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        sessionKey?: string;
+                        cleared?: boolean;
+                    };
+                };
+            };
+            /** @description Session scope not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

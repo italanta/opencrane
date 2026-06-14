@@ -26,6 +26,7 @@ import { _BuildDocMergeReconciler } from "./core/personalisation/reconciler.js";
 import { companyDocsRouter } from "./routes/company-docs.js";
 import { awarenessRolloutRouter } from "./routes/awareness-rollout.js";
 import { awarenessParticipationRouter } from "./routes/awareness-participation.js";
+import { sessionsRouter } from "./routes/sessions.js";
 import { platformDnsRouter } from "./routes/platform-dns.js";
 import { _CheckDbHealth } from "./infra/db/healtcheck-db.js";
 
@@ -92,6 +93,7 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
   app.use("/api/v1/platform/dns", platformDnsRouter(customApi, coreApi));
   app.use("/api/v1/awareness/rollout", awarenessRolloutRouter(prisma));
   app.use("/api/v1/awareness/participation", awarenessParticipationRouter(prisma));
+  app.use("/api/v1/sessions", sessionsRouter(prisma));
   app.use("/api/v1/access-tokens", accessTokensRouter(prisma));
   app.use("/api/v1/providers/keys", providerKeysRouter(prisma));
   app.use("/api/v1/openapi.json", openapiRouter());

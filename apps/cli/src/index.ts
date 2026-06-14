@@ -30,6 +30,7 @@ import { _RegisterMetrics } from "./commands/metrics.js";
 import { _RegisterPlatform } from "./commands/platform.js";
 import { _RegisterPolicies } from "./commands/policies.js";
 import { _RegisterProviders } from "./commands/providers.js";
+import { _RegisterSessions } from "./commands/sessions.js";
 import { _RegisterSkills } from "./commands/skills.js";
 import { _RegisterTenants } from "./commands/tenants.js";
 import { _RegisterTokens } from "./commands/tokens.js";
@@ -72,6 +73,7 @@ _RegisterProviders(program, _getConfig);
 _RegisterMetrics(program, _getConfig);
 _RegisterPlatform(program, _getConfig);
 _RegisterAwareness(program, _getConfig);
+_RegisterSessions(program, _getConfig);
 _RegisterAuth(program, _getConfig);
 
 program.parseAsync(process.argv).catch(function _onError(err: unknown)
