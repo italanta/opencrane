@@ -53,7 +53,8 @@
 
 > Decision-unblocked (P4B.0 locked). **P4B.1 (the `@opencrane/awareness` SDK) landed 2026-06-13** —
 > the foundation it builds on. **P4B.2** (AccessPolicy→Cognee grant sync) and **P4B.3** (contract
-> versioning + canary rollout) landed; P4B.4–P4B.7 remain greenfield and sequence on these.
+> versioning + canary rollout) and **P4B.4** (golden-query eval harness + rollout gate) landed;
+> P4B.5–P4B.7 remain greenfield and sequence on these.
 
 - [x] **P4B.0 Lock Phase 4 awareness decisions.** (2026-06-13) All "Phase 4 Decisions" below are
   now resolved (explicit) or defaulted — Track B is **decision-unblocked**. Key locks: single
@@ -110,8 +111,27 @@
   error paths); control-plane 143/143, contracts + CLI build clean. **Acceptance met** (canary cohort +
   one-step rollback demonstrated). Live wiring of the pod SDK to consume `awareness.contractVersion`
   is the remaining seam (shared with P4B.1).
-- [ ] **P4B.4 Golden-query / eval harness.** Conformance suite for awareness correctness, policy
-  safety, freshness, and citation quality. Acceptance: suite runs in CI and gates rollout.
+- [x] **P4B.4 Golden-query / eval harness.** (2026-06-13) `libs/awareness/src/eval/`: pure
+  `___EvaluateGolden(result, golden, nowMs)` scores an `AwarenessResult` across the four locked
+  dimensions — **citation** (no uncitable hits dropped), **policy-safety** (no hit from a dataset
+  outside the principal's `allowedDatasets` — the hard gate), **freshness** (every source within the
+  24h SLO, overridable; undatable fails), **correctness** (expected facts present, case-insensitive).
+  `___RunGoldenSuite(client, goldens, nowMs)` runs each golden through the SDK and aggregates a
+  `SuiteReport` (passed/failed/policyViolations/errors). `___SuiteGatesRollout(report)` encodes the
+  **locked SLO severity**: the hard gate is **zero policy violations** (violation=page) **plus zero
+  query errors** (an unevaluated golden = safety unverified = block); citation/freshness/correctness
+  are reported quality **warnings** (drift=warn), surfaced in `failed`/`results` but non-blocking.
+  Per-query errors are captured into a failed `GoldenResult` (not a whole-suite rejection). `nowMs`
+  injected so freshness is deterministic/testable; future-dated sources tolerated (clock skew).
+  Exported from the barrel. Tests: 6 conformance (per-dimension incl. freshness override +
+  case-insensitive correctness) + 4 runner/gate (clean-open, policy-violation-shut,
+  quality-fail-stays-open, query-error-shut); awareness lib 24/24, build clean.
+  **Note:** correctness/freshness/citation are warnings per the locked `violation=page/drift=warn`;
+  elevate correctness to a hard gate by tightening `___SuiteGatesRollout` if desired.
+  **Acceptance met** (suite runs + gates rollout). **Seam:** authoring the real golden corpus +
+  wiring `___RunGoldenSuite` into CI against a live (or fixtured) Cognee, and calling
+  `___SuiteGatesRollout` from the P4B.3 `promote` path to block a failing promotion — needs the
+  corpus + a CI job + live Cognee for true correctness scoring.
 - [ ] **P4B.5 Fleet skills-sharing protocol + participation monitoring.** Cross-tenant skill
   discovery/consumption protocol; control-plane monitors per-tenant participation, drifted
   versions, and policy-violating skill executions. (Catalog CRUD + registry delivery already

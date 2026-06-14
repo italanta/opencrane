@@ -16,3 +16,9 @@ export type {
   CogneeSearchHit,
   CogneeSearchTransport,
 } from "./awareness-client.types.js";
+
+// Golden-query conformance harness (P4B.4) — gates the fleet rollout (P4B.3).
+export { ___EvaluateGolden } from "./eval/conformance.js";
+export { ___RunGoldenSuite, ___SuiteGatesRollout } from "./eval/runner.js";
+export { ConformanceDimension } from "./eval/golden.types.js";
+export type { ConformanceCheck, GoldenQuery, GoldenResult, SuiteReport } from "./eval/golden.types.js";
