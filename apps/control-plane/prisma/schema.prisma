@@ -24,6 +24,8 @@ model Tenant {
   brokeredDevices    BrokeredDevice[]
   workspaceDocs      TenantWorkspaceDoc[]
   docMergeProposals  DocMergeProposal[]
+  participationEvents ParticipationEvent[]
+  participation      TenantParticipation?
 
   @@map("tenants")
 }
@@ -550,6 +552,68 @@ model AwarenessRollout {
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@map("awareness_rollouts")
+}
+
+/// Kind of fleet participation event a claw emits over the control-plane API (P4B.5).
+enum ParticipationEventKind {
+  /// A2A-style capability advertisement (the claw's Agent Card).
+  AgentCard       @map("agent_card")
+  /// A skill execution outcome (ok or policy-violation).
+  SkillExecution  @map("skill_execution")
+  /// Liveness/participation ping carrying the running contract version.
+  Heartbeat       @map("heartbeat")
+}
+
+/// A fleet participation event from a claw (P4B.5). Transport is the control-plane
+/// API with at-least-once + idempotency keys (no new bus) — `(tenant, idempotencyKey)`
+/// is unique so a redelivered event is recorded once.
+model ParticipationEvent {
+  /// Surrogate key.
+  id             String                 @id @default(cuid())
+  /// Emitting tenant.
+  tenant         String
+  /// Event kind.
+  kind           ParticipationEventKind
+  /// Caller-supplied idempotency key for at-least-once dedup.
+  idempotencyKey String                 @map("idempotency_key")
+  /// For SkillExecution: `ok` or `policy-violation`.
+  outcome        String?
+  /// Kind-specific payload (e.g. the Agent Card manifest, skill digest/name).
+  payload        Json?
+  /// When the event occurred (claw clock).
+  occurredAt     DateTime               @map("occurred_at")
+  /// When the control plane recorded it.
+  createdAt      DateTime               @default(now()) @map("created_at")
+  /// Owning tenant; cascades on tenant delete.
+  tenantRef      Tenant                 @relation(fields: [tenant], references: [name], onDelete: Cascade)
+
+  @@unique([tenant, idempotencyKey])
+  @@index([tenant])
+  @@map("participation_events")
+}
+
+/// Per-tenant participation rollup the control plane monitors (P4B.5): liveness,
+/// the running awareness contract version (for drift detection vs the rollout),
+/// the latest Agent Card, and skill-execution / policy-violation counters.
+model TenantParticipation {
+  /// Tenant (one rollup per tenant).
+  tenant                 String   @id
+  /// Most recent event time seen from this tenant.
+  lastSeenAt             DateTime @map("last_seen_at")
+  /// The awareness contract version the tenant reports running (drift signal).
+  runningContractVersion String?  @map("running_contract_version")
+  /// The latest advertised Agent Card manifest.
+  agentCard              Json?    @map("agent_card")
+  /// Total skill executions reported.
+  skillExecutionCount    Int      @default(0) @map("skill_execution_count")
+  /// Total policy-violating skill executions reported (critical signal).
+  policyViolationCount   Int      @default(0) @map("policy_violation_count")
+  /// When the rollup was last updated.
+  updatedAt              DateTime @updatedAt @map("updated_at")
+  /// Owning tenant; cascades on tenant delete.
+  tenantRef              Tenant   @relation(fields: [tenant], references: [name], onDelete: Cascade)
+
+  @@map("tenant_participation")
 }
 
 /// Lifecycle of a per-tenant company→tenant doc reconciliation proposal (P4C.5).

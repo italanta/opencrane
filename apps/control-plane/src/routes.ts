@@ -9,6 +9,7 @@ import { groupsRouter } from "./routes/groups.js";
 import { _RegisterObotRegistry } from "./routes/internal/obot-registry.js";
 import { _RegisterInternalBundles } from "./routes/internal/skill-bundles.js";
 import { _RegisterInternalTenantContract } from "./routes/internal/tenant-contract.js";
+import { _RegisterInternalParticipation } from "./routes/internal/participation.js";
 import { mcpServersRouter } from "./routes/mcp-servers.js";
 import { metricsRouter } from "./routes/metrics.js";
 import { openapiRouter } from "./routes/openapi-route.js";
@@ -24,6 +25,7 @@ import { _BuildGatewayAdmin } from "./core/connections/gateway-admin.js";
 import { _BuildDocMergeReconciler } from "./core/personalisation/reconciler.js";
 import { companyDocsRouter } from "./routes/company-docs.js";
 import { awarenessRolloutRouter } from "./routes/awareness-rollout.js";
+import { awarenessParticipationRouter } from "./routes/awareness-participation.js";
 import { platformDnsRouter } from "./routes/platform-dns.js";
 import { _CheckDbHealth } from "./infra/db/healtcheck-db.js";
 
@@ -74,6 +76,7 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
   app.use("/api/internal/bundles", _RegisterInternalBundles(prisma, ociBundleStore));
   // Note: /api/internal/contract enforces per-tenant identity via TokenReview — not NetworkPolicy-only.
   app.use("/api/internal/contract", _RegisterInternalTenantContract(prisma, authApi));
+  app.use("/api/internal/awareness/participation", _RegisterInternalParticipation(prisma, authApi));
 
   app.use("/api/v1/metrics", metricsRouter(customApi, prisma));
   app.use("/api/v1/audit", auditRouter(prisma));
@@ -88,6 +91,7 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
   app.use("/api/v1/org/workspace-docs", companyDocsRouter(prisma, _BuildDocMergeReconciler()));
   app.use("/api/v1/platform/dns", platformDnsRouter(customApi, coreApi));
   app.use("/api/v1/awareness/rollout", awarenessRolloutRouter(prisma));
+  app.use("/api/v1/awareness/participation", awarenessParticipationRouter(prisma));
   app.use("/api/v1/access-tokens", accessTokensRouter(prisma));
   app.use("/api/v1/providers/keys", providerKeysRouter(prisma));
   app.use("/api/v1/openapi.json", openapiRouter());

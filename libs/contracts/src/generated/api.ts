@@ -91,6 +91,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/awareness/participation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fleet participation, drift, and policy-violation monitoring */
+        get: operations["getFleetParticipation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tenants": {
         parameters: {
             query?: never;
@@ -1236,6 +1253,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getFleetParticipation: {
+        parameters: {
+            query?: {
+                severity?: "critical" | "warning";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Fleet participation report. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        total?: number;
+                        participating?: number;
+                        drifted?: number;
+                        critical?: number;
+                        warning?: number;
+                        tenants?: {
+                            tenant?: string;
+                            lastSeenAt?: string | null;
+                            runningContractVersion?: string | null;
+                            expectedContractVersion?: string;
+                            participating?: boolean;
+                            drifted?: boolean;
+                            policyViolations?: number;
+                            /** @enum {string} */
+                            severity?: "ok" | "warning" | "critical";
+                        }[];
+                    };
                 };
             };
         };

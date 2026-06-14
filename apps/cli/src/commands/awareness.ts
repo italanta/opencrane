@@ -92,4 +92,23 @@ export function _RegisterAwareness(parent: Command, getConfig: () => CliConfig):
       if (error) _PrintApiError("awareness rollout resolve", error);
       _Print(data, opts.output, ["tenant", "version", "promoted", "shadow", "wave"]);
     });
+
+  awareness
+    .command("participation")
+    .description("Fleet participation monitoring (drift + policy-violation severity)")
+    .option("--severity <severity>", "Filter the tenant list: critical|warning")
+    .option("-o, --output <format>", "Output format: table|json", "table")
+    .action(async function _participation(opts: { severity?: "critical" | "warning"; output: OutputFormat })
+    {
+      const client = _MakeClient(getConfig());
+      const { data, error } = await client.GET("/awareness/participation", {
+        params: { query: opts.severity ? { severity: opts.severity } : {} },
+      });
+      if (error) _PrintApiError("awareness participation", error);
+      // Tabular view lists per-tenant rows; the aggregate counts are in JSON output.
+      const rows = data && typeof data === "object" && Array.isArray((data as { tenants?: unknown[] }).tenants)
+        ? (data as { tenants: unknown[] }).tenants
+        : data;
+      _Print(rows, opts.output, ["tenant", "participating", "drifted", "policyViolations", "severity", "runningContractVersion", "expectedContractVersion"]);
+    });
 }

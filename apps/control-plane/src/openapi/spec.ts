@@ -477,6 +477,43 @@ export const spec = {
       },
     },
 
+    "/awareness/participation": {
+      get: {
+        operationId: "getFleetParticipation",
+        summary: "Fleet participation, drift, and policy-violation monitoring",
+        tags: ["Awareness Rollout"],
+        parameters: [{ name: "severity", in: "query", required: false, schema: { type: "string", enum: ["critical", "warning"] } }],
+        responses: {
+          200: ok("Fleet participation report.", {
+            type: "object",
+            properties: {
+              total: { type: "integer" },
+              participating: { type: "integer" },
+              drifted: { type: "integer" },
+              critical: { type: "integer" },
+              warning: { type: "integer" },
+              tenants: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    tenant: { type: "string" },
+                    lastSeenAt: { type: "string", nullable: true },
+                    runningContractVersion: { type: "string", nullable: true },
+                    expectedContractVersion: { type: "string" },
+                    participating: { type: "boolean" },
+                    drifted: { type: "boolean" },
+                    policyViolations: { type: "integer" },
+                    severity: { type: "string", enum: ["ok", "warning", "critical"] },
+                  },
+                },
+              },
+            },
+          }),
+        },
+      },
+    },
+
     // Tenants
     // ------------------------------------------------------------------
 

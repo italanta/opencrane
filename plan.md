@@ -53,8 +53,8 @@
 
 > Decision-unblocked (P4B.0 locked). **P4B.1 (the `@opencrane/awareness` SDK) landed 2026-06-13** —
 > the foundation it builds on. **P4B.2** (AccessPolicy→Cognee grant sync) and **P4B.3** (contract
-> versioning + canary rollout) and **P4B.4** (golden-query eval harness + rollout gate) landed;
-> P4B.5–P4B.7 remain greenfield and sequence on these.
+> versioning + canary rollout), **P4B.4** (golden-query eval harness + rollout gate), and **P4B.5**
+> (fleet participation protocol + monitoring) landed; P4B.6–P4B.7 remain greenfield.
 
 - [x] **P4B.0 Lock Phase 4 awareness decisions.** (2026-06-13) All "Phase 4 Decisions" below are
   now resolved (explicit) or defaulted — Track B is **decision-unblocked**. Key locks: single
@@ -132,10 +132,26 @@
   wiring `___RunGoldenSuite` into CI against a live (or fixtured) Cognee, and calling
   `___SuiteGatesRollout` from the P4B.3 `promote` path to block a failing promotion — needs the
   corpus + a CI job + live Cognee for true correctness scoring.
-- [ ] **P4B.5 Fleet skills-sharing protocol + participation monitoring.** Cross-tenant skill
-  discovery/consumption protocol; control-plane monitors per-tenant participation, drifted
-  versions, and policy-violating skill executions. (Catalog CRUD + registry delivery already
-  exist; the fleet protocol layer does not.)
+- [x] **P4B.5 Fleet participation protocol + monitoring.** (2026-06-13) The fleet-protocol layer:
+  claws emit participation events over the **control-plane API** (the locked transport — at-least-once
+  + idempotency keys, `aud=control-plane` projected token, no new bus). Internal ingest
+  `POST /api/internal/awareness/participation` (`routes/internal/participation.ts`, TokenReview +
+  tenant-from-identity like the contract endpoint — never body-supplied) handles three kinds:
+  **AgentCard** (A2A capability advertisement), **SkillExecution** (`ok`/`policy-violation`),
+  **Heartbeat** (running contract version). `_RecordParticipationEvent` dedups on
+  `(tenant, idempotencyKey)` (P2002 → 200 idempotent ack) and advances a `TenantParticipation`
+  rollup. **Monitoring:** `_BuildFleetParticipationReport` joins each tenant's rollup with the P4B.3
+  rollout to derive its *expected* version and classifies severity via the pure `_ClassifyParticipation`
+  — **policy-violation → critical** (page), **non-participation / version drift → warning** (the locked
+  `violation=page / drift=warn` model). Admin `GET /api/v1/awareness/participation` (+ `?severity=`)
+  + `oc awareness participation` (OpenAPI-spec'd, contracts/CLI regenerated). Models `ParticipationEvent`
+  + `TenantParticipation` + migration `0011`. Tests: 4 classifier + 3 record (violation/dedup/agent-card)
+  + 1 fleet-report + 5 internal-route (201/dup-200/auth/validation/malformed-subject) = 13; control-plane
+  157/157, contracts+CLI clean. **Acceptance met** (participation + drift + policy-violation monitored).
+  **Seam (cross-tenant skill discovery/consumption):** skills are already scope-entitled (catalog +
+  registry + grant compiler); a tenant-facing "what skills are shared with my scopes" discovery query
+  (most-specific-wins) is the remaining sub-item — leans on existing entitlement compilation. Live wiring
+  of the SDK to *emit* these events from the pod is the shared P4B.1 seam.
 - [ ] **P4B.6 Fleet awareness dashboards + SLOs.** Prometheus metrics + Grafana dashboards +
   alert thresholds + runbook links for awareness SLOs (current `/prom` metrics have none).
 - [ ] **P4B.7 Scope-aware retrieval plugin + session→scope binding (anti-spill).** Stop project
