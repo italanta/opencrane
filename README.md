@@ -76,148 +76,20 @@ See [`CHANGELOG.md`](CHANGELOG.md) for the capabilities shipped so far and [`pla
 
 ## Architecture
 
-OpenCrane is represented here as a clean operating model: a central **Control Plane** backed by **Cloud SQL + Skills Repo**, a **Cognee Brain** for retrieval orchestration, isolated **OpenClaw tenant pods**, and explicit in-cluster platform planes for operator control, harvesting, MCP servers, and egress guardrails.
+OpenCrane is **Kubernetes-native** and **API-first**. At its center is a headless
+**control plane** — a versioned REST API plus the `oc` CLI. From there, the platform:
 
-```
-┌──────────────────────────────────────────────────┐      ┌──────────────────────────────┐
-│                  Control Plane                   │◄────►│  Cloud SQL + Skills Repo     │
-│                admin.opencrane.ai                │      │  org / dept / team /         │
-│      Express + Prisma · headless API-first       │      │  tenant / individual / state │
-│  • Versioned REST API (/api/v1) + OpenAPI spec   │      └──────────────────────────────┘
-│  • Obot control & config authority               │
-│  • oc CLI · external UI consumers via contract   │
-│  • Permission compiler · effective-contract API  │
-└──────────────────────┬───────────────────────────┘
-                       │  (0) config   (1) grants   (2) contract
-                       ▼
-┌────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                Kubernetes Cluster (OpenCrane)                                  │
-│                                                                                                │
-│  Platform / Control            Tenant Runtime Pillar               MCP & Egress Plane          │
-│                                                                                                │
-│  ┌────────────────────────┐    ┌────────────────────────┐    ┌──────────────────────────────┐  │
-│  │ Operator Control       │    │       jente.oc         │    │ Obot MCP Gateway            ▒▒▒▒▒▒ NETWORKPOLICY TO WEB
-│  │ - tenant/policy        │    │       OpenClaw         │    │ (headless · config-slaved)   │  │
-│  │   reconcile            │    │      (isolated)        │    │ - native admin disabled      │  │
-│  │ - projected-token +    │    ├───────────┬────────────┤    │ - validate projected JWT     │  │
-│  │   contract injection   │    │ Personal  │    IAM     │    │ - per-call scope check       │  │
-│  │ - reconciles Obot      │    │   Drive   │ + Workload │    │ - credential broker/shim     │  │
-│  │   config + registry    │    │           │  Identity  │    ├──────────────────────────────┤  │
-│  │ - drift detect/repair  │    │           |            |    │ In-cluster MCP servers       │  │
-│  └────────────────────────┘    │           |            |    │ (registry-pulled, run        │  │
-│                                └──────┬────┬────────────┘    │  locally)                    │  │
-│  ┌────────────────────────┐           |    │  (3) JWT        ├──────────────────────────────┤  │
-│  │ Cognee Brain           │◄──────┬────────┴────────────────►│ Obot token store             │  │
-│  │ - retrieval / memory   │       |   |                      │ - per-user downstream creds  │  │
-│  └──────────▲─────────────┘       |   |                      │ - encrypted; pod-unreachable │  │
-│             │                     |   |                      └──────────────────────────────┘  │
-│  ┌──────────┴─────┬───────────┐   |   |                                                        │
-│  │ Skill Registry │Skills     │   |   |                      ┌──────────────────────────────┐  │
-│  │ & Delivery     │ Access    │◄──┘   └ ─(jente.oc)─ ─ ─ ───►│ Egress Control Plane         ▒▒▒▒▒▒
-│  │ - OCI/ORAS     │ Permission│                              │ - allowlists / DLP / audit   │  │
-│  │ - scan/ingest  │ Gate      │                              │ - network egress authority   │  │
-│  └────────────────┴───────────┘                              └──────────────────────────────┘  │
-│                                ┌────────────────────────┐                                      │
-│                                │  jane.oc (isolated)    │    ┌──────────────────────────────┐  │
-│                                └────────────────────────┘    │ Harvesting Agents            ▒▒▒▒▒▒
-│                                ┌────────────────────────┐    │ - ingest -> Cognee           │  │
-│                                │  niels.oc (isolated)   │    └──────────────────────────────┘  │
-│                                └────────────────────────┘                                      │
-└────────────────────────────────────────────────────────────────────────────────────────────────┘
+- runs **one isolated OpenClaw pod per employee**, each with its own encrypted storage;
+- configures the shared in-cluster planes those assistants draw on — **skills**,
+  **tools (MCP)**, and **organizational knowledge**;
+- compiles your access policies into per-assistant grants; and
+- runs an **operator** that keeps every assistant and plane reconciled.
 
-Legend
-(0) config — control plane owns Obot's registry, IdP/gateway/auth, lifecycle; operator reconciles + drift-repairs.
-(1) grants — per-tenant compiled scope, pushed live; revocation effective next call.
-(2) contract — versioned effective-contract the pod re-pulls at loop boundaries.
-(3) JWT — short-lived, audience-bound projected SA token; shim injects downstream creds server-side, never to the pod.
-```
+An employee signs in once to reach their assistant, and assistants reach the shared
+planes only with short-lived, scoped credentials. Conversations stay inside the pod —
+OpenCrane governs access, budgets, and networking, but never inspects them.
 
-In this view, the left control pillar stacks Operator Control, Cognee Brain, and the Permission Compiler + Skill Registry (split box showing entitlement resolution alongside OCI/ORAS-backed skill delivery). The right MCP & Egress Plane hosts the Obot MCP Gateway, in-cluster MCP servers, Obot token store, Egress Control Plane, and Harvesting Agents. Both planes are config-slaved to the control plane; tenants reach them only via projected JWT.
-
-### Browser ↔ UserTenant pod: the OpenClaw connection
-
-> **Two tenant concepts.** A **ClusterTenant** is the *customer / isolation unit* — it owns
-> a namespace, a resource quota, a compute isolation tier, and its own customer-owned base
-> domain (e.g. `ai.client-company.com`). A **UserTenant** is a *per-user OpenClaw agent gateway*
-> (the openclaw / `Tenant` CRD; "UserTenant" is the canonical name, the CRD kind is still
-> `Tenant` in code), exposed at `<user>.<ClusterTenant-domain>`
-> (e.g. `mike.ai.client-company.com`). The platform control plane runs on its own separate
-> domain (e.g. `example.com`), not as a parent of the customer domains. See the authoritative
-> [Tenancy Model](docs/agents/cluster-architecture.md#tenancy-model--clustertenant-vs-usertenant).
-
-A human touches **two backends and logs in once**: the **control plane** (management
-API, OIDC session) and their **own OpenClaw pod** — a **UserTenant** (the live agent
-session — chat, retrieval, canvas). The pod speaks the OpenClaw **Gateway v4 WebSocket**
-protocol, and its native auth is a **pairing link**, so OpenCrane brokers that rather than
-minting a parallel token:
-
-```
-1. Browser → OIDC login → control-plane session cookie                    ← the only login
-2. Browser → POST /api/v1/auth/pod-token  "pairing link for my pod"
-3. Control plane: resolves the caller's tenant from the verified email ONLY
-   (fail-closed on ambiguity), returns { gatewayUrl (wss://…), bootstrapToken|null,
-   tenant, ingressHost }
-4. Browser opens gatewayUrl and runs the OpenClaw connect handshake: answer
-   connect.challenge by signing the nonce with a persisted device identity, send
-   connect (auth.token=bootstrap | auth.deviceToken on reconnect + device assertion),
-   receive hello-ok { deviceToken, role, scopes }, then subscribe.
-```
-
-The control plane is a **pure broker** — it hands back the pod's pairing link and stays
-*connection*-stateless; it never proxies the socket and (after CONN.1) never mints a
-Kubernetes SA token for the browser. The browser→pod path and the browser→control-plane
-path are distinct; the pod calls the Obot/Skill planes server-side with its own
-projected SA tokens, which never reach the browser.
-
-**Security posture — Option B** (decided): short-lived, re-brokered credentials (no
-long-lived token in the browser), a per-user central kill-switch (OpenClaw
-revoke + Kubernetes force-disconnect), and transport hardening — `wss://`-only,
-HSTS, and a fail-closed `Secure` session cookie in production. TLS for the gateway is
-issued by cert-manager as a wildcard cert (see [hosting architecture](https://docs.opencrane.ai/operators/hosting) §6.3).
-A control-plane/Envoy WebSocket **proxy** (per-session cut + per-frame audit) is a
-deferred, contingent vision, not adopted. Full design, threat model (MITM, the "two
-clocks", K8s force-disconnect), and trade-offs: [Identity & connection auth](https://docs.opencrane.ai/security/identity) and
-[Connection security model](https://docs.opencrane.ai/security/connection-security).
-
-### Direct Retrieval Runtime: Extending Tenant Context
-
-Each tenant pod runs a **retrieval runtime** that bridges the isolated assistant with organizational knowledge during the agentic loop. In Phase 4, retrieval is direct from OpenClaw/Clawdbot to Cognee; the control-plane remains responsible for permissions and policy distribution only. This runtime:
-
-1. **Receives queries** from the OpenClaw agent as it needs context
-2. **Queries Cognee directly** for relevant departments, projects, teammates, and policy context
-3. **Applies uniform awareness contract behavior** for scope selection, citations, fallback, and freshness handling
-4. **Respects permission grants** produced by control-plane dataset membership sync
-5. **Can push knowledge back** — skills developed locally can be promoted to shared libraries after review
-
-```
-During Agentic Loop:
-┌─────────────────────────────────────┐
-│  OpenClaw Assistant Reasoning       │
-│  "Who is on the engineering team?"  │
-└─────────────┬───────────────────────┘
-              │
-              ▼
-┌─────────────────────────────────────┐
-│  Retrieval Runtime                  │
-│  (runs within tenant pod)           │
-│  1. Resolve awareness contract      │
-│     version and active scopes       │
-│  2. Query Cognee directly           │
-│  3. Return: Members, projects,      │
-│     shared skills + citations       │
-└──────────────┬──────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────────────────┐
-│  Cognee Knowledge Plane                          │
-│  Enforces dataset memberships synced by control  │
-│  plane and returns scope-filtered results        │
-└──────────────────────────────────────────────────┘
-```
-
-> **Status & roadmap.** For the capabilities shipped so far — and what is planned
-> next — see [`CHANGELOG.md`](CHANGELOG.md) and [`plan-done.md`](plan-done.md). This
-> README describes what OpenCrane does; design decisions and phase history live there.
+📐 See the illustrated **[architecture overview](https://opencrane.ai/advanced/architecture)** — diagrams of the control plane, the sign-in flow, and the deny-by-default access model.
 
 ## Components
 
@@ -230,12 +102,12 @@ During Agentic Loop:
 | Contracts | `libs/contracts/` | Generated TypeScript client + DTOs from `openapi.json`; consumed by CLI and external surfaces |
 | Docker | `docker/` | Container images for tenant pods, operator, and control plane |
 | Skills | `skills/shared/` | Org/team shared skill library |
-| Terraform | `terraform/` | `core/` (cloud-agnostic) + `cloud/gcp/` (GCP-specific); Crossplane removed |
+| Terraform | `terraform/` | `core/` (cloud-agnostic) + `cloud/gcp/` (GCP-specific) |
 | Docs site | `website/` | VitePress documentation site published to GitHub Pages |
 
 ## Documentation
 
-📖 **Full documentation site: [docs.opencrane.ai](https://docs.opencrane.ai)** —
+📖 **Full documentation site: [opencrane.ai](https://opencrane.ai)** —
 getting started, concepts, operator & integrator guides, and an interactive API
 reference. The site is built with [VitePress](https://vitepress.dev) from
 [`website/`](website/). Contributor/agent coding guidance stays in
@@ -243,13 +115,13 @@ reference. The site is built with [VitePress](https://vitepress.dev) from
 
 | Doc | Covers |
 |-----|--------|
-| [Identity & connection auth](https://docs.opencrane.ai/security/identity) | Identity model: OIDC control-plane session + the OpenClaw pairing-link broker & connect handshake |
-| [Connection security model](https://docs.opencrane.ai/security/connection-security) | Connection-security threat model + the Option B decision (and the deferred proxy) |
-| [Hosting architecture](https://docs.opencrane.ai/operators/hosting) | On-prem-default hosting adapters, the cloud seam, and cert-manager TLS issuance |
-| [MCP gateway (Obot)](https://docs.opencrane.ai/integrators/mcp-gateway) | Obot MCP Gateway: catalog sync, policy enforcement layers, drift repair |
-| [Skill registry & delivery](https://docs.opencrane.ai/integrators/skill-registry) | Skill catalog, scan/entitle pipeline, and per-read delivery |
-| [Retrieval & memory](https://docs.opencrane.ai/integrators/retrieval-memory) | Cognee retrieval plane: datasets, AccessPolicy mapping, freshness |
-| [API overview](https://docs.opencrane.ai/reference/api-overview) · [CLI reference](https://docs.opencrane.ai/reference/cli) · [Runbook](https://docs.opencrane.ai/operators/runbook) | HTTP API reference · `oc` CLI reference · operational runbook |
+| [Identity & connection auth](https://opencrane.ai/security/identity) | How people sign in and how a browser connects to its assistant |
+| [Connection security model](https://opencrane.ai/security/connection-security) | How OpenCrane keeps the browser↔assistant connection secure |
+| [Hosting architecture](https://opencrane.ai/operators/hosting) | On-prem-default hosting adapters, the cloud seam, and cert-manager TLS issuance |
+| [MCP gateway (Obot)](https://opencrane.ai/integrators/mcp-gateway) | Connecting assistants to external tools over MCP |
+| [Skill registry & delivery](https://opencrane.ai/integrators/skill-registry) | Skill catalog, scan/entitle pipeline, and per-read delivery |
+| [Retrieval & memory](https://opencrane.ai/integrators/retrieval-memory) | Cognee retrieval plane: datasets, AccessPolicy mapping, freshness |
+| [API overview](https://opencrane.ai/reference/api-overview) · [CLI reference](https://opencrane.ai/reference/cli) · [Runbook](https://opencrane.ai/operators/runbook) | HTTP API reference · `oc` CLI reference · operational runbook |
 
 ## Quick Start
 
@@ -318,7 +190,7 @@ spec:
 EOF
 ```
 
-The operator creates a GCS bucket, Workload Identity service account, encryption key, deployment, service, and one ingress per UserTenant. Here `ingress.domain=opencrane.ai` is this instance's **ClusterTenant base domain**, and the `jente` UserTenant gateway is reachable at `https://jente.opencrane.ai` (under the wildcard `*.opencrane.ai`). The platform control plane lives at the apex (`opencrane.ai` / `admin.opencrane.ai`). See the [DNS hierarchy](docs/agents/cluster-architecture.md#tenancy-model--clustertenant-vs-usertenant).
+The operator provisions everything the tenant needs — storage, identity, an encryption key, and its own ingress. With `ingress.domain=opencrane.ai`, the `jente` assistant is reachable at `https://jente.opencrane.ai`. See [Set up your domain](https://opencrane.ai/guide/dns) for DNS and TLS.
 
 ### CLI Quick Reference
 
@@ -344,7 +216,7 @@ oc auth me                              # current auth identity
 oc tenants list --output json | jq '.[].name'   # machine-readable output
 ```
 
-See the [CLI reference](https://docs.opencrane.ai/reference/cli) for the full command reference and the [API reference](https://docs.opencrane.ai/reference/api) for the HTTP API.
+See the [CLI reference](https://opencrane.ai/reference/cli) for the full command reference and the [API reference](https://opencrane.ai/reference/api) for the HTTP API.
 
 ### Version Pinning
 

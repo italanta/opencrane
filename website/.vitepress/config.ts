@@ -1,9 +1,7 @@
 import { defineConfig } from 'vitepress'
 
-// Local dev/build use '/'. The GitHub Pages workflow builds with
-// DOCS_BASE=/<repo>/ (e.g. '/opencrane/') so assets resolve on project pages at
-// italanta.github.io/opencrane/. Switch to a custom domain by adding a public/CNAME
-// and dropping DOCS_BASE so base stays '/'.
+// Served at the opencrane.ai custom domain (see website/public/CNAME), so base
+// stays '/'. DOCS_BASE can override it (e.g. '/opencrane/') for project-pages hosting.
 const base = process.env.DOCS_BASE ?? '/'
 
 const REPO = 'https://github.com/italanta/opencrane'

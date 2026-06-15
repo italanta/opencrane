@@ -34,6 +34,7 @@ message) wherever the work has no dependency between them.
 |-------|-------|-----------|
 | `review` | Haiku | Independent, fresh-context code review of a changed slice — correctness bugs, regressions, security/IAM-policy drift, missing tests, AGENTS.md style. Read-only; reports findings severity-first. **Required by the review gate before a turn ends** (see [Mandatory Independent Review](docs/agents/workflow.md#mandatory-independent-review-policy-driven-gate)). |
 | `changelog` | Sonnet | Maintain `CHANGELOG.md` in functional, capability-first terms when a phase/track completes or a tag is cut. Reads `plan.md`/`plan-done.md` + git range; writes capability, not commit history. |
+| `readme` | Sonnet | Maintain `README.md` as the project front door — the problem, the vision, and what the repo does. Keeps design decisions, phase history, threat models, and deep mechanism OUT (those go to `CHANGELOG.md`/`plan-done.md`/the docs site). |
 
 **Roadmap execution** is the `/execute-plan` **skill** (`.claude/commands/execute-plan.md`), not an
 agent — it runs in the main session, parallelises via a dependency DAG + waves (one `general-purpose`
