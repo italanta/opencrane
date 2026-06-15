@@ -43,6 +43,12 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build site
+        env:
+          # Project pages serve under /<repo>/ (e.g. /opencrane/). VitePress needs
+          # this base at build time so asset and link URLs resolve. Derived from the
+          # repo name, so it keeps working if the repo is renamed. For a custom
+          # domain, drop this env (and add public/CNAME) so base stays '/'.
+          DOCS_BASE: /${{ github.event.repository.name }}/
         run: pnpm docs:build
 
       - name: Upload Pages artifact
