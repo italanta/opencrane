@@ -63,7 +63,14 @@ export default defineConfig({
       {
         text: 'Get set up',
         items: [
-          { text: '1. Install OpenCrane', link: '/guide/getting-started' },
+          {
+            text: '1. Install OpenCrane',
+            link: '/guide/getting-started',
+            items: [
+              { text: 'Local, VM or VPS', link: '/guide/deploy-local' },
+              { text: 'Cluster deployment', link: '/guide/deploy-cluster' },
+            ],
+          },
           { text: '2. Set up your domain', link: '/guide/dns' },
           { text: '3. Create your first assistant', link: '/guide/first-tenant' },
           { text: '4. Connect to OpenClaw', link: '/guide/connect' },
