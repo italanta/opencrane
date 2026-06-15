@@ -267,7 +267,7 @@ resource gating are modeled and enforced rather than implied by how you wrote th
 > `Tenant` in code. They live on separate, independent domains — the customer's own base domain
 > (e.g. `ai.client-company.com`) and a per-user subdomain under it (e.g. `mike.ai.client-company.com`),
 > while the control plane runs on the platform's own domain. See the authoritative
-> [Tenancy Model](https://github.com/opencrane/opencrane/blob/main/docs/agents/cluster-architecture.md#tenancy-model--clustertenant-vs-usertenant)
+> [Tenancy Model](https://github.com/italanta/opencrane/blob/main/docs/agents/cluster-architecture.md#tenancy-model--clustertenant-vs-usertenant)
 > for the full table and DNS hierarchy.
 
 > **The invariant the resource makes enforceable: one customer = one `ClusterTenant` = one

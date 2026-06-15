@@ -5,7 +5,7 @@ import { defineConfig } from 'vitepress'
 // publishing to project pages instead of a custom domain.
 const base = process.env.DOCS_BASE ?? '/'
 
-const REPO = 'https://github.com/opencrane/opencrane'
+const REPO = 'https://github.com/italanta/opencrane'
 
 export default defineConfig({
   base,

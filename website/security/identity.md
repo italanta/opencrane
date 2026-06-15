@@ -7,7 +7,7 @@ access to **both** the control-plane API and the user's own OpenClaw pod.
 > `Tenant` CRD); "UserTenant" is the canonical doc name while the CRD kind is still `Tenant`
 > in code. It is exposed at `<user>.<ClusterTenant-domain>`. The **ClusterTenant** is the
 > customer that owns that base domain. See the authoritative
-> [Tenancy Model](https://github.com/opencrane/opencrane/blob/main/docs/agents/cluster-architecture.md#tenancy-model--clustertenant-vs-usertenant).
+> [Tenancy Model](https://github.com/italanta/opencrane/blob/main/docs/agents/cluster-architecture.md#tenancy-model--clustertenant-vs-usertenant).
 > Below, "tenant pod" / "tenant gateway" means a UserTenant.
 
 > **Status legend:** ✅ implemented · 🔶 planned/target. The OIDC control-plane

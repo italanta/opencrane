@@ -43,25 +43,26 @@
   --vp-home-hero-name-background: -webkit-linear-gradient(120deg, #5bd2ec 30%, #5aa9d8);
 }
 
-/* The hero image is a wide lockup (≈1.8:1), not a square mark — let it run wider
-   than VitePress's default 320px square and size to its natural aspect ratio. */
-.VPHero .image-container {
-  width: auto;
-  height: auto;
-  transform: none;
-}
+/* The hero image is a wide lockup (≈1.8:1), not a square mark. Keep it flowing
+   INSIDE its own column rather than absolutely centred (which made it spill over
+   the heading), and drop the glow blob behind it. */
 .VPHero .image-bg {
   display: none;
 }
-.VPHero img.image-src {
-  position: static;
+.VPHero .image-container {
   width: 100%;
-  max-width: 480px;
-  max-height: none;
-  border-radius: 12px;
+  height: auto;
+  max-width: 460px;
+  margin: 0 auto;
+  transform: none;
 }
-@media (min-width: 960px) {
-  .VPHero img.image-src {
-    max-width: 520px;
-  }
+.VPHero img.image-src {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: 100%;
+  max-width: 100%;
+  max-height: none;
+  transform: none;
+  border-radius: 12px;
 }
