@@ -42,7 +42,7 @@ output "dns_name_servers"
 output "database_url"
 {
   description = "PostgreSQL connection string"
-  value       = module.cloudsql.database_url
+  value       = "postgresql://opencrane:${module.app_deploy.database_password}@${module.app_deploy.database_host}:5432/opencrane"
   sensitive   = true
 }
 

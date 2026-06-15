@@ -2,13 +2,12 @@ import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
 
 import type { OpenClawTenantOperatorConfig } from "../config.js";
-import type { HostingAdapter } from "../hosting/index.js";
-import { _BuildHostingAdapter } from "../hosting/index.js";
+import { _BuildHostingAdapter, type HostingAdapter } from "../hosting/index.js";
 
 import type { Tenant } from "./models/tenant.interface.js";
 import { TenantPolicyResolutionState, TenantStatusPhase } from "./models/tenant-status.interface.js";
 
-import { ___K8sApplyResource } from "../infra/k8s.js";
+import { __K8sApplyResource } from "../infra/k8s.js";
 import { _RunWatchLoop, K8sWatchEventType } from "../shared/watch-runner.js";
 import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "../shared/crd-constants.js";
 import { _BuildClusterTenantLimitRange, _BuildClusterTenantNamespace, _BuildClusterTenantResourceQuota, _BuildConfigMap, _BuildDeployment, _BuildIngress, _BuildIngressHost, _BuildService, _BuildServiceAccount, _BuildStatePvc } from "./deploy/index.js";

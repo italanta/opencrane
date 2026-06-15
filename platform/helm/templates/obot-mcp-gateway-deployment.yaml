@@ -21,7 +21,8 @@ spec:
         {{- include "opencrane.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: mcp-gateway
     spec:
-      automountServiceAccountToken: false
+      serviceAccountName: {{ include "opencrane.fullname" . }}-mcp-gateway
+      automountServiceAccountToken: true
       securityContext:
         {{- toYaml .Values.mcpGateway.podSecurityContext | nindent 8 }}
       containers:
@@ -54,6 +55,16 @@ spec:
               value: "kubernetes"
             - name: OBOT_SERVER_MCPCLUSTER_DOMAIN
               value: "cluster.local"
+            - name: OBOT_SERVER_MCPNAMESPACE
+              value: "{{ .Release.Namespace }}"
+            - name: OBOT_SERVER_SERVICE_NAME
+              value: "{{ include "opencrane.fullname" . }}-mcp-gateway"
+            - name: OBOT_SERVER_SERVICE_NAMESPACE
+              value: "{{ .Release.Namespace }}"
+            - name: OBOT_SERVER_SERVICE_ACCOUNT_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.serviceAccountName
             {{- if .Values.mcpGateway.encryptionAtRest.enabled }}
             # Encryption-at-rest ENABLED (P4D.1).
             # ⚠️ ASSUMED knob — provider=custom + key-from-Secret are NOT verified
@@ -77,17 +88,17 @@ spec:
             # with OpenCrane McpServer rows. The control-plane exposes /api/internal/obot-registry
             # in Obot's /v0.1/servers format.
             - name: OBOT_SERVER_PROVIDER_REGISTRIES
-              value: "http://{{ include "opencrane.fullname" . }}-control-plane.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.controlPlane.service.port }}/api/internal/obot-registry"
+              value: "http://{{ include "opencrane.fullname" . }}-control-plane:{{ .Values.controlPlane.service.port }}/api/internal/obot-registry"
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: /api/healthz
               port: http
             initialDelaySeconds: 20
             periodSeconds: 15
             failureThreshold: 4
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /api/healthz
               port: http
             initialDelaySeconds: 10
             periodSeconds: 10

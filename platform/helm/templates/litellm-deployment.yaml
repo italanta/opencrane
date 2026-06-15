@@ -61,6 +61,19 @@ spec:
                   name: {{ include "opencrane.fullname" . }}-litellm
                   key: {{ .Values.litellm.databaseSecretKey }}
             {{- end }}
+            - name: LITELLM_MIGRATION_DIR
+              value: "/tmp/litellm/migrations"
+            - name: LITELLM_NON_ROOT
+              value: "true"
+            - name: PRISMA_BINARY_CACHE_DIR
+              value: "/tmp/prisma-engines"
+            - name: XDG_CACHE_HOME
+              value: "/tmp"
+          volumeMounts:
+            - name: temp-dir
+              mountPath: /tmp
+            - name: var-lib-litellm
+              mountPath: /var/lib/litellm
           livenessProbe:
             tcpSocket:
               port: http
@@ -73,4 +86,9 @@ spec:
             periodSeconds: 5
           resources:
             {{- toYaml .Values.litellm.resources | nindent 12 }}
+      volumes:
+        - name: temp-dir
+          emptyDir: {}
+        - name: var-lib-litellm
+          emptyDir: {}
 {{- end }}

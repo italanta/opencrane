@@ -7,15 +7,18 @@ WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY tsconfig.base.json ./
 COPY libs/contracts/package.json libs/contracts/tsconfig.json libs/contracts/
+COPY libs/awareness/package.json libs/awareness/tsconfig.json libs/awareness/
 COPY apps/control-plane/scripts apps/control-plane/scripts
 COPY apps/control-plane/openapi.json apps/control-plane/openapi.json
 COPY apps/control-plane/package.json apps/control-plane/tsconfig.json apps/control-plane/
 COPY apps/control-plane/prisma apps/control-plane/prisma
-RUN pnpm install --frozen-lockfile --filter @opencrane/contracts --filter @opencrane/control-plane
+RUN pnpm install --frozen-lockfile --filter @opencrane/contracts --filter @opencrane/awareness --filter @opencrane/control-plane
 
 COPY libs/contracts/src libs/contracts/src
+COPY libs/awareness/src libs/awareness/src
 COPY apps/control-plane/src apps/control-plane/src
 RUN pnpm --filter @opencrane/contracts build
+RUN pnpm --filter @opencrane/awareness build
 RUN pnpm --filter @opencrane/control-plane build
 # Stage generated Prisma client to a fixed path for the runtime stage
 RUN find /app -path '*/node_modules/.prisma/client' -type d | head -1 | \
@@ -29,9 +32,10 @@ RUN corepack enable && corepack prepare pnpm@10.11.0 --activate
 WORKDIR /app
 COPY --from=build /app/package.json /app/pnpm-workspace.yaml /app/pnpm-lock.yaml ./
 COPY --from=build /app/libs/contracts/package.json libs/contracts/
+COPY --from=build /app/libs/awareness/package.json libs/awareness/
 COPY --from=build /app/apps/control-plane/package.json apps/control-plane/
 COPY --from=build /app/apps/control-plane/prisma apps/control-plane/prisma
-RUN pnpm install --frozen-lockfile --filter @opencrane/contracts --filter @opencrane/control-plane --prod
+RUN pnpm install --frozen-lockfile --filter @opencrane/contracts --filter @opencrane/awareness --filter @opencrane/control-plane --prod
 COPY --from=build /generated-prisma /tmp/generated-prisma
 # Retrieve the generated Prisma client for the runtime stage
 RUN target=$(find /app -path '*/node_modules/.prisma/client' -type d | head -1) && \
@@ -40,6 +44,7 @@ RUN target=$(find /app -path '*/node_modules/.prisma/client' -type d | head -1) 
     rm -rf /tmp/generated-prisma
 
 COPY --from=build /app/libs/contracts/dist libs/contracts/dist
+COPY --from=build /app/libs/awareness/dist libs/awareness/dist
 COPY --from=build /app/apps/control-plane/dist apps/control-plane/dist
 
 USER node

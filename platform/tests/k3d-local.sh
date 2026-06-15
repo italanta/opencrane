@@ -180,12 +180,31 @@ kubectl create secret generic "$DB_SECRET_NAME" \
   --dry-run=client \
   -o yaml | kubectl apply -f -
 
+echo "[local] Bootstrapping credentials secret for Obot MCP Gateway"
+kubectl create secret generic "opencrane-obot" \
+  -n "$NAMESPACE" \
+  --from-literal=dsn="postgresql://opencrane:${DB_PASSWORD}@${DB_RELEASE_NAME}-rw.${NAMESPACE}.svc.cluster.local:5432/opencrane" \
+  --dry-run=client \
+  -o yaml | kubectl apply -f -
+
+
 if [[ "$LOCAL_PROFILE" == "strict" ]]; then
   kubectl create secret generic "$LITELLM_SECRET_NAME" \
     -n "$NAMESPACE" \
     --from-literal=LITELLM_MASTER_KEY="$LITELLM_MASTER_KEY" \
     --dry-run=client \
     -o yaml | kubectl apply -f -
+fi
+
+# 5b. Install cert-manager if enabled in the resolved values file to support in-cluster TLS certificate generation.
+if grep -A 5 "certManager:" "$VALUES_FILE" 2>/dev/null | grep -q "enabled: true"; then
+  echo "[local] Installing cert-manager"
+  helm repo add jetstack https://charts.jetstack.io --force-update >/dev/null
+  helm upgrade --install cert-manager jetstack/cert-manager \
+    --namespace cert-manager \
+    --create-namespace \
+    --set crds.enabled=true \
+    --wait
 fi
 
 # 6. Install the OpenCrane chart with local-strict overrides wired to the in-cluster database.

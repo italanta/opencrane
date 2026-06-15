@@ -162,6 +162,14 @@ kubectl create secret generic "$DB_SECRET_NAME" \
   --dry-run=client \
   -o yaml | kubectl apply -f -
 
+echo "[e2e] Bootstrapping credentials secret for Obot MCP Gateway"
+kubectl create secret generic "opencrane-obot" \
+  -n "$NAMESPACE" \
+  --from-literal=dsn="postgresql://opencrane:${DB_PASSWORD}@${DB_RELEASE_NAME}-rw.${NAMESPACE}.svc.cluster.local:5432/opencrane" \
+  --dry-run=client \
+  -o yaml | kubectl apply -f -
+
+
 if [[ "$LOCAL_PROFILE" == "strict" ]]; then
   if [[ -z "$LITELLM_MASTER_KEY" ]]; then
     echo "[e2e] LOCAL_PROFILE=strict requires LITELLM_MASTER_KEY to be set and non-empty"
@@ -190,7 +198,7 @@ kubectl rollout status deployment/opencrane-operator -n "$NAMESPACE" --timeout=1
 
 # Wait for LiteLLM when cost routing is enabled by chart values.
 if kubectl get deployment/opencrane-litellm -n "$NAMESPACE" >/dev/null 2>&1; then
-  kubectl rollout status deployment/opencrane-litellm -n "$NAMESPACE" --timeout=120s
+  kubectl rollout status deployment/opencrane-litellm -n "$NAMESPACE" --timeout=240s
 fi
 
 # 7. Create a Tenant CR and let the operator reconcile child resources.
