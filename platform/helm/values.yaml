@@ -429,3 +429,21 @@ observability:
   cloudLogging: false
   # -- Enable Cloud Error Reporting integration
   cloudErrorReporting: false
+
+# -- ClusterTenant provisioner (Track CT). The native `shared` and `dedicatedNodes`
+#    isolation tiers need NO configuration here — the operator enforces them inline.
+#    To additionally serve the `dedicatedCluster` tier, point this at an external,
+#    out-of-process provisioner webhook (e.g. a private vendor backend). Left empty
+#    (the default), `dedicatedCluster` stays unavailable and the control-plane API
+#    rejects it with 422 TIER_UNAVAILABLE (fail-closed). The control plane refuses a
+#    non-`https://` URL so the bearer token is never sent in plaintext.
+clusterTenant:
+  provisionerWebhook:
+    # -- HTTPS base URL of the external provisioner (must start with https://).
+    url: ""
+    # -- Stable provisioner id used for capability routing (defaults to "external").
+    id: ""
+    # -- Existing Secret holding the bearer token presented to the webhook.
+    existingSecret: ""
+    # -- Key within that Secret holding the token.
+    secretKey: CLUSTER_TENANT_PROVISIONER_WEBHOOK_TOKEN

@@ -3,7 +3,7 @@ import type { Logger } from "pino";
 
 import type { OpenClawTenantOperatorConfig } from "../config.js";
 import type { AccessPolicy } from "./types.js";
-import { _K8sApplyResource, _K8sDeleteResource } from "../infra/k8s.js";
+import { __K8sApplyResource, _K8sDeleteResource } from "../infra/k8s.js";
 import { ACCESS_POLICY_CRD_PLURAL, OPENCRANE_API_GROUP, OPENCRANE_API_VERSION } from "../shared/crd-constants.js";
 import { _RunWatchLoop, K8sWatchEventType } from "../shared/watch-runner.js";
 import { PolicyResourceBuilder } from "./policy-resource-builder.js";
@@ -107,7 +107,7 @@ export class PolicyOperator
     if (policy.spec.egressRules?.length)
     {
       const netpol = this.resourceBuilder.buildNetworkPolicy(policy, namespace);
-      await _K8sApplyResource(this.objectApi, netpol, this.log);
+      await __K8sApplyResource(this.objectApi, netpol, this.log);
     }
 
     // If Cilium is available and domain rules are specified, create CiliumNetworkPolicy
@@ -116,7 +116,7 @@ export class PolicyOperator
       const ciliumPolicy = this.resourceBuilder.buildCiliumPolicy(policy, namespace);
       try
       {
-        await _K8sApplyResource(this.objectApi, ciliumPolicy, this.log);
+        await __K8sApplyResource(this.objectApi, ciliumPolicy, this.log);
       }
       catch (err)
       {

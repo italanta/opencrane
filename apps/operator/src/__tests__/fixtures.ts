@@ -3,6 +3,7 @@ import type { OpenClawTenantOperatorConfig } from "../config.js";
 import { HostingProvider } from "../config.js";
 import type { Tenant } from "../tenants/models/tenant.interface.js";
 import { TenantStatusPhase } from "../tenants/models/tenant-status.interface.js";
+import type { ClusterTenantResource } from "../tenants/internal/cluster-tenant-resolution.types.js";
 import { OnPremHostingAdapter } from "../hosting/adapters/onprem/onprem-hosting.adapter.js";
 import { GcpHostingAdapter } from "../hosting/adapters/gcp/gcp-hosting.adapter.js";
 import type { GcsBucketOperations } from "../hosting/adapters/gcp/gcp-bucket.client.js";
@@ -92,6 +93,26 @@ export function _makeTenant(
     status: {
       phase: phase ?? TenantStatusPhase.Running,
     },
+  };
+}
+
+/**
+ * Create a minimal ClusterTenant fixture (operator-local view) with the given
+ * name and bound namespace for use in cluster-tenant resolution tests.
+ */
+export function _makeClusterTenant(name: string, boundNamespace?: string): ClusterTenantResource
+{
+  return {
+    apiVersion: "opencrane.io/v1alpha1",
+    kind: "ClusterTenant",
+    metadata: { name },
+    spec: {
+      displayName: name.charAt(0).toUpperCase() + name.slice(1),
+      isolationTier: "shared",
+      compute: { mode: "shared" },
+      resources: { quota: { cpu: "4", memory: "8Gi", pods: 10 } },
+    },
+    status: boundNamespace ? { phase: "ready", boundNamespace } : undefined,
   };
 }
 

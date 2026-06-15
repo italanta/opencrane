@@ -58,6 +58,14 @@ function conflict(description: string)
   };
 }
 
+function unprocessable(description: string)
+{
+  return {
+    description,
+    content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+  };
+}
+
 function upstreamError()
 {
   return {
@@ -152,6 +160,72 @@ const McpServerSchema = {
     transport: { type: "string", enum: ["streamable-http", "sse", "websocket"] },
     grants: { type: "array", items: { type: "object" } },
     credentials: { type: "array", items: { $ref: "#/components/schemas/McpServerCredential" } },
+  },
+};
+
+const ClusterTenantResourceQuotaSchema = {
+  type: "object" as const,
+  properties: {
+    cpu: { type: "string", description: "Total CPU the customer may request (e.g. '4', '500m')." },
+    memory: { type: "string", description: "Total memory the customer may request (e.g. '8Gi')." },
+    pods: { type: "integer", description: "Maximum number of pods the customer may run." },
+    storage: { type: "string", description: "Total persistent storage the customer may claim (e.g. '100Gi')." },
+    gpu: { type: "integer", description: "Total GPUs the customer may request." },
+  },
+};
+
+const ClusterTenantSchema = {
+  type: "object" as const,
+  required: ["name", "displayName", "isolationTier", "compute", "resources"],
+  properties: {
+    name: { type: "string", description: "Stable cluster-scoped identifier (the customer key)." },
+    displayName: { type: "string", description: "Human-readable customer name." },
+    isolationTier: { type: "string", enum: ["shared", "dedicatedNodes", "dedicatedCluster"], description: "Isolation strength chosen for this customer." },
+    compute: {
+      type: "object",
+      required: ["mode"],
+      properties: {
+        mode: { type: "string", enum: ["shared", "dedicated"] },
+        nodePool: { type: "string", description: "Dedicated node pool name; required when mode is 'dedicated'." },
+      },
+    },
+    resources: {
+      type: "object",
+      required: ["quota"],
+      properties: { quota: { $ref: "#/components/schemas/ClusterTenantResourceQuota" } },
+    },
+    status: {
+      type: "object",
+      properties: {
+        phase: { type: "string", enum: ["pending", "provisioning", "ready", "failed"] },
+        message: { type: "string" },
+        boundNamespace: { type: "string" },
+        provisioner: { type: "string" },
+      },
+    },
+  },
+};
+
+const ClusterTenantWriteSchema = {
+  type: "object" as const,
+  required: ["name", "displayName", "isolationTier", "compute", "resources"],
+  properties: {
+    name: { type: "string", description: "Stable cluster-scoped identifier (the customer key)." },
+    displayName: { type: "string", description: "Human-readable customer name." },
+    isolationTier: { type: "string", enum: ["shared", "dedicatedNodes", "dedicatedCluster"] },
+    compute: {
+      type: "object",
+      required: ["mode"],
+      properties: {
+        mode: { type: "string", enum: ["shared", "dedicated"] },
+        nodePool: { type: "string" },
+      },
+    },
+    resources: {
+      type: "object",
+      required: ["quota"],
+      properties: { quota: { $ref: "#/components/schemas/ClusterTenantResourceQuota" } },
+    },
   },
 };
 
@@ -332,6 +406,9 @@ export const spec = {
       Policy: PolicySchema,
       McpServer: McpServerSchema,
       McpServerCredential: McpServerCredentialSchema,
+      ClusterTenant: ClusterTenantSchema,
+      ClusterTenantWrite: ClusterTenantWriteSchema,
+      ClusterTenantResourceQuota: ClusterTenantResourceQuotaSchema,
       Group: GroupSchema,
       SkillBundle: SkillBundleSchema,
       AuditEntry: AuditEntrySchema,
@@ -903,6 +980,95 @@ export const spec = {
         parameters: [{ name: "name", in: "path", required: true, schema: { type: "string" } }],
         responses: {
           200: ok("Policy deleted.", { type: "object", properties: { name: { type: "string" }, status: { type: "string" } } }),
+        },
+      },
+    },
+
+    // ------------------------------------------------------------------
+    // Cluster Tenants (CT.2) — first-class customer / isolation unit
+    // ------------------------------------------------------------------
+
+    "/cluster-tenants": {
+      get: {
+        operationId: "listClusterTenants",
+        summary: "List all cluster tenants",
+        tags: ["Cluster Tenants"],
+        responses: {
+          200: ok("Cluster tenant list.", { type: "array", items: { $ref: "#/components/schemas/ClusterTenant" } }),
+        },
+      },
+      post: {
+        operationId: "createClusterTenant",
+        summary: "Create a cluster tenant (rejects an isolation tier no provisioner can serve)",
+        tags: ["Cluster Tenants"],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { $ref: "#/components/schemas/ClusterTenantWrite" } } },
+        },
+        responses: {
+          201: created("Cluster tenant created.", { $ref: "#/components/schemas/ClusterTenant" }),
+          400: badRequest("Request body failed validation."),
+          422: unprocessable("Requested isolation tier is not served by any registered provisioner (code TIER_UNAVAILABLE)."),
+        },
+      },
+    },
+
+    "/cluster-tenants/{name}": {
+      get: {
+        operationId: "getClusterTenant",
+        summary: "Get a single cluster tenant by name",
+        tags: ["Cluster Tenants"],
+        parameters: [{ name: "name", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          200: ok("Cluster tenant detail.", { $ref: "#/components/schemas/ClusterTenant" }),
+          404: notFound("Cluster tenant not found."),
+        },
+      },
+      put: {
+        operationId: "updateClusterTenant",
+        summary: "Update a cluster tenant (re-gates the isolation tier when it changes)",
+        tags: ["Cluster Tenants"],
+        parameters: [{ name: "name", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object" } } },
+        },
+        responses: {
+          200: ok("Cluster tenant updated.", { $ref: "#/components/schemas/ClusterTenant" }),
+          400: badRequest("Request body failed validation."),
+          404: notFound("Cluster tenant not found."),
+          422: unprocessable("Requested isolation tier is not served by any registered provisioner (code TIER_UNAVAILABLE)."),
+        },
+      },
+      delete: {
+        operationId: "deleteClusterTenant",
+        summary: "Delete a cluster tenant",
+        tags: ["Cluster Tenants"],
+        parameters: [{ name: "name", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          200: ok("Cluster tenant deleted.", { type: "object", properties: { name: { type: "string" }, status: { type: "string" } } }),
+          404: notFound("Cluster tenant not found."),
+        },
+      },
+    },
+
+    "/cluster-tenants/{name}/status": {
+      get: {
+        operationId: "getClusterTenantStatus",
+        summary: "Get the observed status of a cluster tenant",
+        tags: ["Cluster Tenants"],
+        parameters: [{ name: "name", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          200: ok("Cluster tenant status.", {
+            type: "object",
+            properties: {
+              phase: { type: "string", enum: ["pending", "provisioning", "ready", "failed"] },
+              message: { type: "string" },
+              boundNamespace: { type: "string" },
+              provisioner: { type: "string" },
+            },
+          }),
+          404: notFound("Cluster tenant not found."),
         },
       },
     },

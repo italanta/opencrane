@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { defaultConfig, gcpConfig, gcpAdapter, onPremAdapter, _makeAccessPolicy, _makeTenant } from "../fixtures.js";
-import { _BuildConfigMap, _BuildDeployment, _BuildIngress, _BuildServiceAccount, _BuildStatePvc } from "../../tenants/deploy/index.js";
+import { _BuildClusterTenantLimitRange, _BuildClusterTenantNamespace, _BuildClusterTenantResourceQuota, _BuildClusterTenantScheduling, _BuildConfigMap, _BuildDeployment, _BuildIngress, _BuildServiceAccount, _BuildStatePvc } from "../../tenants/deploy/index.js";
 
 describe("TenantResourceBuilder", () =>
 {
@@ -244,5 +244,112 @@ describe("TenantResourceBuilder", () =>
     const ingress = _BuildIngress(tlsConfig, onPremAdapter.buildIngressBinding(), tenant, "default");
 
     expect(ingress.spec?.tls).toEqual([{ hosts: ["sarah.opencrane.local"], secretName: "opencrane-wildcard-tls" }]);
+  });
+});
+
+describe("ClusterTenant isolation builders (CT.5)", () =>
+{
+  it("builds a Namespace labelled for PSA restricted enforce/warn/audit", () =>
+  {
+    const ns = _BuildClusterTenantNamespace("ct-acme", "acme");
+    const labels = ns.metadata?.labels ?? {};
+
+    expect(ns.metadata?.name).toBe("ct-acme");
+    expect(labels["pod-security.kubernetes.io/enforce"]).toBe("restricted");
+    expect(labels["pod-security.kubernetes.io/warn"]).toBe("restricted");
+    expect(labels["pod-security.kubernetes.io/audit"]).toBe("restricted");
+    expect(labels["opencrane.io/cluster-tenant"]).toBe("acme");
+  });
+
+  it("builds a ResourceQuota from every present quota dimension", () =>
+  {
+    const quota = _BuildClusterTenantResourceQuota("ct-acme", "acme", {
+      cpu: "4",
+      memory: "8Gi",
+      pods: 10,
+      storage: "100Gi",
+      gpu: 2,
+    });
+    const hard = quota.spec?.hard ?? {};
+
+    expect(quota.metadata?.namespace).toBe("ct-acme");
+    expect(hard["requests.cpu"]).toBe("4");
+    expect(hard["requests.memory"]).toBe("8Gi");
+    expect(hard.pods).toBe("10");
+    expect(hard["requests.storage"]).toBe("100Gi");
+    expect(hard["requests.nvidia.com/gpu"]).toBe("2");
+  });
+
+  it("omits unset quota dimensions so they stay unbounded", () =>
+  {
+    const quota = _BuildClusterTenantResourceQuota("ct-acme", "acme", { cpu: "2" });
+    const hard = quota.spec?.hard ?? {};
+
+    expect(hard["requests.cpu"]).toBe("2");
+    expect(hard["requests.memory"]).toBeUndefined();
+    expect(hard.pods).toBeUndefined();
+    expect(hard["requests.storage"]).toBeUndefined();
+    expect(hard["requests.nvidia.com/gpu"]).toBeUndefined();
+  });
+
+  it("builds a LimitRange with sensible per-container defaults", () =>
+  {
+    const limits = _BuildClusterTenantLimitRange("ct-acme", "acme");
+    const item = limits.spec?.limits?.[0];
+
+    expect(limits.metadata?.namespace).toBe("ct-acme");
+    expect(item?.type).toBe("Container");
+    expect(item?._default?.cpu).toBe("1");
+    expect(item?.defaultRequest?.cpu).toBe("100m");
+    expect(item?.defaultRequest?.memory).toBe("128Mi");
+  });
+
+  it("pins dedicated compute to its node pool with a matching toleration", () =>
+  {
+    const scheduling = _BuildClusterTenantScheduling({ mode: "dedicated", nodePool: "acme-pool" });
+
+    expect(scheduling.nodeSelector?.["opencrane.io/node-pool"]).toBe("acme-pool");
+    expect(scheduling.tolerations?.[0]).toEqual({
+      key: "opencrane.io/dedicated",
+      operator: "Equal",
+      value: "acme-pool",
+      effect: "NoSchedule",
+    });
+  });
+
+  it("leaves shared / unset / pool-less compute unconstrained", () =>
+  {
+    expect(_BuildClusterTenantScheduling({ mode: "shared" })).toEqual({});
+    expect(_BuildClusterTenantScheduling(undefined)).toEqual({});
+    expect(_BuildClusterTenantScheduling({ mode: "dedicated" })).toEqual({});
+  });
+
+  it("stamps nodeSelector + tolerations on the Deployment for dedicated compute", () =>
+  {
+    const tenant = _makeTenant("pinned");
+    const stateVolume = onPremAdapter.buildStateVolume("pinned");
+
+    const deployment = _BuildDeployment(defaultConfig, stateVolume, tenant, "ct-acme", {
+      mode: "dedicated",
+      nodePool: "acme-pool",
+    });
+    const podSpec = deployment.spec?.template?.spec;
+
+    expect(podSpec?.nodeSelector?.["opencrane.io/node-pool"]).toBe("acme-pool");
+    expect(podSpec?.tolerations?.[0]?.key).toBe("opencrane.io/dedicated");
+  });
+
+  it("renders no scheduling constraints on the default (ref-less) Deployment", () =>
+  {
+    const tenant = _makeTenant("plain");
+    const stateVolume = onPremAdapter.buildStateVolume("plain");
+
+    // No compute argument === the ref-less default path: the pod spec must be
+    // byte-for-byte free of any nodeSelector / tolerations keys.
+    const deployment = _BuildDeployment(defaultConfig, stateVolume, tenant, "default");
+    const podSpec = deployment.spec?.template?.spec;
+
+    expect(podSpec?.nodeSelector).toBeUndefined();
+    expect(podSpec?.tolerations).toBeUndefined();
   });
 });

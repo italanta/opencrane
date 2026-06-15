@@ -4,7 +4,7 @@ import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
 
 import type { OpenClawTenantOperatorConfig } from "../../config.js";
-import { _K8sApplyResource } from "../../infra/k8s.js";
+import { __K8sApplyResource } from "../../infra/k8s.js";
 import { _BuildTenantLabels } from "../deploy/tenant-labels.js";
 import type { Tenant } from "../models/tenant.interface.js";
 
@@ -97,7 +97,7 @@ export class TenantLiteLlmKeys
       },
     };
 
-    await _K8sApplyResource(this.objectApi, secret, this.log);
+    await __K8sApplyResource(this.objectApi, secret, this.log);
     this.log.info({ name, secretName, budget }, "created litellm virtual key secret");
   }
 

@@ -8,15 +8,17 @@ import { _BuildHostingAdapter } from "../hosting/index.js";
 import type { Tenant } from "./models/tenant.interface.js";
 import { TenantPolicyResolutionState, TenantStatusPhase } from "./models/tenant-status.interface.js";
 
-import { _K8sApplyResource } from "../infra/k8s.js";
+import { ___K8sApplyResource } from "../infra/k8s.js";
 import { _RunWatchLoop, K8sWatchEventType } from "../shared/watch-runner.js";
 import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "../shared/crd-constants.js";
-import { _BuildConfigMap, _BuildDeployment, _BuildIngress, _BuildIngressHost, _BuildService, _BuildServiceAccount, _BuildStatePvc } from "./deploy/index.js";
+import { _BuildClusterTenantLimitRange, _BuildClusterTenantNamespace, _BuildClusterTenantResourceQuota, _BuildConfigMap, _BuildDeployment, _BuildIngress, _BuildIngressHost, _BuildService, _BuildServiceAccount, _BuildStatePvc } from "./deploy/index.js";
 import { TenantCleanup } from "./destroy/tenant-cleanup.js";
 
 import { TenantEncryptionKeys } from "./internal/tenant-encryption-keys.js";
 import { TenantLiteLlmKeys } from "./internal/tenant-litellm-keys.js";
 import { _ResolveTenantPolicy } from "./internal/policy-resolution.js";
+import { _ResolveClusterTenant } from "./internal/cluster-tenant-resolution.js";
+import type { ClusterTenantResource } from "./internal/cluster-tenant-resolution.types.js";
 import { TenantStatusWriter } from "./internal/tenant-status-writer.js";
 
 /**
@@ -169,13 +171,31 @@ export class TenantOperator
   async reconcileTenant(tenant: Tenant): Promise<void>
   {
     const name = tenant.metadata!.name!;
-    const namespace = tenant.metadata!.namespace ?? "default";
+
+    // The Tenant CR itself always lives in its own namespace; status patches must
+    // target that namespace regardless of where child resources are deployed.
+    const crNamespace = tenant.metadata!.namespace ?? "default";
 
     this.log.info({ name, provider: this.hosting.provider }, "reconciling tenant");
 
     try
     {
-      // 0. Effective policy — resolve policyRef deterministically so runtime behavior
+      // 0a. Parent ClusterTenant — resolve the deployment target namespace. Ref-less
+      //     openclaws stay on the install namespace (byte-for-byte unchanged); a ref'd
+      //     openclaw lands in the parent's bound namespace (opt-in multi-tenancy).
+      const clusterTenantResolution = await _ResolveClusterTenant(this.customApi, tenant, crNamespace);
+      const namespace = clusterTenantResolution.targetNamespace;
+      if (clusterTenantResolution.ref && clusterTenantResolution.clusterTenant)
+      {
+        this.log.info({ name, clusterTenantRef: tenant.spec.clusterTenantRef, namespace }, "openclaw attached to cluster tenant");
+        // 0a-i. Native isolation — fence the customer's namespace before any child
+        //       resource lands in it. Ref-less openclaws skip this block entirely so
+        //       the default (single-install) path stays byte-for-byte unchanged.
+        await this.enforceClusterTenantIsolation(clusterTenantResolution.clusterTenant, namespace);
+      }
+      const compute = clusterTenantResolution.clusterTenant?.spec.compute;
+
+      // 0b. Effective policy — resolve policyRef deterministically so runtime behavior
       //    is predictable even when selectors or default policies are configured.
       const policyResolution = await _ResolveTenantPolicy(this.customApi, this.config, tenant, namespace);
       const effectivePolicyRef = policyResolution.effectivePolicy?.metadata?.name;
@@ -183,7 +203,7 @@ export class TenantOperator
         || policyResolution.state === TenantPolicyResolutionState.PolicyConflict
         || policyResolution.state === TenantPolicyResolutionState.DefaultPolicyNotFound)
       {
-        await this.statusWriter.patchStatus(tenant, namespace, {
+        await this.statusWriter.patchStatus(tenant, crNamespace, {
           phase: TenantStatusPhase.Error,
           message: policyResolution.message,
           effectivePolicyRef,
@@ -204,7 +224,7 @@ export class TenantOperator
 
       // 1. ServiceAccount — identity annotations come from the adapter; empty on-prem,
       //    Workload Identity annotation on GKE, IRSA on EKS, etc.
-      await _K8sApplyResource(this.coreApi, _BuildServiceAccount(this.hosting, effectiveTenant, namespace), this.log);
+      await __K8sApplyResource(this.coreApi, _BuildServiceAccount(this.hosting, effectiveTenant, namespace), this.log);
 
       // 2. External storage — provision per-cloud via the adapter SDK (GCS bucket etc).
       //    No-op on-prem; idempotent so safe to call on every reconcile.
@@ -228,32 +248,32 @@ export class TenantOperator
 
       // 5. ConfigMap — serialises the base OpenClaw JSON config merged with any
       //    spec.configOverrides the tenant author provided.
-      await _K8sApplyResource(this.coreApi, _BuildConfigMap(this.config, effectiveTenant, namespace, policyResolution.effectivePolicy), this.log);
+      await __K8sApplyResource(this.coreApi, _BuildConfigMap(this.config, effectiveTenant, namespace, policyResolution.effectivePolicy), this.log);
 
       // 6. State volume — adapter decides CSI mount (cloud) vs PVC (on-prem).
       //    Create the PVC only when the adapter requests it (on-prem path).
       const stateVolume = this.hosting.buildStateVolume(name);
       if (stateVolume.requiresPvc)
       {
-        await _K8sApplyResource(this.coreApi, _BuildStatePvc(name, namespace), this.log);
+        await __K8sApplyResource(this.coreApi, _BuildStatePvc(name, namespace), this.log);
       }
 
       // 7. Deployment — single-replica pod running the tenant's OpenClaw gateway.
       //    Mounts the ConfigMap, encryption key, state volume, and projected identity tokens.
-      await _K8sApplyResource(this.appsApi, _BuildDeployment(this.config, stateVolume, effectiveTenant, namespace), this.log);
+      await __K8sApplyResource(this.appsApi, _BuildDeployment(this.config, stateVolume, effectiveTenant, namespace, compute), this.log);
 
       // 8. Service — ClusterIP that makes the gateway reachable inside the cluster
       //    on the configured gateway port.
-      await _K8sApplyResource(this.coreApi, _BuildService(this.config, effectiveTenant, namespace), this.log);
+      await __K8sApplyResource(this.coreApi, _BuildService(this.config, effectiveTenant, namespace), this.log);
 
       // 9. Ingress — routes external HTTPS traffic for {tenant}.{domain} to the Service.
       //    Ingress class and annotations come from the adapter (nginx on-prem, gce on GKE).
       const ingressBinding = this.hosting.buildIngressBinding();
-      await _K8sApplyResource(this.networkingApi, _BuildIngress(this.config, ingressBinding, effectiveTenant, namespace), this.log);
+      await __K8sApplyResource(this.networkingApi, _BuildIngress(this.config, ingressBinding, effectiveTenant, namespace), this.log);
 
       // 10. Status — write the observed Running state back to the Tenant CR so that
       //    kubectl, the control-plane API, and the UI all see the current phase.
-      await this.statusWriter.patchStatus(tenant, namespace, {
+      await this.statusWriter.patchStatus(tenant, crNamespace, {
         phase: TenantStatusPhase.Running,
         podName: `openclaw-${name}`,
         ingressHost: _BuildIngressHost(name, this.config.ingressDomain),
@@ -266,7 +286,7 @@ export class TenantOperator
     catch (err)
     {
       this.log.error({ err, name }, "reconcile failed");
-      await this.statusWriter.patchStatus(tenant, namespace, {
+      await this.statusWriter.patchStatus(tenant, crNamespace, {
         phase: TenantStatusPhase.Error,
         message: err instanceof Error ? err.message : String(err),
         lastReconciled: new Date().toISOString(),
@@ -276,21 +296,71 @@ export class TenantOperator
   }
 
   /**
+   * Provision and fence the per-ClusterTenant namespace for the opt-in
+   * multi-tenant path.
+   *
+   * This is only reached when an openclaw references a ClusterTenant; it
+   * ensures the customer's namespace exists with PSA `restricted` enforcement,
+   * stamps an aggregate ResourceQuota derived from the customer's quota, and
+   * lays down a default LimitRange so quota-constrained pods still schedule.
+   * Live PSA/quota enforcement is the cluster seam; here we converge the
+   * objects idempotently via server-side create-or-replace.
+   *
+   * @param clusterTenant - Resolved parent ClusterTenant carrying quota/compute.
+   * @param namespace - The customer's bound namespace to fence.
+   */
+  private async enforceClusterTenantIsolation(clusterTenant: ClusterTenantResource, namespace: string): Promise<void>
+  {
+    const clusterTenantName = clusterTenant.metadata?.name ?? namespace;
+
+    // 1. Namespace — ensure the fenced namespace exists and carries the PSA
+    //    restricted enforce/warn/audit labels before any workload lands in it.
+    await __K8sApplyResource(this.coreApi, _BuildClusterTenantNamespace(namespace, clusterTenantName), this.log);
+
+    // 2. ResourceQuota — cap the customer's aggregate CPU/memory/pods/storage/GPU
+    //    so a single customer cannot starve the cluster. Only stamped when the
+    //    ClusterTenant actually declared a quota block.
+    const quota = clusterTenant.spec.resources?.quota;
+    if (quota)
+    {
+      await __K8sApplyResource(this.coreApi, _BuildClusterTenantResourceQuota(namespace, clusterTenantName, quota), this.log);
+
+      // 3. LimitRange — a quota over requests.* rejects pods that omit requests;
+      //    supply per-container defaults so unannotated workloads still schedule.
+      await __K8sApplyResource(this.coreApi, _BuildClusterTenantLimitRange(namespace, clusterTenantName), this.log);
+    }
+  }
+
+  /**
    * Suspend a tenant by scaling the deployment to zero replicas.
    */
   private async suspendTenant(tenant: Tenant): Promise<void>
   {
     const name = tenant.metadata!.name!;
-    const namespace = tenant.metadata!.namespace ?? "default";
+
+    // The Tenant CR lives in its own namespace; status patches target it
+    // regardless of where the (suspended) Deployment is rebuilt.
+    const crNamespace = tenant.metadata!.namespace ?? "default";
 
     this.log.info({ name }, "suspending tenant");
 
-    const stateVolume = this.hosting.buildStateVolume(name);
-    const deployment = _BuildDeployment(this.config, stateVolume, tenant, namespace);
-    deployment.spec!.replicas = 0;
-    await _K8sApplyResource(this.appsApi, deployment, this.log);
+    // 1. Resolve the parent ClusterTenant so the suspended Deployment is rebuilt in
+    //    the same namespace and with the same compute placement as the live one;
+    //    ref-less openclaws resolve to the install namespace + no compute, so the
+    //    default (single-install) path stays byte-for-byte unchanged.
+    const clusterTenantResolution = await _ResolveClusterTenant(this.customApi, tenant, crNamespace);
+    const namespace = clusterTenantResolution.targetNamespace;
+    const compute = clusterTenantResolution.clusterTenant?.spec.compute;
 
-    await this.statusWriter.patchStatus(tenant, namespace, {
+    // 2. Rebuild the Deployment identically but scaled to zero so the pod stops
+    //    without losing its namespace or scheduling identity.
+    const stateVolume = this.hosting.buildStateVolume(name);
+    const deployment = _BuildDeployment(this.config, stateVolume, tenant, namespace, compute);
+    deployment.spec!.replicas = 0;
+    await __K8sApplyResource(this.appsApi, deployment, this.log);
+
+    // 3. Record the suspended phase against the CR namespace.
+    await this.statusWriter.patchStatus(tenant, crNamespace, {
       phase: TenantStatusPhase.Suspended,
       lastReconciled: new Date().toISOString(),
     });

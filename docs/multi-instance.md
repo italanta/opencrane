@@ -245,3 +245,83 @@ and no references to the other instance. The **live** acceptance criteria (brief
 §5.2–§5.5: dueling-operator, RBAC `can-i` denial, pod→service NetworkPolicy denial,
 and teardown isolation) need a real cluster + CNI + ACME and are documented at the
 end of that script as the live-infra seam.
+
+## 5. ClusterTenant — the customer / isolation unit (Track CT)
+
+Multi-instance (§1–4) gives you N isolated *instances* in one cluster. **`ClusterTenant`**
+makes the *customer* a first-class, API-managed resource on top of that, so isolation and
+resource gating are modeled and enforced rather than implied by how you wrote the values files.
+
+> **The invariant the resource makes enforceable: one customer = one `ClusterTenant` = one
+> instance.** An openclaw (`Tenant` CR) attaches to exactly one `ClusterTenant`; the operator
+> deploys it into that customer's bound namespace and fences it there.
+
+### 5.1 Default stays single-install (opt-in)
+
+`ClusterTenant` machinery is **opt-in** and changes nothing for a zero-config install. The
+cluster-scoped `clustertenants.opencrane.io` CRD installs with the chart (installing a CRD is
+inert — nothing creates a `ClusterTenant`), and an openclaw with no `spec.clusterTenantRef`
+deploys into the install namespace exactly as before. `helm template` with no flags renders
+**no** ClusterTenant env, namespace, quota, or scheduling. You opt in per customer by creating a
+`ClusterTenant` and pointing openclaws at it with `spec.clusterTenantRef`.
+
+### 5.2 Isolation tiers
+
+| Tier | What it gives the customer | How it's served |
+|------|----------------------------|-----------------|
+| `shared` | A fenced namespace, bin-packed onto shared nodes (max density). | Native — built-in `SharedClusterProvisioner`. |
+| `dedicatedNodes` | A fenced namespace **plus** pods pinned to the customer's own node pool (`nodeSelector`/`tolerations`). | Native — operator stamps scheduling; machines via GKE NAP/ComputeClass, not OpenCrane. |
+| `dedicatedCluster` | The customer's own kube-apiserver. | **External provisioner only** — see §5.4. Rejected `422 TIER_UNAVAILABLE` unless a backend advertises it. |
+
+When a customer is opted in, the operator ensures the per-`ClusterTenant` namespace
+(labelled `pod-security.kubernetes.io/enforce: restricted`), derives a `ResourceQuota` +
+`LimitRange` from `spec.resources.quota` ({cpu, memory, pods, storage, gpu}), and stamps
+scheduling from `spec.compute`. The operator is the sole pod-creator, so no admission webhook
+is needed to enforce this.
+
+### 5.3 Managing cluster tenants (API-first)
+
+Everything is on the control-plane API (`/api/v1/cluster-tenants`) and mirrored by the CLI —
+the frontend is just another client, never a privileged path:
+
+```bash
+oc cluster-tenant create acme --display-name "Acme Corp" \
+  --tier dedicatedNodes --compute dedicated --node-pool acme-pool \
+  --quota-cpu 8 --quota-memory 16Gi --quota-pods 40
+oc cluster-tenant list
+oc cluster-tenant show acme
+oc cluster-tenant status acme
+```
+
+### 5.4 Plugging in a `dedicatedCluster` backend without forking (AGPL-clean)
+
+The `dedicatedCluster` tier is served by an **out-of-process** provisioner webhook, never by
+in-tree vendor code. The control plane POSTs a vendor-neutral `ClusterTenantProvisionRequest`
+(published in the MIT `libs/contracts`) to a configured HTTPS endpoint and reads back a status
+plus a kubeconfig **Secret reference** — the credential material never crosses the wire inline.
+A private vendor (e.g. a hosted-control-plane product) implements that contract in their own
+service; nothing vendor-specific lives in the AGPL tree. See
+[`enterprise-needs.md`](enterprise-needs.md) for the licensing rationale and the Kamaji parking note.
+
+Configure it via Helm — leave it unset and `dedicatedCluster` stays unavailable (fail-closed):
+
+```yaml
+clusterTenant:
+  provisionerWebhook:
+    url: https://provisioner.internal.example/api   # must be https:// — refused otherwise
+    id: my-backend
+    existingSecret: cluster-tenant-provisioner
+    secretKey: CLUSTER_TENANT_PROVISIONER_WEBHOOK_TOKEN
+```
+
+The control plane refuses a non-`https://` URL at startup so the bearer token is never sent in
+plaintext.
+
+### 5.5 Validation
+
+`helm template` proves the opt-in gate statically: with no flags the chart renders the
+`ClusterTenant` CRD but **no** provisioner env on the control-plane Deployment; setting
+`clusterTenant.provisionerWebhook.url` renders the env block. The per-`ClusterTenant` namespace,
+quota, and scheduling are reconciled at runtime by the operator (the live-infra seam), and the
+conformance script (`platform/tests/multi-instance-conformance.sh`) carries the in-cluster
+assertions for them (CT.5a–CT.5d).

@@ -25,6 +25,7 @@ import { _RegisterAudit } from "./commands/audit.js";
 import { _RegisterAuth } from "./commands/auth.js";
 import { _RegisterAwareness } from "./commands/awareness.js";
 import { _RegisterBudget } from "./commands/budget.js";
+import { _RegisterClusterTenants } from "./commands/cluster-tenants.js";
 import { _RegisterMcpServers } from "./commands/mcp-servers.js";
 import { _RegisterMetrics } from "./commands/metrics.js";
 import { _RegisterPlatform } from "./commands/platform.js";
@@ -63,6 +64,7 @@ function _getConfig(): CliConfig
 
 // Register all command groups against the root program.
 _RegisterTenants(program, _getConfig);
+_RegisterClusterTenants(program, _getConfig);
 _RegisterPolicies(program, _getConfig);
 _RegisterMcpServers(program, _getConfig);
 _RegisterSkills(program, _getConfig);

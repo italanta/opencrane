@@ -92,6 +92,21 @@ spec:
             - name: DATABASE_URL
               value: {{ .Values.controlPlane.database.url | quote }}
             {{- end }}
+            {{- if .Values.clusterTenant.provisionerWebhook.url }}
+            - name: CLUSTER_TENANT_PROVISIONER_WEBHOOK_URL
+              value: {{ .Values.clusterTenant.provisionerWebhook.url | quote }}
+            {{- if .Values.clusterTenant.provisionerWebhook.id }}
+            - name: CLUSTER_TENANT_PROVISIONER_WEBHOOK_ID
+              value: {{ .Values.clusterTenant.provisionerWebhook.id | quote }}
+            {{- end }}
+            {{- if .Values.clusterTenant.provisionerWebhook.existingSecret }}
+            - name: CLUSTER_TENANT_PROVISIONER_WEBHOOK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.clusterTenant.provisionerWebhook.existingSecret }}
+                  key: {{ .Values.clusterTenant.provisionerWebhook.secretKey }}
+            {{- end }}
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz

@@ -33,6 +33,18 @@ rule set (coding conventions, IAM-first policy, planning discipline, commit form
   item is blocked by a missing decision or external dependency.
 - Update `plan.md` status/checklists in the **same cycle** as the code and validation.
 
+## Parallelisation (maximise it)
+
+- Before implementing, decompose the target into a **dependency DAG + waves**. Dependencies are
+  *compile-time type coupling* and *file/package contention* only — logical affinity is **not** a
+  dependency. Items with no unmet dependency form a wave and run concurrently.
+- Land a small **keystone** first (shared types/contracts/interfaces) to open the widest wave.
+- **Dispatch one `general-purpose` subagent per independent lane in a single message** so lanes run
+  concurrently; reserve a lane per package to avoid edit contention. Never serialise work that has
+  no dependency between lanes.
+- If `plan.md` already encodes an execution chain / waves for the track (e.g. Track CT), follow it.
+- Each lane still obeys the efficiency rules: act at first signal, one build + test cycle per slice.
+
 ## Constraints
 
 - Do not treat strategic roadmap statements as automatically implementable. Only
@@ -40,10 +52,21 @@ rule set (coding conventions, IAM-first policy, planning discipline, commit form
 - Treat unresolved architecture-checkpoint questions in `plan.md` as **blockers** —
   do not guess hidden product decisions.
 - Do not mark items complete in `plan.md` without code **and** validation evidence.
-- **Do NOT commit, push, or open pull requests.** Leave changes staged or unstaged.
-  The user handles all git operations themselves.
-- Never push directly to the default branch or rewrite shared history.
+- **Commit at every gate** (see Commit cadence) — do not leave finished, green slices uncommitted.
+- Never commit to the default branch (branch first), and **never push or open a PR unless explicitly asked**.
+- Never rewrite shared history.
 - Never revert unrelated user changes.
+
+## Commit cadence (commit at every gate)
+
+- A *gate* is any checkpoint the work clears: the per-slice/per-wave **build + test** gate and the
+  **independent review** gate. Commit *during* (when a slice's gate goes green) and *after* (once review
+  passes) so each commit is a coherent, green, bisectable checkpoint.
+- On a feature branch only — if on the default branch, branch first.
+- Messages follow `AGENTS.md` → Commit Messages (gitmoji + imperative subject under 72 chars).
+  **Do not add a Claude / AI co-author trailer** (`Co-Authored-By: Claude …`) — the commit is authored
+  solely by the configured git user.
+- Committing is local. Pushing / opening a PR is a separate, outward-facing action — only on explicit request.
 
 ## Procedure
 
@@ -56,9 +79,11 @@ rule set (coding conventions, IAM-first policy, planning discipline, commit form
 4. Run `pnpm build` and the relevant test filter(s). One cycle. Summarise pass/fail.
 5. If a blocker is hit, record it in plan.md and move to the next unblocked item.
 6. Update the `plan.md` checklist/state to reflect exactly what changed this cycle.
-7. **Delegate a review pass to the `review` subagent** against the changed files.
-   Resolve Critical/High findings before finishing.
-8. Leave the changes in the working tree. Do NOT commit, push, or open a PR.
+7. **Commit each slice once its build + test gate is green** — feature branch only, gitmoji +
+   imperative subject, **no Claude/AI co-author trailer** (see Commit cadence).
+8. **Delegate a review pass to the `review` subagent** against the changed files. Resolve
+   Critical/High findings, then **commit the resolution as a separate post-gate checkpoint**.
+   Do not push or open a PR unless explicitly asked.
 
 ## Output (return in this order)
 
@@ -67,6 +92,6 @@ rule set (coding conventions, IAM-first policy, planning discipline, commit form
 3. **plan.md updates** — exactly which items changed state
 4. **Blockers** — items skipped and why (BLOCKED annotation, missing tooling, etc.)
 5. **Review findings summary** — from the review subagent, with resolution status
-6. **Suggested commit message** — gitmoji + imperative subject under 72 chars
+6. **Commits** — the gate commits made this cycle (branch + subject line per commit)
 
 If fully blocked: **Blocker**, **Evidence**, **Proposed unblocking options**, **Minimal fallback slice**.

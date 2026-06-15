@@ -26,6 +26,9 @@ importers:
       typescript:
         specifier: ^5.7.0
         version: 5.8.2
+      vitest:
+        specifier: ^3.1.0
+        version: 3.2.4(@types/node@22.15.31)(jiti@2.6.1)(sass@1.97.1)(tsx@4.21.0)
 
   apps/control-plane:
     dependencies:

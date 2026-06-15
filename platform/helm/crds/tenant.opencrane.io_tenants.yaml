@@ -103,6 +103,15 @@ spec:
                 policyRef:
                   type: string
                   description: Name of the AccessPolicy CR to apply
+                clusterTenantRef:
+                  type: string
+                  description: >-
+                    Optional name of the parent ClusterTenant (the first-class customer /
+                    isolation unit this openclaw belongs to). When set, the operator resolves
+                    the parent's bound namespace and compute/quota policy and deploys the openclaw
+                    there. When absent, the openclaw attaches to the implicit default cluster
+                    tenant bound to the install namespace, so single-install behaviour is unchanged
+                    and multi-tenancy stays opt-in.
                 suspended:
                   type: boolean
                   default: false

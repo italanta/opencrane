@@ -63,6 +63,16 @@ export interface TenantSpec
   /** Name of an AccessPolicy CR to bind to this tenant. */
   policyRef?: string;
 
+  /**
+   * Optional name of the parent ClusterTenant (the first-class customer /
+   * isolation unit this openclaw belongs to). When set, the operator resolves
+   * the parent's bound namespace and compute/quota policy and deploys the
+   * openclaw there. When absent, the openclaw attaches to the implicit default
+   * cluster tenant bound to the install namespace — single-install behaviour is
+   * unchanged and multi-tenancy stays opt-in.
+   */
+  clusterTenantRef?: string;
+
   /** When true, the tenant deployment is scaled to zero. */
   suspended?: boolean;
 }

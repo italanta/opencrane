@@ -3,7 +3,9 @@ import type * as k8s from "@kubernetes/client-node";
 import type { TenantStateVolume } from "../../hosting/index.js";
 import type { OpenClawTenantOperatorConfig } from "../../config.js";
 import type { Tenant } from "../models/tenant.interface.js";
+import type { ClusterTenantComputeView } from "../internal/cluster-tenant-resolution.types.js";
 import { _BuildTenantLabels } from "./tenant-labels.js";
+import { _BuildClusterTenantScheduling } from "./cluster-tenant-scheduling.js";
 
 /**
  * Build the tenant Deployment that runs a single OpenClaw gateway pod.
@@ -19,13 +21,22 @@ import { _BuildTenantLabels } from "./tenant-labels.js";
  *
  * @param stateVolume - Pre-computed state volume from the hosting adapter.
  *   The adapter decides whether the volume is a CSI mount (cloud) or PVC ref (on-prem).
+ * @param compute - Optional ClusterTenant compute placement; when `dedicated`
+ *   with a node pool, the pod is pinned to that pool. Omitted/shared leaves the
+ *   pod unconstrained, keeping ref-less openclaws byte-for-byte unchanged.
  */
-export function _BuildDeployment(config: OpenClawTenantOperatorConfig, stateVolume: TenantStateVolume, tenant: Tenant, namespace: string): k8s.V1Deployment
+export function _BuildDeployment(config: OpenClawTenantOperatorConfig, stateVolume: TenantStateVolume, tenant: Tenant,
+                                 namespace: string, compute?: ClusterTenantComputeView): k8s.V1Deployment
 {
   const name = tenant.metadata!.name!;
   const image = tenant.spec.openclawImage ?? config.tenantDefaultImage;
   const resources = tenant.spec.resources;
   const openclawVersion = tenant.spec.openclawVersion ?? "latest";
+
+  // 0. Scheduling — derive nodeSelector/tolerations from the parent ClusterTenant's
+  //    compute mode. Empty for shared/ref-less openclaws, so the pod spec below is
+  //    identical to the pre-ClusterTenant baseline on the default path.
+  const scheduling = _BuildClusterTenantScheduling(compute);
 
   // 1. Runtime env — inject both OpenClaw-required paths and OpenCrane-managed
   //    runtime hints so the tenant process knows where state, secrets, policy,
@@ -154,6 +165,11 @@ export function _BuildDeployment(config: OpenClawTenantOperatorConfig, stateVolu
         spec: {
           // 4. Pod defaults — enforce the baseline runtime hardening profile
           //    without changing the existing service-account or storage model.
+          //    Scheduling keys are spread in only when the parent ClusterTenant
+          //    pins a dedicated pool; on the default path the spread is empty so
+          //    no nodeSelector/tolerations keys appear at all.
+          ...(scheduling.nodeSelector ? { nodeSelector: scheduling.nodeSelector } : {}),
+          ...(scheduling.tolerations ? { tolerations: scheduling.tolerations } : {}),
           serviceAccountName: `openclaw-${name}`,
           securityContext: {
             runAsNonRoot: true,

@@ -11,7 +11,7 @@ import type { Logger } from "pino";
  * @param resource - Kubernetes object to apply.
  * @param log - Logger used for apply/create lifecycle messages.
  */
-export async function _K8sApplyResource<T extends k8s.KubernetesObject>(
+export async function __K8sApplyResource<T extends k8s.KubernetesObject>(
   client: any,
   resource: T,
   log: Logger,
@@ -21,14 +21,17 @@ export async function _K8sApplyResource<T extends k8s.KubernetesObject>(
   const kind = resource.kind;
   const namespace = resource.metadata?.namespace;
 
-  if (!name || !namespace)
+  // Namespace is cluster-scoped: it has a name but no parent metadata.namespace.
+  // Require only a name for it; all other (namespaced) kinds still need both.
+  const isClusterScoped = kind === "Namespace";
+  if (!name || (!namespace && !isClusterScoped))
   {
     throw new Error(`resource metadata.name and metadata.namespace are required for apply (${kind ?? "unknown"})`);
   }
 
   try
   {
-    const response = await _createResource(client, resource, namespace);
+    const response = await _createResource(client, resource, namespace ?? "");
     log.info({ kind, name }, "resource created");
     return _extractBody<T>(response, resource);
   }
@@ -46,9 +49,17 @@ export async function _K8sApplyResource<T extends k8s.KubernetesObject>(
         return resource;
       }
 
-      const current = await _readResource(client, resource, namespace, name);
+      // Namespace already exists — the PSA labels are applied once at creation;
+      // treat AlreadyExists as a converged no-op rather than racing a replace.
+      if (kind === "Namespace")
+      {
+        log.debug({ kind, name }, "namespace already exists, skipping update");
+        return resource;
+      }
+
+      const current = await _readResource(client, resource, namespace ?? "", name);
       const withResourceVersion = _withResourceVersion(resource, _extractResourceVersion(current));
-      const response = await _replaceResource(client, withResourceVersion, namespace, name);
+      const response = await _replaceResource(client, withResourceVersion, namespace ?? "", name);
       log.debug({ kind, name }, "resource updated");
       return _extractBody<T>(response, resource);
     }
@@ -70,6 +81,12 @@ async function _createResource(client: any, resource: k8s.KubernetesObject, name
 
   switch (resource.kind)
   {
+    case "Namespace":
+      return client.createNamespace({ body: resource });
+    case "ResourceQuota":
+      return client.createNamespacedResourceQuota({ namespace, body: resource });
+    case "LimitRange":
+      return client.createNamespacedLimitRange({ namespace, body: resource });
     case "ServiceAccount":
       return client.createNamespacedServiceAccount({ namespace, body: resource });
     case "ConfigMap":
@@ -99,6 +116,12 @@ async function _readResource(client: any, resource: k8s.KubernetesObject, namesp
 
   switch (resource.kind)
   {
+    case "Namespace":
+      return client.readNamespace({ name });
+    case "ResourceQuota":
+      return client.readNamespacedResourceQuota({ name, namespace });
+    case "LimitRange":
+      return client.readNamespacedLimitRange({ name, namespace });
     case "ServiceAccount":
       return client.readNamespacedServiceAccount({ name, namespace });
     case "ConfigMap":
@@ -128,6 +151,12 @@ async function _replaceResource(client: any, resource: k8s.KubernetesObject, nam
 
   switch (resource.kind)
   {
+    case "Namespace":
+      return client.replaceNamespace({ name, body: resource });
+    case "ResourceQuota":
+      return client.replaceNamespacedResourceQuota({ name, namespace, body: resource });
+    case "LimitRange":
+      return client.replaceNamespacedLimitRange({ name, namespace, body: resource });
     case "ServiceAccount":
       return client.replaceNamespacedServiceAccount({ name, namespace, body: resource });
     case "ConfigMap":

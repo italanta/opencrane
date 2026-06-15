@@ -127,6 +127,19 @@ cat <<'LIVE'
    - §5.4  exec a pod in oc-acme; curl a Service in oc-globex  →  must time out (NetworkPolicy).
    - §5.5  helm uninstall oc-globex + delete ns + its GCP resources; assert oc-acme is untouched.
   These are the live-infra seam (cluster + CNI enforcement + ACME), tracked under MI.7.
+
+  Per-ClusterTenant native isolation (CT.5) — the operator creates these at
+  runtime when an openclaw references a ClusterTenant, so they cannot be proven by
+  `helm template`; run them in-cluster against a provisioned ClusterTenant ns:
+   - CT.5a kubectl get ns <bound-ns> -o jsonpath='{.metadata.labels.pod-security\.kubernetes\.io/enforce}'
+             →  must be "restricted" (PSA fences the customer namespace).
+   - CT.5b kubectl get resourcequota -n <bound-ns> opencrane-cluster-tenant-quota
+             →  must exist with spec.hard matching the ClusterTenant spec.resources.quota.
+   - CT.5c kubectl get limitrange  -n <bound-ns> opencrane-cluster-tenant-limits
+             →  must exist (Container defaults so quota-constrained pods still schedule).
+   - CT.5d for a dedicated ClusterTenant, the openclaw Deployment pod template must carry
+             nodeSelector opencrane.io/node-pool=<pool> and a matching opencrane.io/dedicated toleration;
+             for a shared ClusterTenant the pod template must carry NEITHER.
 LIVE
 
 echo ""

@@ -4,5 +4,8 @@ export { _BuildStatePvc } from "./3-state-pvc.js";
 export { _BuildDeployment } from "./3-deployment.js";
 export { _BuildService } from "./4-service.js";
 export { _BuildIngress } from "./5-ingress.js";
+export { _BuildClusterTenantNamespace } from "./6-cluster-tenant-namespace.js";
+export { _BuildClusterTenantResourceQuota, _BuildClusterTenantLimitRange } from "./7-resource-quota.js";
+export { _BuildClusterTenantScheduling } from "./cluster-tenant-scheduling.js";
 export { _BuildIngressHost } from "./ingress-host.js";
 export { _BuildTenantLabels } from "./tenant-labels.js";

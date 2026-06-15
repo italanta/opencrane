@@ -338,6 +338,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cluster-tenants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List all cluster tenants */
+        get: operations["listClusterTenants"];
+        put?: never;
+        /** Create a cluster tenant (rejects an isolation tier no provisioner can serve) */
+        post: operations["createClusterTenant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cluster-tenants/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a single cluster tenant by name */
+        get: operations["getClusterTenant"];
+        /** Update a cluster tenant (re-gates the isolation tier when it changes) */
+        put: operations["updateClusterTenant"];
+        post?: never;
+        /** Delete a cluster tenant */
+        delete: operations["deleteClusterTenant"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cluster-tenants/{name}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the observed status of a cluster tenant */
+        get: operations["getClusterTenantStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/mcp-servers": {
         parameters: {
             query?: never;
@@ -1017,6 +1071,61 @@ export interface components {
             brokeringMode?: "static" | "obo";
             /** @description Secret reference for 'static' brokering; null for 'obo'. */
             secretRef?: string | null;
+        };
+        ClusterTenant: {
+            /** @description Stable cluster-scoped identifier (the customer key). */
+            name: string;
+            /** @description Human-readable customer name. */
+            displayName: string;
+            /**
+             * @description Isolation strength chosen for this customer.
+             * @enum {string}
+             */
+            isolationTier: "shared" | "dedicatedNodes" | "dedicatedCluster";
+            compute: {
+                /** @enum {string} */
+                mode: "shared" | "dedicated";
+                /** @description Dedicated node pool name; required when mode is 'dedicated'. */
+                nodePool?: string;
+            };
+            resources: {
+                quota: components["schemas"]["ClusterTenantResourceQuota"];
+            };
+            status?: {
+                /** @enum {string} */
+                phase?: "pending" | "provisioning" | "ready" | "failed";
+                message?: string;
+                boundNamespace?: string;
+                provisioner?: string;
+            };
+        };
+        ClusterTenantWrite: {
+            /** @description Stable cluster-scoped identifier (the customer key). */
+            name: string;
+            /** @description Human-readable customer name. */
+            displayName: string;
+            /** @enum {string} */
+            isolationTier: "shared" | "dedicatedNodes" | "dedicatedCluster";
+            compute: {
+                /** @enum {string} */
+                mode: "shared" | "dedicated";
+                nodePool?: string;
+            };
+            resources: {
+                quota: components["schemas"]["ClusterTenantResourceQuota"];
+            };
+        };
+        ClusterTenantResourceQuota: {
+            /** @description Total CPU the customer may request (e.g. '4', '500m'). */
+            cpu?: string;
+            /** @description Total memory the customer may request (e.g. '8Gi'). */
+            memory?: string;
+            /** @description Maximum number of pods the customer may run. */
+            pods?: number;
+            /** @description Total persistent storage the customer may claim (e.g. '100Gi'). */
+            storage?: string;
+            /** @description Total GPUs the customer may request. */
+            gpu?: number;
         };
         Group: {
             id?: string;
@@ -2067,6 +2176,223 @@ export interface operations {
                         name?: string;
                         status?: string;
                     };
+                };
+            };
+        };
+    };
+    listClusterTenants: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cluster tenant list. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClusterTenant"][];
+                };
+            };
+        };
+    };
+    createClusterTenant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClusterTenantWrite"];
+            };
+        };
+        responses: {
+            /** @description Cluster tenant created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClusterTenant"];
+                };
+            };
+            /** @description Request body failed validation. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Requested isolation tier is not served by any registered provisioner (code TIER_UNAVAILABLE). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getClusterTenant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cluster tenant detail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClusterTenant"];
+                };
+            };
+            /** @description Cluster tenant not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateClusterTenant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Cluster tenant updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClusterTenant"];
+                };
+            };
+            /** @description Request body failed validation. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Cluster tenant not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Requested isolation tier is not served by any registered provisioner (code TIER_UNAVAILABLE). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteClusterTenant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cluster tenant deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        name?: string;
+                        status?: string;
+                    };
+                };
+            };
+            /** @description Cluster tenant not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getClusterTenantStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cluster tenant status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        phase?: "pending" | "provisioning" | "ready" | "failed";
+                        message?: string;
+                        boundNamespace?: string;
+                        provisioner?: string;
+                    };
+                };
+            };
+            /** @description Cluster tenant not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
