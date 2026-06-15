@@ -180,6 +180,14 @@ kubectl create secret generic "$DB_SECRET_NAME" \
   --dry-run=client \
   -o yaml | kubectl apply -f -
 
+echo "[local] Bootstrapping credentials secret for Obot MCP Gateway"
+kubectl create secret generic "opencrane-obot" \
+  -n "$NAMESPACE" \
+  --from-literal=dsn="postgresql://opencrane:${DB_PASSWORD}@${DB_RELEASE_NAME}-rw.${NAMESPACE}.svc.cluster.local:5432/opencrane" \
+  --dry-run=client \
+  -o yaml | kubectl apply -f -
+
+
 if [[ "$LOCAL_PROFILE" == "strict" ]]; then
   kubectl create secret generic "$LITELLM_SECRET_NAME" \
     -n "$NAMESPACE" \

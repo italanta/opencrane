@@ -103,6 +103,24 @@ resource "kubernetes_secret" "database_url"
   depends_on = [kubernetes_manifest.postgresql_cluster]
 }
 
+# ---- Kubernetes Secret with dsn for the Obot MCP Gateway ----
+
+resource "kubernetes_secret" "opencrane_obot"
+{
+  metadata
+  {
+    name      = "opencrane-obot"
+    namespace = var.namespace
+  }
+
+  data =
+  {
+    dsn = "postgresql://opencrane:${random_password.db_password.result}@opencrane-db-rw.${var.namespace}.svc.cluster.local:5432/opencrane"
+  }
+
+  depends_on = [kubernetes_manifest.postgresql_cluster]
+}
+
 # ---- Static ingress IP (reserved so DNS can point to it) ----
 
 resource "google_compute_global_address" "ingress_ip"
@@ -253,6 +271,7 @@ resource "helm_release" "opencrane"
 
   depends_on = [
     kubernetes_secret.database_url,
+    kubernetes_secret.opencrane_obot,
     kubernetes_manifest.postgresql_cluster,
     helm_release.cert_manager,
   ]
