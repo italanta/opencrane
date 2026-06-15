@@ -1,0 +1,20 @@
+<svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OpenCrane">
+  <!-- Origami crane in the OpenCrane palette: teal/cyan facets, orange beak.
+       Low-poly facets echo the folded-paper logo. -->
+  <!-- tail (back, left) -->
+  <polygon points="14,70 50,58 40,82" fill="#1E5C7A"/>
+  <!-- raised back wing -->
+  <polygon points="50,58 42,14 72,52" fill="#56C6D6"/>
+  <!-- front wing -->
+  <polygon points="50,58 72,52 60,86" fill="#2E9DB8"/>
+  <!-- body / breast -->
+  <polygon points="72,52 60,86 88,74" fill="#277F9B"/>
+  <!-- lower body wedge -->
+  <polygon points="50,58 60,86 72,52" fill="#3AA8C2"/>
+  <!-- neck -->
+  <polygon points="72,52 70,30 90,46" fill="#2E9DB8"/>
+  <!-- head -->
+  <polygon points="70,30 90,46 92,30" fill="#1E5C7A"/>
+  <!-- beak -->
+  <polygon points="92,30 110,32 90,42" fill="#F2811F"/>
+</svg>

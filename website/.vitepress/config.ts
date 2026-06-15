@@ -18,8 +18,13 @@ export default defineConfig({
   // Architecture diagrams in the docs use Unicode box-drawing; keep them intact.
   ignoreDeadLinks: false,
 
+  head: [
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/logo.svg' }],
+    ['meta', { name: 'theme-color', content: '#14a8c4' }],
+  ],
+
   themeConfig: {
-    logo: undefined,
+    logo: '/logo.svg',
     search: { provider: 'local' },
 
     nav: [

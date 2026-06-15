@@ -8,6 +8,9 @@ hero:
     Self-hosted, Kubernetes-native. Issue a private AI assistant to every
     employee while keeping your skills, knowledge, and conversations on your own
     infrastructure.
+  image:
+    src: /logo.svg
+    alt: OpenCrane
   actions:
     - theme: brand
       text: What is OpenCrane?
