@@ -137,12 +137,12 @@ In this view, the left control pillar stacks Operator Control, Cognee Brain, and
 ### Browser ↔ UserTenant pod: the OpenClaw connection
 
 > **Two tenant concepts.** A **ClusterTenant** is the *customer / isolation unit* — it owns
-> a namespace, a resource quota, a compute isolation tier, and its own base domain
-> (`acme.ai.example.com`). A **UserTenant** is a *per-user OpenClaw agent gateway* (the
-> openclaw / `Tenant` CRD; "UserTenant" is the canonical name, the CRD kind is still
+> a namespace, a resource quota, a compute isolation tier, and its own customer-owned base
+> domain (e.g. `ai.client-company.com`). A **UserTenant** is a *per-user OpenClaw agent gateway*
+> (the openclaw / `Tenant` CRD; "UserTenant" is the canonical name, the CRD kind is still
 > `Tenant` in code), exposed at `<user>.<ClusterTenant-domain>`
-> (`mike.acme.ai.example.com`). The platform control plane sits above both at the apex.
-> See the authoritative
+> (e.g. `mike.ai.client-company.com`). The platform control plane runs on its own separate
+> domain (e.g. `example.com`), not as a parent of the customer domains. See the authoritative
 > [Tenancy Model](docs/agents/cluster-architecture.md#tenancy-model--clustertenant-vs-usertenant).
 
 A human touches **two backends and logs in once**: the **control plane** (management

@@ -455,9 +455,10 @@ compatibility contract.
 
 TLS is deliberately **k8s-native and provider-agnostic** rather than per-cloud managed
 certs, so the same mechanism works on-prem and on any cloud. `ingress.domain` is
-per-instance, so it **is** the **ClusterTenant base domain** (e.g. `acme.ai.example.com`);
-the wildcard `*.<domain>` covers the customer's **UserTenant** gateway hosts
-(`<user>.<domain>`), not the ClusterTenant itself.
+per-instance, so it **is** the **ClusterTenant base domain** — the customer's own domain
+(e.g. `ai.client-company.com`); the wildcard `*.<domain>` covers that customer's **UserTenant**
+gateway hosts (`<user>.<domain>`, e.g. `mike.ai.client-company.com`), not the ClusterTenant itself.
+The control plane runs on the platform's own separate domain (e.g. `example.com`).
 
 - **cert-manager** issues one **wildcard `*.<ingress.domain>` (+ apex) certificate** via
   ACME **DNS-01** (wildcards require DNS-01) into the `ingress.tls.secretName` Secret

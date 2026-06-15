@@ -7,7 +7,7 @@ The API-first management hub. **Express 5 + Prisma (PostgreSQL) + `@kubernetes/c
 of truth for tenants, policies, grants, MCP servers, skills; OIDC broker; the only writer of the
 Postgres projection. Listens on `PORT` (default **8080**).
 
-This is the platform management API served at the **apex** (`ai.example.com`), above every customer. It
+This is the platform management API served on the **platform's own domain** (e.g. `example.com`), separate from and above every customer. It
 exposes both `/api/v1/cluster-tenants` (the **ClusterTenant** customer/isolation unit) and the tenant
 endpoints (the **UserTenant** per-user OpenClaw gateway, CRD kind `Tenant`) — see
 [`cluster-architecture.md` → Tenancy Model](../cluster-architecture.md#tenancy-model--clustertenant-vs-usertenant).

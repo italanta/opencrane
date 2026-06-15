@@ -30,19 +30,19 @@ How the operator actually shapes the cluster (verified June 2026):
 
 ### Ingress hosts & DNS hierarchy
 
-The cluster routes three DNS levels (full model in
-[`cluster-architecture.md` → Tenancy Model](./cluster-architecture.md#tenancy-model--clustertenant-vs-usertenant)):
+The cluster routes **three independent domains** — the platform and each customer bring their own (full
+model in [`cluster-architecture.md` → Tenancy Model](./cluster-architecture.md#tenancy-model--clustertenant-vs-usertenant)):
 
 ```
-ai.example.com               → control plane (platform management API)              [apex]
-  acme.ai.example.com        → ClusterTenant "acme" base domain                     [per-customer]
-    mike.acme.ai.example.com → UserTenant "mike" gateway (wildcard *.acme.ai.example.com)  [per-user]
+example.com                  → control plane (platform management API)   [platform's own domain]
+ai.client-company.com        → ClusterTenant "client-company" base domain [per-customer, customer-owned]
+  mike.ai.client-company.com → UserTenant "mike" gateway (wildcard *.ai.client-company.com)  [per-user]
 ```
 
-- The operator builds **one `Ingress` per UserTenant** at `<name>.<ingress.domain>` (`apps/operator/.../5-ingress.ts`). `ingress.domain` is per-instance and **is** the ClusterTenant base domain.
-- cert-manager issues `*.<ingress.domain>` + the apex (`cluster-issuer.yaml`). The wildcard `*.<domain>` maps to **UserTenant** gateways — **not** the ClusterTenant. The ClusterTenant *owns* the domain; its UserTenants get the hosts.
-- The **control-plane apex Ingress is not shipped in the chart** today: the apex is cert-covered, but routing it to the control-plane Service is an installer/out-of-chart step.
-- Auth-less-by-host routing (a UserTenant gateway reachable at its host without an OIDC session) applies to the per-user gateway hosts under the wildcard, not the apex.
+- The operator builds **one `Ingress` per UserTenant** at `<name>.<ingress.domain>` (`apps/operator/.../5-ingress.ts`). `ingress.domain` is per-instance and **is** the ClusterTenant base domain (set it to the customer's domain).
+- cert-manager issues `*.<ingress.domain>` + that base domain's own apex (`cluster-issuer.yaml`). The wildcard `*.<domain>` maps to **UserTenant** gateways — **not** the ClusterTenant. The ClusterTenant *owns* the domain; its UserTenants get the hosts.
+- The **control plane's own domain is not wired by an Ingress in the chart** today: its cert/SAN may be covered, but routing the platform domain to the control-plane Service is an installer/out-of-chart step.
+- Auth-less-by-host routing (a UserTenant gateway reachable at its host without an OIDC session) applies to the per-user gateway hosts under the customer wildcard, not the platform domain.
 
 ## Defaults
 
