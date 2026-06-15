@@ -13,16 +13,38 @@ follows [Keep a Changelog](https://keepachangelog.com/); the project uses
 
 ## [Unreleased]
 
-### Planned — Track CT (native ClusterTenant + management API)
-- **Model the customer as a first-class, API-managed isolation unit.** Operators will
-  create/list/update a `ClusterTenant` via the control-plane API and `oc cluster-tenant`,
-  choosing an `isolationTier` per customer.
-- **Gate and dedicate compute per customer.** Enforce per-customer resource quotas
-  (CPU/memory/pods) and optionally pin a customer to dedicated nodes — so a noisy or
-  hostile tenant can't starve neighbours.
-- **Plug in dedicated-cluster backends without forking the platform.** An out-of-process
-  provisioner-delegation seam lets a private vendor (e.g. Kamaji) supply a per-customer
-  Kubernetes control plane without modifying the AGPL core (see `docs/enterprise-needs.md`).
+### Added
+
+- **Model each customer as a first-class, API-managed isolation unit.** Operators create
+  and manage customers with `oc cluster-tenant create|list|show|update|delete` (or
+  `/api/v1/cluster-tenants`), choosing an `isolationTier` — `shared`, `dedicatedNodes`, or
+  `dedicatedCluster` — per customer. The resource is cluster-scoped, carries its own status
+  lifecycle (`pending → provisioning → ready`), and enforces a hard invariant: one customer
+  = one `ClusterTenant` = one instance. Openclaws attach to a customer by setting
+  `spec.clusterTenantRef`; single-install stays the zero-config default and is
+  byte-for-byte unchanged — multi-tenancy is strictly opt-in.
+- **Gate and dedicate compute per customer natively, without an admission webhook.** When a
+  customer is opted in, the operator provisions a per-`ClusterTenant` namespace labelled
+  with PSA `restricted`, derives a `ResourceQuota` and `LimitRange` from the customer's
+  declared quota (`cpu`/`memory`/`pods`/`storage`/`gpu`), and stamps `nodeSelector` +
+  `tolerations` from `spec.compute` onto each openclaw pod spec. The operator is the sole
+  pod-creator so the enforcement is structural — one customer cannot starve or interfere
+  with another's resources, and `dedicatedNodes` pins the customer to its own node pool
+  without any additional admission machinery.
+- **Plug in a `dedicatedCluster` backend without forking or touching the AGPL tree.** The
+  control plane delegates to an out-of-process provisioner over an HTTPS webhook, posting a
+  vendor-neutral `ClusterTenantProvisionRequest` (published in the MIT `libs/contracts`)
+  and reading back a status plus a kubeconfig Secret reference — credential material never
+  crosses the wire inline. A private vendor implements the contract in their own service;
+  nothing vendor-specific lives in the AGPL core. Configure via Helm
+  (`clusterTenant.provisionerWebhook.url`); `dedicatedCluster` is rejected `422
+  TIER_UNAVAILABLE` until a backend advertises it (fail-closed).
+
+### Security
+
+- **The provisioner webhook refuses a non-`https://` URL at startup**, so the bearer token
+  used to authenticate to a vendor's dedicated-cluster backend is never sent in plaintext
+  under any configuration.
 
 ## [0.3.0] — 2026-06-15
 
