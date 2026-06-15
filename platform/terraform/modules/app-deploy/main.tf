@@ -88,6 +88,26 @@ resource "google_compute_global_address" "ingress_ip"
   project = var.project_id
 }
 
+# ---- cert-manager via Helm chart (CONN.8) ----
+
+resource "helm_release" "cert_manager"
+{
+  name             = "cert-manager"
+  namespace        = "cert-manager"
+  create_namespace = true
+  repository       = "https://charts.jetstack.io"
+  chart            = "cert-manager"
+  version          = "v1.15.1"
+  wait             = true
+  timeout          = 600
+
+  set
+  {
+    name  = "crds.enabled"
+    value = "true"
+  }
+}
+
 # ---- OpenCrane Helm chart ----
 
 resource "helm_release" "opencrane"
@@ -211,6 +231,7 @@ resource "helm_release" "opencrane"
   depends_on = [
     kubernetes_secret.database_url,
     helm_release.postgresql,
+    helm_release.cert_manager,
   ]
 }
 
