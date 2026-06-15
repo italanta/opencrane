@@ -33,18 +33,3 @@ export interface ClusterTenantProvisioner
    */
   getKubeconfigRef(name: string): Promise<string | null>;
 }
-
-/**
- * Connection settings for the external webhook provisioner, resolved from the
- * environment. Carries the HTTPS endpoint, bearer token, and the tiers the
- * external backend is configured to serve.
- */
-export interface ExternalWebhookProvisionerConfig
-{
-  /** HTTPS endpoint the provision request is POSTed to. */
-  url: string;
-  /** Bearer token presented to the external backend (compatibility shim; IAM-first preferred). */
-  token: string;
-  /** Stable identifier advertised by this provisioner in the registry. */
-  id: string;
-}

@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
 
-import { _K8sApplyResource } from "../../infra/k8s.js";
+import { ___K8sApplyResource } from "../../infra/k8s.js";
 import { _BuildTenantLabels } from "../deploy/tenant-labels.js";
 
 /**
@@ -94,7 +94,7 @@ export class TenantEncryptionKeys
       data: { key },
     };
 
-    await _K8sApplyResource(this.objectApi, secret, this.log);
+    await __K8sApplyResource(this.objectApi, secret, this.log);
     this.log.info({ name: tenantName, secretName }, "created encryption key secret");
   }
 }

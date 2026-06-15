@@ -11,7 +11,7 @@ import type { Logger } from "pino";
  * @param resource - Kubernetes object to apply.
  * @param log - Logger used for apply/create lifecycle messages.
  */
-export async function _K8sApplyResource<T extends k8s.KubernetesObject>(
+export async function __K8sApplyResource<T extends k8s.KubernetesObject>(
   client: any,
   resource: T,
   log: Logger,

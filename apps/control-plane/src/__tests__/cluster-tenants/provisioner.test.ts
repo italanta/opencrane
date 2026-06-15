@@ -4,8 +4,11 @@ import { ClusterTenantComputeMode, ClusterTenantIsolationTier, ClusterTenantPhas
 import type { ClusterTenantProvisionResult } from "@opencrane/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ExternalWebhookProvisioner, SharedClusterProvisioner, _ReadExternalWebhookConfig } from "../../core/cluster-tenants/provisioner.js";
-import { DefaultClusterTenantProvisionerRegistry, _BuildClusterTenantProvisionerRegistry } from "../../core/cluster-tenants/registry.js";
+import { SharedClusterProvisioner } from "../../core/cluster-tenants/shared-cluster.provisioner.js";
+import { ExternalWebhookProvisioner } from "../../core/cluster-tenants/external-webhook.provisioner.js";
+import { _ReadExternalWebhookConfig } from "../../core/cluster-tenants/external-webhook.config.js";
+import { DefaultClusterTenantProvisionerRegistry } from "../../core/cluster-tenants/registry.infra.js";
+import { _BuildClusterTenantProvisionerRegistry } from "../../core/cluster-tenants/registry.js";
 
 /** Env keys mutated by these tests, restored after each case. */
 const _WEBHOOK_ENV = ["CLUSTER_TENANT_PROVISIONER_WEBHOOK_URL", "CLUSTER_TENANT_PROVISIONER_WEBHOOK_TOKEN", "CLUSTER_TENANT_PROVISIONER_WEBHOOK_ID"];
