@@ -188,6 +188,17 @@ if [[ "$LOCAL_PROFILE" == "strict" ]]; then
     -o yaml | kubectl apply -f -
 fi
 
+# 5b. Install cert-manager if enabled in the resolved values file to support in-cluster TLS certificate generation.
+if grep -A 5 "certManager:" "$VALUES_FILE" 2>/dev/null | grep -q "enabled: true"; then
+  echo "[local] Installing cert-manager"
+  helm repo add jetstack https://charts.jetstack.io --force-update >/dev/null
+  helm upgrade --install cert-manager jetstack/cert-manager \
+    --namespace cert-manager \
+    --create-namespace \
+    --set crds.enabled=true \
+    --wait
+fi
+
 # 6. Install the OpenCrane chart with local-strict overrides wired to the in-cluster database.
 echo "[local] Installing Helm release '$RELEASE_NAME'"
 helm_args=(
