@@ -19,6 +19,35 @@
 > Authoritative, code-verified worklist as of 2026-06-10. Work top-to-bottom.
 > Items marked **[BLOCKED]** need a decision before implementation — do not guess.
 
+### Track WOI — WeOwnAI control-plane integration (frontend cutover dependencies)
+
+Raised 2026-06-15 by the WeOwnAI frontend (proprietary control-plane UI). Its mock→live cutover
+(WeOwnAI `plan.md` → Track LIVE) is blocked on two control-plane **API** gaps; both are small,
+additive, and generic (no vendor specifics — they don't touch the provisioner seam or the AGPL
+isolation model).
+
+- [ ] **WOI.1 — Emit identity claims on `/api/v1/auth/me` (or add `/tenants/me`).** Return the
+  caller's **role/group** (platform-operator vs customer-admin) and their **ClusterTenant**, so a
+  federated frontend can authorize without guessing. Today `/auth/me` returns the authenticated user
+  with no role claims, so WeOwnAI derives `isPlatformOperator`/`customerAdmin` from "is authenticated"
+  (placeholder). Keep the **API as the enforcement point** (the SPA only hides UI). The frontend login
+  is OIDC-to-Entra with a phishing-resistant factor (passkey/Windows Hello) — OpenCrane just needs to
+  surface the claims it already resolves at the OIDC session. **Anchors:** the `/auth/me` handler
+  (`apps/control-plane/src/routes/auth*` / `infra/auth`), the OIDC claims mapping,
+  `apps/control-plane/src/openapi/spec.ts`. _Ties to WeOwnAI LIVE.4._
+- [ ] **WOI.2 — Expose `clusterTenantRef` on the Tenant API + a server-side filter.** The Tenant
+  **CRD** already carries `spec.clusterTenantRef` (CT.4), but the `/api/v1/tenants` response schema
+  omits it and there is no `GET /tenants?clusterTenantRef=<name>` filter — so WeOwnAI maps `team` →
+  ref and filters client-side (stopgap). Add `clusterTenantRef` to the Tenant read schema + a
+  list query-param filter. **Anchors:** `apps/control-plane/src/routes/tenants.ts`,
+  `apps/control-plane/src/openapi/spec.ts`, `libs/contracts`. _Ties to WeOwnAI LIVE.3._
+- [ ] **WOI.3 — (minor) Give the ClusterTenant update body a real schema.** `PUT /api/v1/cluster-tenants/{name}`
+  is typed as an open object, so the generated client types its body `Record<string, never>` and the
+  frontend casts. Define the update request schema. **Anchors:** `apps/control-plane/src/openapi/spec.ts`.
+  _Ties to WeOwnAI LIVE.2._
+
+After WOI.1–3 land, WeOwnAI re-syncs the spec (its LIVE.8) and drops the three stopgaps.
+
 ### Track P5 — Close Phase 5 — ✅ COMPLETE · full history: plan-done.md § Completed Tracks (archived 2026-06-15)
 
 ### Track P4-A — Finish Phase 4 runtime-plane enforcement gaps — ✅ COMPLETE · full history: plan-done.md § Completed Tracks (archived 2026-06-15)
