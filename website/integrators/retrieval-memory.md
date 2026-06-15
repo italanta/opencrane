@@ -12,7 +12,7 @@ The memory layer provides:
 - Freshness controls to reduce stale-memory responses.
 
 > **Not to be confused with** the per-agent workspace `MEMORY.md` file (an L2 tenant
-> workspace doc seeded into the pod — see the agent-identity track / [obot.md](./obot.md)
+> workspace doc seeded into the pod — see the agent-identity track / [obot.md](/integrators/mcp-gateway)
 > for the workspace layering). *This* document is about the **Cognee retrieval plane**,
 > a different thing entirely: org knowledge, not the agent's own scratch notes.
 

@@ -1,6 +1,12 @@
-# OpenCrane API Reference
+# API overview
 
 The OpenCrane control plane exposes a versioned HTTP API at `/api/v1`.
+
+::: tip Looking for the endpoint list?
+This page covers authentication, error envelopes, and pagination conventions. For
+the full, browsable endpoint and schema reference, see the
+[interactive API reference](/reference/api).
+:::
 
 A machine-readable OpenAPI 3.1 description is emitted from the build and served at runtime:
 

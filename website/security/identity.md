@@ -7,7 +7,7 @@ access to **both** the control-plane API and the user's own OpenClaw pod.
 > `Tenant` CRD); "UserTenant" is the canonical doc name while the CRD kind is still `Tenant`
 > in code. It is exposed at `<user>.<ClusterTenant-domain>`. The **ClusterTenant** is the
 > customer that owns that base domain. See the authoritative
-> [Tenancy Model](agents/cluster-architecture.md#tenancy-model--clustertenant-vs-usertenant).
+> [Tenancy Model](https://github.com/italanta/opencrane/blob/main/docs/agents/cluster-architecture.md#tenancy-model--clustertenant-vs-usertenant).
 > Below, "tenant pod" / "tenant gateway" means a UserTenant.
 
 > **Status legend:** ✅ implemented · 🔶 planned/target. The OIDC control-plane
@@ -16,7 +16,7 @@ access to **both** the control-plane API and the user's own OpenClaw pod.
 > signing) is implemented in WeOwnAI but cannot be verified end-to-end until the
 > device-signature scheme and pod pairing-link provisioning land (see Blocked
 > items). The connection-security posture is decided — **Option B**; see
-> [`claw-security-considerations.md`](./claw-security-considerations.md).
+> [`claw-security-considerations.md`](/security/connection-security).
 
 ## Two planes, one identity
 
@@ -202,7 +202,7 @@ browser) + a per-user central kill-switch (OpenClaw `device.token.revoke` /
 `wss://`-only, fail-closed `Secure` cookie — CONN.2). The control plane stays
 *connection*-stateless. Full trade-off, threat model (MITM/airport, the two clocks,
 K8s force-disconnect levers) and accepted compromises are in
-[`claw-security-considerations.md`](./claw-security-considerations.md).
+[`claw-security-considerations.md`](/security/connection-security).
 
 ### Status
 

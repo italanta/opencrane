@@ -6,3 +6,4 @@ packages:
   - apps/harvesting-agent
   - apps/cli
   - apps/skill-registry
+  - website

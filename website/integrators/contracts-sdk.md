@@ -3,7 +3,7 @@
 `@opencrane/contracts` is the **public SDK and API contract** for the OpenCrane
 control plane: a typed TypeScript client (`openapi-fetch`) plus DTOs generated
 from the control-plane OpenAPI 3.1 specification
-([`apps/control-plane/openapi.json`](https://github.com/opencrane/opencrane/blob/main/apps/control-plane/openapi.json)).
+([`apps/control-plane/openapi.json`](https://github.com/italanta/opencrane/blob/main/apps/control-plane/openapi.json)).
 
 It is the same contract the `oc` CLI consumes — and the recommended way for any
 external surface to talk to OpenCrane.
@@ -31,7 +31,7 @@ code:
 ```bash
 # Pin a specific OpenCrane release, then generate a typed client locally.
 curl -fsSL -o openapi/opencrane.json \
-  https://github.com/opencrane/opencrane/releases/download/<tag>/openapi.json
+  https://github.com/italanta/opencrane/releases/download/<tag>/openapi.json
 pnpm exec openapi-typescript openapi/opencrane.json -o src/api/generated.ts
 ```
 
@@ -46,4 +46,4 @@ never drift from the implementation.
 - [API reference (interactive)](/reference/api)
 - [API overview](/reference/api-overview)
 - Full package README:
-  [`libs/contracts/README.md`](https://github.com/opencrane/opencrane/blob/main/libs/contracts/README.md)
+  [`libs/contracts/README.md`](https://github.com/italanta/opencrane/blob/main/libs/contracts/README.md)

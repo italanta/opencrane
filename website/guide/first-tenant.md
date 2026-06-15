@@ -1,72 +1,55 @@
-# Create your first tenant
+# Create your first employee assistant
 
-A **UserTenant** is one employee's isolated OpenClaw assistant. You can create one
-through the `oc` CLI (recommended) or by applying a `Tenant` CRD directly.
+::: tip What's an employee assistant?
+A private AI coworker for one person. It has its own secure storage and its own web
+address, and it acts on that person's behalf. (In the API and CLI it's called a
+*tenant*.)
+:::
 
-## Point the CLI at your control plane
-
-```bash
-export OPENCRANE_URL=https://admin.opencrane.ai
-export OPENCRANE_TOKEN=<your-access-token>
-```
-
-## Create a tenant via the CLI
+## Create one
 
 ```bash
 oc tenants create \
-  --name jente \
-  --display-name "Jente" \
-  --email jente@example.com
+  --name alice \
+  --display-name "Alice Smith" \
+  --email alice@example.com
 ```
 
-The operator provisions the per-tenant resources — a GCS bucket (on GCP), a
-Workload Identity service account, an encryption key, a Deployment, a Service, and
-one Ingress for the UserTenant gateway. The assistant becomes reachable at
-`https://jente.<ClusterTenant-domain>` under the wildcard cert.
+That's it — Alice's assistant is now live at `https://alice.<your-domain>`, ready for
+her to [sign in and use](/guide/connect).
 
-## Or apply a CRD directly
-
-```yaml
-apiVersion: opencrane.io/v1alpha1
-kind: Tenant
-metadata:
-  name: jente
-spec:
-  displayName: Jente
-  email: jente@example.com
-```
+You can set a few things up front:
 
 ```bash
-kubectl apply -f tenant.yaml
+oc tenants create \
+  --name alice \
+  --display-name "Alice Smith" \
+  --email alice@example.com \
+  --team engineering \      # the team she belongs to
+  --budget 50               # monthly spend cap, in USD
 ```
 
-## Pin an OpenClaw version
+The `--team` label is how you group people — see [Organize your company](/guide/organize).
 
-Without `openclawVersion`, tenants install `latest` on first boot and can
-self-update via `openclaw update`. To pin:
-
-```yaml
-apiVersion: opencrane.io/v1alpha1
-kind: Tenant
-metadata:
-  name: jente
-spec:
-  displayName: Jente
-  email: jente@example.com
-  openclawVersion: "2026.3.15"
-```
-
-## Inspect and manage
+## Manage assistants
 
 ```bash
-oc tenants list             # list all tenants
-oc tenants get jente        # inspect a tenant
-oc tenants suspend jente    # scale to zero
-oc tenants resume jente     # bring back
-oc budget spend jente       # current spend
-oc audit list --tenant jente --limit 50
+oc tenants list             # everyone's assistants
+oc tenants get alice        # details for one
+oc tenants suspend alice    # pause it (frees resources)
+oc tenants resume alice     # bring it back
+oc tenants delete alice     # remove it
 ```
 
-See the [CLI reference](/reference/cli) for the full command surface, and
-[Access policies & grants](/concepts/access-policies) to control what knowledge,
-skills, and MCP servers the tenant can reach.
+## What's next
+
+A brand-new assistant starts locked down — it can chat, but it can't reach company
+tools, skills, or knowledge until you allow it. Build it up:
+
+- **[Let Alice sign in](/guide/connect)**
+- **[Share skills with her](/guide/skills)** — reusable abilities
+- **[Connect tools](/guide/tools)** — Slack, Jira, your CRM
+- **[Add company knowledge](/guide/knowledge)** — so it answers with real facts
+- **[Control access](/guide/permissions)** — decide exactly what it can use
+
+Full command details live in the [CLI reference](/reference/cli).

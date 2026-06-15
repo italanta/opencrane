@@ -173,11 +173,11 @@ projected SA tokens, which never reach the browser.
 long-lived token in the browser), a per-user central kill-switch (OpenClaw
 revoke + Kubernetes force-disconnect), and transport hardening — `wss://`-only,
 HSTS, and a fail-closed `Secure` session cookie in production. TLS for the gateway is
-issued by cert-manager as a wildcard cert (see [hosting-architecture.md](docs/hosting-architecture.md) §6.3).
+issued by cert-manager as a wildcard cert (see [hosting architecture](https://docs.opencrane.ai/operators/hosting) §6.3).
 A control-plane/Envoy WebSocket **proxy** (per-session cut + per-frame audit) is a
 deferred, contingent vision, not adopted. Full design, threat model (MITM, the "two
-clocks", K8s force-disconnect), and trade-offs: [`docs/auth.md`](docs/auth.md) and
-[`docs/claw-security-considerations.md`](docs/claw-security-considerations.md).
+clocks", K8s force-disconnect), and trade-offs: [Identity & connection auth](https://docs.opencrane.ai/security/identity) and
+[Connection security model](https://docs.opencrane.ai/security/connection-security).
 
 ### Direct Retrieval Runtime: Extending Tenant Context
 
@@ -246,8 +246,8 @@ OpenCrane is a **fully headless, API-first control plane**. There is no bundled 
 **What's working today:**
 - ✅ **Multi-tenant isolation**: Each employee gets an isolated Kubernetes pod with dedicated storage (private drive)
 - ✅ **Operator-driven lifecycle**: Automatic deployment, updates, and policy reconciliation via Kubernetes CRDs
-- ✅ **Skill registry & delivery**: Skill bundles are scanned (Grype/Trivy), entitled per scope (org/dept/team/project/personal), and delivered **per-read** to tenant pods over the in-cluster Skill Registry — existence-hiding, no shared-skills volume mount. See [`docs/skills-registry.md`](docs/skills-registry.md)
-- ✅ **MCP gateway (Obot)**: Tenant agents reach MCP servers through the config-slaved Obot gateway; the control plane owns the catalog + per-tenant allow/deny. See [`docs/obot.md`](docs/obot.md)
+- ✅ **Skill registry & delivery**: Skill bundles are scanned (Grype/Trivy), entitled per scope (org/dept/team/project/personal), and delivered **per-read** to tenant pods over the in-cluster Skill Registry — existence-hiding, no shared-skills volume mount. See [Skill registry & delivery](https://docs.opencrane.ai/integrators/skill-registry)
+- ✅ **MCP gateway (Obot)**: Tenant agents reach MCP servers through the config-slaved Obot gateway; the control plane owns the catalog + per-tenant allow/deny. See [MCP gateway (Obot)](https://docs.opencrane.ai/integrators/mcp-gateway)
 - ✅ **Network policies**: Domain allowlisting and IP restrictions enforced via Kubernetes NetworkPolicy and CiliumNetworkPolicy
 - ✅ **Cost control**: Per-tenant budgets and token tracking via LiteLLM integration
 - ✅ **Audit trail**: All tenant and policy changes dual-written to K8s (source of truth) and PostgreSQL (queryable)
@@ -265,7 +265,7 @@ OpenCrane is a **fully headless, API-first control plane**. There is no bundled 
 **Skills & awareness foundation:**
 - ✅ Skill catalog CRUD with promotion/demotion and entitlement management via API + CLI
 - ✅ Scan → validate → register → entitle ingest pipeline (Grype/Trivy; promotion to `published` gated on a passed scan)
-- ✅ In-cluster Skill Registry delivery app: per-read, entitlement-checked, existence-hiding ([`docs/skills-registry.md`](docs/skills-registry.md))
+- ✅ In-cluster Skill Registry delivery app: per-read, entitlement-checked, existence-hiding ([Skill registry & delivery](https://docs.opencrane.ai/integrators/skill-registry))
 - ✅ Control-plane **effective-contract** endpoint re-pulled by the pod each loop boundary, with contract-derived `TOOLS.md`
 - ⏳ **In progress**: fleet-wide uniform awareness contract SDK (P4-B); OCI/ORAS digest-pinned bundle storage
 
@@ -294,8 +294,8 @@ OpenCrane is a **fully headless, API-first control plane**. There is no bundled 
 - 🎯 Org knowledge fabric standardization with schema v2 and connector conformance checks.
 - 🎯 Awareness policy compiler to translate AccessPolicy + dataset membership into Cognee grants and runtime hints.
 - 🎯 Fleet evaluation harness and awareness SLO dashboards (policy safety, freshness, citation coverage, latency).
-- ✅ Obot MCP Gateway deployed: headless, native auth disabled, config-slaved to the control-plane registry, NetworkPolicy-gated. See [`docs/obot.md`](docs/obot.md).
-- ✅ Skill Registry & Delivery app deployed: per-read entitlement enforcement, scan-gated, existence-hiding. See [`docs/skills-registry.md`](docs/skills-registry.md). (OCI/ORAS digest-pinned storage backend is a future swap behind the same delivery contract.)
+- ✅ Obot MCP Gateway deployed: headless, native auth disabled, config-slaved to the control-plane registry, NetworkPolicy-gated. See [MCP gateway (Obot)](https://docs.opencrane.ai/integrators/mcp-gateway).
+- ✅ Skill Registry & Delivery app deployed: per-read entitlement enforcement, scan-gated, existence-hiding. See [Skill registry & delivery](https://docs.opencrane.ai/integrators/skill-registry). (OCI/ORAS digest-pinned storage backend is a future swap behind the same delivery contract.)
 - ✅ Control-plane MCP server management and skill catalog with promotion/demotion and entitlement grants: delivered via API + CLI in Phase 5.
 - ✅ Third-party source management routes and ingest pipeline: delivered.
 - ✅ Operator + identity migration delivered: projected-token audiences (`aud=obot-gateway`, `aud=skill-registry`) now replace `OPENCLAW_GATEWAY_TOKEN`.
@@ -331,15 +331,21 @@ OpenCrane is a **fully headless, API-first control plane**. There is no bundled 
 
 ## Documentation
 
+📖 **Full documentation site: [docs.opencrane.ai](https://docs.opencrane.ai)** —
+getting started, concepts, operator & integrator guides, and an interactive API
+reference. The site is built with [VitePress](https://vitepress.dev) from
+[`website/`](website/). Contributor/agent coding guidance stays in
+[`AGENTS.md`](AGENTS.md) and [`docs/agents/`](docs/agents/).
+
 | Doc | Covers |
 |-----|--------|
-| [`docs/auth.md`](docs/auth.md) | Identity model: OIDC control-plane session + the OpenClaw pairing-link broker & connect handshake |
-| [`docs/claw-security-considerations.md`](docs/claw-security-considerations.md) | Connection-security threat model + the Option B decision (and the deferred proxy) |
-| [`docs/hosting-architecture.md`](docs/hosting-architecture.md) | On-prem-default hosting adapters, the cloud seam, and cert-manager TLS issuance |
-| [`docs/obot.md`](docs/obot.md) | Obot MCP Gateway: catalog sync, policy enforcement layers, drift repair |
-| [`docs/skills-registry.md`](docs/skills-registry.md) | Skill catalog, scan/entitle pipeline, and per-read delivery |
-| [`docs/memory.md`](docs/memory.md) | Cognee retrieval plane: datasets, AccessPolicy mapping, freshness |
-| [`docs/api.md`](docs/api.md) · [`docs/cli.md`](docs/cli.md) · [`docs/runbook.md`](docs/runbook.md) | HTTP API reference · `oc` CLI reference · operational runbook |
+| [Identity & connection auth](https://docs.opencrane.ai/security/identity) | Identity model: OIDC control-plane session + the OpenClaw pairing-link broker & connect handshake |
+| [Connection security model](https://docs.opencrane.ai/security/connection-security) | Connection-security threat model + the Option B decision (and the deferred proxy) |
+| [Hosting architecture](https://docs.opencrane.ai/operators/hosting) | On-prem-default hosting adapters, the cloud seam, and cert-manager TLS issuance |
+| [MCP gateway (Obot)](https://docs.opencrane.ai/integrators/mcp-gateway) | Obot MCP Gateway: catalog sync, policy enforcement layers, drift repair |
+| [Skill registry & delivery](https://docs.opencrane.ai/integrators/skill-registry) | Skill catalog, scan/entitle pipeline, and per-read delivery |
+| [Retrieval & memory](https://docs.opencrane.ai/integrators/retrieval-memory) | Cognee retrieval plane: datasets, AccessPolicy mapping, freshness |
+| [API overview](https://docs.opencrane.ai/reference/api-overview) · [CLI reference](https://docs.opencrane.ai/reference/cli) · [Runbook](https://docs.opencrane.ai/operators/runbook) | HTTP API reference · `oc` CLI reference · operational runbook |
 
 ## Quick Start
 
@@ -434,7 +440,7 @@ oc auth me                              # current auth identity
 oc tenants list --output json | jq '.[].name'   # machine-readable output
 ```
 
-See `docs/cli.md` for the full command reference and `docs/api.md` for the HTTP API reference.
+See the [CLI reference](https://docs.opencrane.ai/reference/cli) for the full command reference and the [API reference](https://docs.opencrane.ai/reference/api) for the HTTP API.
 
 ### Version Pinning
 

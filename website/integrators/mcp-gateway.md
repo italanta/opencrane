@@ -4,8 +4,8 @@ How OpenCrane runs and governs **MCP (Model Context Protocol) servers** for tena
 agents. Obot is the in-cluster **runtime gateway**; the control plane is the
 **source of truth** for the catalog and per-tenant entitlements.
 
-> See also: [skills-registry.md](./skills-registry.md) (the sibling delivery plane),
-> [auth.md](./auth.md) (token audiences), and [hosting-architecture.md](./hosting-architecture.md).
+> See also: [skills-registry.md](/integrators/skill-registry) (the sibling delivery plane),
+> [auth.md](/security/identity) (token audiences), and [hosting-architecture.md](/operators/hosting).
 
 ## What Obot is
 
@@ -49,12 +49,12 @@ oc CLI / API ──▶ Control plane (McpServer rows + grants)
   `endpoint`, `transport`, `scope`, `status`, `capabilities`, plus optional
   `sourceId` linking to a `ThirdPartySource` (MCP registry / git / manual upload).
 - It exposes the Obot-wire catalog at **`GET /api/internal/obot-registry`**
-  ([obot-registry.ts](../apps/control-plane/src/routes/internal/obot-registry.ts)),
+  ([obot-registry.ts](https://github.com/italanta/opencrane/blob/main/apps/control-plane/src/routes/internal/obot-registry.ts)),
   serving only `status = Active` servers, ordered by name. The endpoint is **not**
   behind `___AuthMiddleware`; NetworkPolicy is its access control.
 - Obot is pointed at it via `OBOT_SERVER_PROVIDER_REGISTRIES` and polls to sync.
 - **Management surface:** CRUD lives at `/api/v1/mcp-servers`
-  ([mcp-servers.ts](../apps/control-plane/src/routes/mcp-servers.ts)) and via
+  ([mcp-servers.ts](https://github.com/italanta/opencrane/blob/main/apps/control-plane/src/routes/mcp-servers.ts)) and via
   `oc mcp …`. Third-party sources are ingested through the
   fetch → scan → validate → register → entitle pipeline.
 
@@ -63,10 +63,10 @@ oc CLI / API ──▶ Control plane (McpServer rows + grants)
 The operator injects a **projected ServiceAccount token with audience
 `obot-gateway`** into every tenant pod at
 `/var/run/opencrane/tokens/obot-gateway.token`, alongside `OPENCRANE_MCP_GATEWAY_URL`
-([3-deployment.ts](../apps/operator/src/tenants/deploy/3-deployment.ts)). The pod
+([3-deployment.ts](https://github.com/italanta/opencrane/blob/main/apps/operator/src/tenants/deploy/3-deployment.ts)). The pod
 (OpenClaw) calls Obot server-side with that token. This token is **workload
 identity** — it is never handed to a browser. (The browser's path to the pod is the
-separate pairing-link broker; see [auth.md](./auth.md).)
+separate pairing-link broker; see [auth.md](/security/identity).)
 
 ## MCP policy: three enforcement points, one decision
 
@@ -77,13 +77,13 @@ the same grant-compiler output — so they cannot disagree by construction:
    will route at all.
 2. **Runtime contract policy** — `policy.mcpServers.allow/deny` in the effective
    contract, re-pulled by the pod
-   ([tenant-contract.ts](../apps/control-plane/src/routes/internal/tenant-contract.ts)).
+   ([tenant-contract.ts](https://github.com/italanta/opencrane/blob/main/apps/control-plane/src/routes/internal/tenant-contract.ts)).
 3. **In-pod enforcement** — `entrypoint.sh` `_load_mcp_policy` / `_mcp_server_is_enabled`
    evaluate, in precedence order: tenant-CRD `mcpPolicy.deny` (always wins) → tenant-CRD
    `mcpPolicy.allow` → AccessPolicy deny → AccessPolicy allow.
 
 The agent's **awareness** of its tools (`TOOLS.md`, see
-[skills-registry.md](./skills-registry.md) and the contract's `workspace` block) is
+[skills-registry.md](/integrators/skill-registry) and the contract's `workspace` block) is
 derived from the same allow-set — so what the agent *thinks* it can use stays aligned
 with what IAM *lets* it use. Awareness is descriptive; Obot + the runtime policy are
 the enforcement boundary.
@@ -91,7 +91,7 @@ the enforcement boundary.
 ## Keeping Obot from drifting
 
 The operator's runtime-plane drift repairer
-([drift-repairer.ts](../apps/operator/src/runtime-planes/drift-repairer.ts)) runs on a
+([drift-repairer.ts](https://github.com/italanta/opencrane/blob/main/apps/operator/src/runtime-planes/drift-repairer.ts)) runs on a
 ~60s interval and re-patches Obot's critical env (`OBOT_SERVER_PROVIDER_REGISTRIES`,
 `OBOT_SERVER_ENABLE_AUTHENTICATION`, `OBOT_SERVER_MCPRUNTIME_BACKEND`) in place if it
 drifts from control-plane intent — without a pod restart, preserving `valueFrom`

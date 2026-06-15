@@ -1,70 +1,32 @@
 # What is OpenCrane?
 
-OpenCrane is a **self-hosted, Kubernetes-native control plane for organizational
-AI**. It lets a company issue an isolated, personal AI assistant — powered by
-[OpenClaw](https://github.com/openclaw/openclaw) — to every employee, while
-keeping complete control over security, governance, skills, organizational
-knowledge, and LLM cost.
+OpenCrane gives **every person in your company their own AI assistant** — and gives
+you one place to manage them all.
 
-Agent frameworks work beautifully for one person. OpenCrane answers the question
-that follows: **what happens when you scale to a whole organization?** How do you
-give everyone their own assistant, share skills across teams, govern access to
-company knowledge, and keep it all secure, compliant, and up to date — without
-chaos, and without handing your workflows to a vendor?
+Think of it like this: instead of one shared chatbot, each employee gets their own
+private AI coworker. It knows who they are, helps with their work, and can tap into
+company knowledge, tools, and skills — but only the things you allow. Everything
+runs on **your** infrastructure, so your data and conversations never leave.
 
-## Why self-host?
+## Why teams choose OpenCrane
 
-Vendor-hosted AI platforms are convenient, but they carry hidden cost:
+- **Private by design** — conversations and company data stay on your network.
+- **You're in control** — decide what every assistant can see and do.
+- **No vendor lock-in** — use Claude, GPT, or open-source models, and switch anytime.
+- **Built to scale** — from 10 people to 10,000, managed from one place.
 
-| Aspect | Vendor-hosted | Self-hosted (OpenCrane) |
-|--------|---------------|-------------------------|
-| Skill ownership | Vendor hosts & can analyse your skills | You own everything |
-| Competitive risk | Vendor learns your workflows | Your workflows stay private |
-| Model switching | Locked to the vendor's LLM | Use any LLM provider |
-| Data residency | Vendor's servers | Your infrastructure |
-| Regulatory control | Vendor's terms | Full compliance under your control |
-| Pricing | Vendor can change at will | You control infrastructure cost |
+## What you'll do here
 
-OpenCrane keeps personal assistants, shared skills, and organizational knowledge
-**completely under your control** — while still providing the convenience and
-scale of a cloud-native platform.
+A quick tour of the journey:
 
-## How it works
+1. **[Get OpenCrane running](/guide/getting-started)** and point your domain at it.
+2. **[Create an employee assistant](/guide/first-tenant)** for someone.
+3. **[Let them sign in](/guide/connect)** and start using it.
+4. Then make it powerful: [share skills](/guide/skills), [connect tools](/guide/tools),
+   [add company knowledge](/guide/knowledge), and [set the rules](/guide/permissions).
 
-Each employee gets a private AI assistant running as an isolated Kubernetes pod.
-That assistant:
-
-- **Knows who you are** — holds your personal access tokens and acts across the
-  organization's platforms *as you*.
-- **Stays private** — conversations are stored in the pod's encrypted storage.
-  OpenCrane enforces network policy and budget, but does not inspect conversation
-  content.
-- **Accesses organizational knowledge** — queries the Cognee knowledge plane
-  directly during the agentic loop, with role-based scoping and citations.
-
-OpenCrane also runs **company-wide harvesting agents** that continuously ingest
-knowledge from Slack, Teams, email, and ticketing systems into a central Org
-Knowledge Index, made available to assistants with automatic role-based
-filtering.
-
-The platform orchestrates all of this through:
-
-- **Infrastructure management** — deploying and updating per-employee assistants,
-  enforcing per-tenant token budgets and cost limits.
-- **A permissions control plane** — managing dataset memberships and grants
-  without sitting in the retrieval request path.
-- **A uniform awareness runtime** — a common contract across every assistant for
-  scope selection, citations, fallback, and freshness.
-- **Skill sharing** — promotion and delivery of skills across org, department,
-  project, and personal scopes.
-
-## Who is this for?
-
-- **Operators** deploy and run the platform — see the
-  [Operators](/operators/hosting) guides.
-- **Integrators / developers** register MCP servers, publish skills, and consume
-  the typed [Contracts SDK](/integrators/contracts-sdk).
-- **Everyone** can read the [Concepts](/concepts/tenancy) to build a mental model.
-
-Start with the [architecture overview](/guide/architecture), then head to
-[Getting Started](/guide/getting-started).
+::: tip New here?
+Start with **[How OpenCrane works](/guide/how-it-works)** — a five-minute, plain-English
+tour of the main ideas (assistants, skills, tools, knowledge). Everything else builds
+on it.
+:::

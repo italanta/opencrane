@@ -10,7 +10,7 @@
 > **Tenancy terms:** "tenant" below means a **UserTenant** — the per-user OpenClaw gateway
 > (the openclaw / `Tenant` CRD), exposed at `<user>.<ClusterTenant-domain>`. The
 > **ClusterTenant** is the customer that owns the base domain. See the authoritative
-> [Tenancy Model](agents/cluster-architecture.md#tenancy-model--clustertenant-vs-usertenant).
+> [Tenancy Model](https://github.com/italanta/opencrane/blob/main/docs/agents/cluster-architecture.md#tenancy-model--clustertenant-vs-usertenant).
 
 ## 1. Goals & Principles
 
@@ -448,7 +448,7 @@ The chart's `hosting` block maps 1:1 onto the operator's `hostingProvider` + per
 Both examples above are **single-install** (one instance + its CRDs, applied in one step).
 To run **multiple isolated instances in one cluster**, the CRDs are installed once
 cluster-wide and each per-instance release is installed with `--skip-crds`. See
-[`docs/multi-instance.md`](multi-instance.md) for the procedure and the CRD-version
+[`docs/multi-instance.md`](/advanced/multi-instance) for the procedure and the CRD-version
 compatibility contract.
 
 ### 6.3 Ingress TLS (cert-manager wildcard — plan CONN.8)

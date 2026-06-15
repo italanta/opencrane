@@ -240,6 +240,37 @@ ingress:
     #    gateway host under the ClusterTenant base domain.
     secretName: opencrane-wildcard-tls
 
+# -- Documentation site (optional). When enabled, serves the VitePress docs build
+# from an in-cluster, unprivileged nginx. OFF by default, so existing installs are
+# unchanged. Build/push the image with `pnpm docker:build:docs`.
+docs:
+  enabled: false
+  image:
+    repository: ghcr.io/opencrane/docs
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    port: 80
+  ingress:
+    enabled: false
+    # -- Docs host. Defaults to `docs.<ingress.domain>` when left empty.
+    host: ""
+    # -- Ingress class. Falls back to `ingress.className` when empty.
+    className: ""
+    annotations: {}
+    tls:
+      enabled: false
+      # -- TLS Secret for the docs host. Required when ingress.tls.enabled.
+      secretName: ""
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
 # -- cert-manager TLS issuance (CONN.8). When enabled, renders a ClusterIssuer +
 # a wildcard Certificate (*.ingress.domain, plus the apex) into ingress.tls.secretName.
 # k8s-native, cloud-agnostic + on-prem. Requires cert-manager installed in-cluster.

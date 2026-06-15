@@ -7,7 +7,7 @@
 - **Phase 4 Track A** (MCP & Skills runtime planes): complete. P4A.1–P4A.3 implemented, tested, and Helm/NetworkPolicy wired (2026-06-10).
 - **Phase 4 Track B** (fleet organizational awareness): **decision-unblocked 2026-06-13** (P4B.0 closed). **P4B.1 Awareness SDK landed**; greenfield remainder P4B.2–P4B.7 (incl. P4B.7 scope-aware retrieval plugin + CLI/API session→scope binding for anti-spill). See Phase 4 Decisions for the locked choices.
 - **Track P4-C** (agent identity & personalisation via OpenClaw workspace files): **P4C.1–P4C.5 landed** (2026-06-13). Workspace bootstrap/seeding, contract-derived TOOLS.md, company-doc API + immutable versioning + L0 guard, agent-driven reconciliation (deterministic merger; LiteLLM agent merge is the seam) producing approve/reject proposals, and version-gated delivery into the pod via the re-pull loop. Whole track testable spine complete; live LiteLLM merge quality is the remaining upgrade.
-- **Track CONN** (OpenClaw connection auth & session security): pairing-broker endpoint implemented (2026-06-13); connection-security posture **decided = Option B** (short-lived re-brokered credentials + per-user kill-switch; control plane stays connection-stateless). Full trade-off in `docs/claw-security-considerations.md`. Transport hardening landed 2026-06-13 (CONN.2); `docs/auth.md` rewritten for the pairing broker (CONN.6); **CONN.8 wildcard TLS** landed (operator Ingress `tls:` + cert-manager ClusterIssuer/Certificate Helm scaffold, dev selfSigned + prod ACME DNS-01; **onboarding CLI/API `oc platform dns set` + dev sslip.io hosts landed 2026-06-13**) with cross-namespace + live-ACME-e2e as the remaining (cluster-bound) follow-ups. **Kill-switch chain landed 2026-06-13 (CONN.3 persistence+decode, CONN.4 device registry, CONN.5 cut + RBAC)** — testable spine complete; the gateway per-device revoke + CP-held operator device + in-pod mint exec are the remaining live-infra seams. Proxy (Option C) deferred as a contingent vision.
+- **Track CONN** (OpenClaw connection auth & session security): pairing-broker endpoint implemented (2026-06-13); connection-security posture **decided = Option B** (short-lived re-brokered credentials + per-user kill-switch; control plane stays connection-stateless). Full trade-off in `website/security/connection-security.md`. Transport hardening landed 2026-06-13 (CONN.2); `website/security/identity.md` rewritten for the pairing broker (CONN.6); **CONN.8 wildcard TLS** landed (operator Ingress `tls:` + cert-manager ClusterIssuer/Certificate Helm scaffold, dev selfSigned + prod ACME DNS-01; **onboarding CLI/API `oc platform dns set` + dev sslip.io hosts landed 2026-06-13**) with cross-namespace + live-ACME-e2e as the remaining (cluster-bound) follow-ups. **Kill-switch chain landed 2026-06-13 (CONN.3 persistence+decode, CONN.4 device registry, CONN.5 cut + RBAC)** — testable spine complete; the gateway per-device revoke + CP-held operator device + in-pod mint exec are the remaining live-infra seams. Proxy (Option C) deferred as a contingent vision.
 - **Track P4-D** (MCP & Skills platform completion — the two 🔶 gaps): scoped + decisions locked 2026-06-13. P4D.2 OCI/Zot **foundation slice landed** (`OciBundleStore` + gated Zot Helm; runtime cutover deferred to a live-Zot slice). P4D.1 **brokering-model slice landed** (credential brokering-mode + custody validation + API/CLI + gated encryption-at-rest Helm; live OBO push/exchange parked). See Open Backlog → Track P4-D.
 - **Review discipline** (2026-06-13): the `review` agent (`.claude/agents/review.md`) now has a mandatory **"verify every finding before reporting"** step — re-trace the cited code and construct a concrete repro before asserting; unconfirmed concerns go under *Open questions*, not *Findings*. Added after a review surfaced a finding that did not survive verification.
 - **Branch**: `phase-4-5-fixes`, 6 commits ahead of `main`.
@@ -98,7 +98,7 @@
 > brokered by the control plane. **Posture = Option B** — short-lived re-brokered credentials (no
 > long-lived browser token) + a per-user central kill-switch + transport hardening; the control
 > plane stays *connection*-stateless. Full threat model + trade-offs in
-> `docs/claw-security-considerations.md`. Full landed-item detail: **plan-done.md → "Active-track
+> `website/security/connection-security.md`. Full landed-item detail: **plan-done.md → "Active-track
 > landed detail (archived 2026-06-15)"**.
 
 - [x] **CONN.1 Pairing-broker endpoint** — `POST /auth/pod-token` returns the pod pairing link
@@ -122,7 +122,7 @@
   admin `POST /api/v1/tenants/:name/cut` + self-serve `…/auth/pod-token/cut`; control-plane pods RBAC.
   **Remaining:** the gateway-revoke half is `_NoopGatewayAdmin` until a CP operator device is paired
   (CONN.4 live seam) — pod-delete already severs live sockets, so only the *re-auth-block* defers.
-- [x] **CONN.6 Rewrite `docs/auth.md` for the pairing broker** — replaced the stale `aud=openclaw`
+- [x] **CONN.6 Rewrite `website/security/identity.md` for the pairing broker** — replaced the stale `aud=openclaw`
   SA-token/RFC-8693 description with the pairing-link broker + `connect` handshake. Landed (docs only).
 - [ ] **CONN.7 Proxy (Option C) — contingent vision.** **[DEFERRED]** Envoy/mesh WebSocket proxy for
   per-session cut + per-frame audit + zero browser credential. Revisit only if a hard per-session /
@@ -142,8 +142,8 @@
 
 ### Track P4-D — MCP & Skills platform completion (the two 🔶 gaps)
 
-> Scoped 2026-06-13. Closes the two known runtime-plane gaps from `docs/obot.md` and
-> `docs/skills-registry.md`. Custody/substrate decisions are **locked** (Phase 4
+> Scoped 2026-06-13. Closes the two known runtime-plane gaps from `website/integrators/mcp-gateway.md` and
+> `website/integrators/skill-registry.md`. Custody/substrate decisions are **locked** (Phase 4
 > Decisions: MCP creds = central broker in Obot ✅; skill substrate = OCI/ORAS + Cognee ✅).
 >
 > **NEXT EXECUTE CYCLE — scope locked 2026-06-13: P4-D only** (user-chosen). All four P4D
@@ -157,7 +157,7 @@
 > ~600s TTL, dedicated audience.
 
 - [ ] **P4D.1 Obot downstream-credential brokering.** Today `OBOT_SERVER_ENCRYPTION_PROVIDER=none`
-  and no downstream MCP credentials are brokered — the 🔶 in `docs/obot.md`. Custody is
+  and no downstream MCP credentials are brokered — the 🔶 in `website/integrators/mcp-gateway.md`. Custody is
   decided (Obot holds creds; the pod never receives them). Build: author downstream
   credentials in the control plane (`McpServerCredential` model + `routes/mcp-servers.ts`
   already exist), push them to Obot via the registry-sync/operator-reconcile path, enable
@@ -222,7 +222,7 @@
     Obot + an OBO-capable upstream. The static-fallback authoring path is fully built and testable
     headlessly; only the live exchange/push remains.
 - [ ] **P4D.2 OCI/ORAS (Zot) digest-pinned bundle storage.** Today the Skill Registry serves
-  bundle `content` from the control-plane DB — the 🔶 in `docs/skills-registry.md`. Substrate
+  bundle `content` from the control-plane DB — the 🔶 in `website/integrators/skill-registry.md`. Substrate
   is decided (OCI/ORAS + Cognee). Build: deploy an in-cluster OCI registry (Helm), push each
   published `SkillBundle` as an OCI artifact (SKILL.md bundle, semver tag + immutable digest
   pin) via ORAS on publish, switch `routes/internal/skill-bundles.ts` + the skill-registry
@@ -403,11 +403,11 @@ With one agent per lane, wall-clock ≈ 4 sequential slices instead of 7.
 
 - [x] **CT.7 Opt-in gating + docs + conformance.** _(Wave 3 · integration — ✅ landed 2026-06-15)_ Gate all ClusterTenant machinery behind the
   existing opt-in (single-install remains the zero-config default and renders none of it). Document
-  the ClusterTenant model + the provisioner webhook contract (extend `docs/multi-instance.md`,
+  the ClusterTenant model + the provisioner webhook contract (extend `website/operators/multi-instance.md`,
   cross-link `docs/enterprise-needs.md`); document the "one customer = one ClusterTenant = one
   instance" invariant the resource now makes enforceable. **Acceptance:** `helm template` with no flags
   is unchanged; opt-in renders the ClusterTenant path; conformance + build green. **Anchors:**
-  `platform/helm/values.yaml`, `docs/multi-instance.md`, `docs/enterprise-needs.md`,
+  `platform/helm/values.yaml`, `website/operators/multi-instance.md`, `docs/enterprise-needs.md`,
   `platform/tests/multi-instance-conformance.sh`. **Headless-buildable.**
 
 ---

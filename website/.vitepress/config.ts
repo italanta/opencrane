@@ -1,11 +1,12 @@
 import { defineConfig } from 'vitepress'
 
-// `base` defaults to '/' (custom domain docs.opencrane.ai via public/CNAME). The
-// GitHub Pages workflow can override it with DOCS_BASE (e.g. '/opencrane-2/') when
-// publishing to project pages instead of a custom domain.
+// Local dev/build use '/'. The GitHub Pages workflow builds with
+// DOCS_BASE=/<repo>/ (e.g. '/opencrane/') so assets resolve on project pages at
+// italanta.github.io/opencrane/. Switch to a custom domain by adding a public/CNAME
+// and dropping DOCS_BASE so base stays '/'.
 const base = process.env.DOCS_BASE ?? '/'
 
-const REPO = 'https://github.com/opencrane/opencrane'
+const REPO = 'https://github.com/italanta/opencrane'
 
 export default defineConfig({
   base,
@@ -18,14 +19,30 @@ export default defineConfig({
   // Architecture diagrams in the docs use Unicode box-drawing; keep them intact.
   ignoreDeadLinks: false,
 
+  head: [
+    // base-aware so the favicon resolves under project pages (/opencrane/) too.
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: `${base}logo.svg` }],
+    ['meta', { name: 'theme-color', content: '#14a8c4' }],
+  ],
+
   themeConfig: {
-    logo: undefined,
+    logo: '/logo.svg',
     search: { provider: 'local' },
 
     nav: [
-      { text: 'Introduction', link: '/guide/introduction' },
-      { text: 'Getting Started', link: '/guide/getting-started' },
-      { text: 'Concepts', link: '/concepts/tenancy' },
+      { text: 'Start here', link: '/guide/introduction' },
+      {
+        text: 'Guides',
+        items: [
+          { text: 'Employee assistants', link: '/guide/first-tenant' },
+          { text: 'Organize your company', link: '/guide/organize' },
+          { text: 'Share skills', link: '/guide/skills' },
+          { text: 'Manage tools (MCP)', link: '/guide/tools' },
+          { text: 'Organizational knowledge', link: '/guide/knowledge' },
+          { text: 'Control access', link: '/guide/permissions' },
+          { text: 'Manage cost', link: '/guide/budgets' },
+        ],
+      },
       {
         text: 'Reference',
         items: [
@@ -39,52 +56,32 @@ export default defineConfig({
 
     sidebar: [
       {
-        text: 'Introduction',
+        text: 'Start here',
         items: [
           { text: 'What is OpenCrane?', link: '/guide/introduction' },
-          { text: 'Architecture overview', link: '/guide/architecture' },
+          { text: 'How OpenCrane works', link: '/guide/how-it-works' },
         ],
       },
       {
-        text: 'Getting Started',
+        text: 'Get set up',
         items: [
-          { text: 'Prerequisites & install', link: '/guide/getting-started' },
-          { text: 'Local & GCP deployment', link: '/guide/deployment' },
-          { text: 'Create your first tenant', link: '/guide/first-tenant' },
+          { text: '1. Install OpenCrane', link: '/guide/getting-started' },
+          { text: '2. Set up your domain', link: '/guide/dns' },
+          { text: '3. Create your first assistant', link: '/guide/first-tenant' },
+          { text: '4. Connect to OpenClaw', link: '/guide/connect' },
         ],
       },
       {
-        text: 'Concepts',
+        text: 'Guides',
         items: [
-          { text: 'ClusterTenant vs UserTenant', link: '/concepts/tenancy' },
-          { text: 'The five planes & IAM-first identity', link: '/concepts/iam' },
-          { text: 'Access policies & grants', link: '/concepts/access-policies' },
-          { text: 'Awareness contract & retrieval', link: '/concepts/awareness' },
-        ],
-      },
-      {
-        text: 'Operators',
-        items: [
-          { text: 'Hosting architecture', link: '/operators/hosting' },
-          { text: 'Multi-instance', link: '/operators/multi-instance' },
-          { text: 'Runbook', link: '/operators/runbook' },
-          { text: 'Awareness SLOs', link: '/operators/awareness-slos' },
-        ],
-      },
-      {
-        text: 'Integrators',
-        items: [
-          { text: 'MCP gateway (Obot)', link: '/integrators/mcp-gateway' },
-          { text: 'Skill registry & delivery', link: '/integrators/skill-registry' },
-          { text: 'Retrieval & memory (Cognee)', link: '/integrators/retrieval-memory' },
-          { text: 'Contracts SDK', link: '/integrators/contracts-sdk' },
-        ],
-      },
-      {
-        text: 'Security',
-        items: [
-          { text: 'Identity & connection auth', link: '/security/identity' },
-          { text: 'Connection security model', link: '/security/connection-security' },
+          { text: 'Employee assistants', link: '/guide/first-tenant' },
+          { text: 'Organize your company', link: '/guide/organize' },
+          { text: 'Share skills across teams', link: '/guide/skills' },
+          { text: 'Manage tools (MCP)', link: '/guide/tools' },
+          { text: 'Organizational knowledge', link: '/guide/knowledge' },
+          { text: 'Control who can access what', link: '/guide/permissions' },
+          { text: 'Manage cost', link: '/guide/budgets' },
+          { text: 'Review activity', link: '/guide/audit' },
         ],
       },
       {
@@ -93,6 +90,35 @@ export default defineConfig({
           { text: 'CLI reference', link: '/reference/cli' },
           { text: 'API reference (interactive)', link: '/reference/api' },
           { text: 'API overview', link: '/reference/api-overview' },
+          { text: 'Contracts SDK', link: '/integrators/contracts-sdk' },
+        ],
+      },
+      {
+        text: 'Operating OpenCrane',
+        collapsed: true,
+        items: [
+          { text: 'Hosting & deployment', link: '/operators/hosting' },
+          { text: 'Identity & connection auth', link: '/security/identity' },
+          { text: 'Connection security', link: '/security/connection-security' },
+          { text: 'Runbook', link: '/operators/runbook' },
+          { text: 'Awareness SLOs', link: '/operators/awareness-slos' },
+        ],
+      },
+      {
+        text: 'Deep dives',
+        collapsed: true,
+        items: [
+          { text: 'MCP gateway (Obot)', link: '/integrators/mcp-gateway' },
+          { text: 'Skill registry & delivery', link: '/integrators/skill-registry' },
+          { text: 'Retrieval & memory (Cognee)', link: '/integrators/retrieval-memory' },
+        ],
+      },
+      {
+        text: 'Advanced',
+        collapsed: true,
+        items: [
+          { text: 'Architecture', link: '/advanced/architecture' },
+          { text: 'Running multiple instances', link: '/advanced/multi-instance' },
         ],
       },
     ],

@@ -2,12 +2,14 @@
 layout: home
 
 hero:
-  name: OpenCrane
   text: A control plane for organizational AI
   tagline: >-
     Self-hosted, Kubernetes-native. Issue a private AI assistant to every
     employee while keeping your skills, knowledge, and conversations on your own
     infrastructure.
+  image:
+    src: /opencrane-logo.png
+    alt: OpenCrane — self-hosted organizational AI control plane
   actions:
     - theme: brand
       text: What is OpenCrane?
@@ -17,31 +19,41 @@ hero:
       link: /guide/getting-started
     - theme: alt
       text: View on GitHub
-      link: https://github.com/opencrane/opencrane
+      link: https://github.com/italanta/opencrane
 
 features:
-  - title: Personal assistants at scale
+  - title: Share skills across teams
     details: >-
-      Each employee gets an isolated OpenClaw pod with dedicated, encrypted
-      storage — from 10 to 10,000 employees on the same architecture.
-  - title: Vendor independence
+      Build a skill once and roll it out — to a person, a project, a department,
+      or the whole company. Versioned, security-scanned, shared on your terms.
+    link: /guide/skills
+    linkText: Share skills
+  - title: Connect tools with MCP
     details: >-
-      Choose your LLM provider — Claude, GPT, or open-source models — and keep
-      your proprietary skills in your own repository. No lock-in.
-  - title: Data sovereignty
+      Wire assistants into Slack, Jira, your CRM and more over MCP. Credentials
+      are brokered safely and you choose exactly who can use each tool.
+    link: /guide/tools
+    linkText: Manage tools
+  - title: Organize your company
     details: >-
-      Organizational knowledge, conversations, and skills stay on your network.
-      Full audit trails, RBAC, and data residency under your control.
-  - title: API-first & headless
+      Model departments, teams, and projects as simple scopes — then share
+      skills, tools, and knowledge with exactly the right people.
+    link: /guide/organize
+    linkText: Organize your company
+  - title: An assistant for everyone
     details: >-
-      Every capability is reachable through the versioned REST API and the oc
-      CLI. The OpenAPI 3.1 spec is the contract; external UIs are just clients.
-  - title: IAM-first identity
+      Every employee gets a private, isolated AI assistant with its own secure
+      storage — from 10 to 10,000 people, managed from one place.
+    link: /guide/first-tenant
+    linkText: Create an assistant
+  - title: Private & self-hosted
     details: >-
-      Workload Identity for pods, OIDC for operators, audience-bound projected
-      tokens for in-cluster planes. Secrets never reach tenant pods.
-  - title: Self-hosted, cloud-agnostic
+      Conversations, company knowledge, and skills stay on your infrastructure.
+      Full audit trail and access control; use any LLM provider, no lock-in.
+  - title: You control the cost
     details: >-
-      On-prem by default with optional cloud adapters. Helm + Terraform IaC;
-      runs with zero cloud SDKs present.
+      Set per-person and company-wide budgets, track spend, and switch model
+      providers freely.
+    link: /guide/budgets
+    linkText: Manage cost
 ---

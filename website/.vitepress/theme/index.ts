@@ -2,6 +2,7 @@ import DefaultTheme from 'vitepress/theme'
 import type { Theme } from 'vitepress'
 import { theme, useOpenapi } from 'vitepress-openapi/client'
 import 'vitepress-openapi/dist/style.css'
+import './custom.css'
 import spec from '../../public/openapi.json' with { type: 'json' }
 
 // Register the OpenCrane control-plane spec globally so the <OASpec /> component
