@@ -36,3 +36,20 @@ variable "domain"
   description = "Base domain for tenant subdomains"
   type        = string
 }
+
+# -- GCP extras (opt-in). When false (default) the deploy is plain-k8s on GKE:
+#    standard PVC tenant storage, k8s Secrets, no GCS / Workload Identity / External
+#    Secrets specialness. Flip to true to enable GCS-backed tenant storage.
+variable "enable_gcs_storage"
+{
+  description = "Enable GCS-backed tenant storage (Workload Identity + GCS Fuse CSI). Plain k8s PVC storage when false."
+  type        = bool
+  default     = false
+}
+
+variable "bucket_prefix"
+{
+  description = "Bucket name prefix for GCS-backed tenant storage (only used when enable_gcs_storage=true)"
+  type        = string
+  default     = "opencrane"
+}

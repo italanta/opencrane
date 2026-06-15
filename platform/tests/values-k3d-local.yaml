@@ -17,11 +17,6 @@ tenant:
     repository: opencrane/tenant
     tag: local
     pullPolicy: IfNotPresent
-  storage:
-    provider: ""
-    bucketPrefix: ""
-    csiDriver: ""
-    gcpProject: ""
 
 sharedSkills:
   enabled: true

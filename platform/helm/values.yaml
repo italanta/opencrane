@@ -223,6 +223,10 @@ hosting:
     bucketPrefix: ""
     # -- CSI driver for GCS Fuse mounts; defaults to the standard GKE driver.
     csiDriver: gcsfuse.csi.storage.gke.io
+    # -- GKE cluster location (region or zone) for the External Secrets Workload
+    #    Identity binding. Optional: when empty, external-secrets discovers it from
+    #    the GKE metadata server. Only consumed when externalSecrets is enabled.
+    clusterLocation: ""
 
 # -- Ingress settings
 ingress:

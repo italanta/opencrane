@@ -230,29 +230,28 @@ resource "helm_release" "opencrane"
     value = google_compute_global_address.ingress_ip.name
   }
 
-  # Storage
+  # Hosting provider. Default is plain-k8s on GKE: standard PVC tenant storage,
+  # k8s Secrets, GKE default StorageClass. The GCS-backed tenant storage extras
+  # (GCS Fuse CSI + Workload Identity) are opt-in via enable_gcs_storage.
   set
   {
-    name  = "tenant.storage.provider"
-    value = "gcs"
+    name  = "hosting.provider"
+    value = var.enable_gcs_storage ? "gcp" : "onprem"
   }
 
-  set
+  # GCP-only tenant storage settings — rendered only when enable_gcs_storage=true.
+  dynamic "set"
   {
-    name  = "tenant.storage.bucketPrefix"
-    value = "opencrane"
-  }
-
-  set
-  {
-    name  = "tenant.storage.csiDriver"
-    value = "gcsfuse.csi.storage.gke.io"
-  }
-
-  set
-  {
-    name  = "tenant.storage.gcpProject"
-    value = var.project_id
+    for_each = var.enable_gcs_storage ? {
+      "hosting.gcp.projectId"   = var.project_id
+      "hosting.gcp.bucketPrefix" = var.bucket_prefix
+      "hosting.gcp.csiDriver"   = "gcsfuse.csi.storage.gke.io"
+    } : {}
+    content
+    {
+      name  = set.key
+      value = set.value
+    }
   }
 
   # Observability

@@ -13,11 +13,6 @@ tenant:
     repository: opencrane/tenant
     tag: e2e
     pullPolicy: IfNotPresent
-  storage:
-    provider: ""
-    bucketPrefix: ""
-    csiDriver: ""
-    gcpProject: ""
 
 sharedSkills:
   enabled: true

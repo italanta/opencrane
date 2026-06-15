@@ -53,7 +53,7 @@ render()
     --skip-tests \
     --set certManager.enabled=true --set certManager.email=ops@example.com \
     --set externalSecrets.enabled=true --set externalSecrets.provider=gcp-secret-manager \
-    --set tenant.storage.gcpProject=demo-project \
+    --set hosting.gcp.projectId=demo-project \
     -f "$values" > "$out"
 }
 
