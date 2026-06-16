@@ -32,5 +32,5 @@ litellm:
   # endpoint is derived by opencrane.litellmEndpoint (see platform/helm/values.yaml).
   existingSecret: opencrane-litellm
   generateMasterKey: false
-  existingDatabaseSecret: opencrane-db
+  existingDatabaseSecret: opencrane-litellm-db
   databaseSecretKey: DATABASE_URL

@@ -93,18 +93,29 @@ spec:
       database: ${DB_NAME}
       secret:
         name: ${DB_CLUSTER}-creds
+      postInitApplicationSQL:
+        - CREATE DATABASE obot OWNER ${DB_USER};
+        - CREATE DATABASE litellm OWNER ${DB_USER};
 EOF
 
 log "Waiting for the database to become ready…"
 kubectl wait --for=condition=Ready "cluster/${DB_CLUSTER}" -n "$NAMESPACE" --timeout="${TIMEOUT}s"
 
 # 2. Connection + LiteLLM secrets the chart expects.
-DB_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_CLUSTER}-rw.${NAMESPACE}.svc.cluster.local:5432/${DB_NAME}"
-for name in "$DB_SECRET" opencrane-obot; do
-  key=DATABASE_URL; [[ "$name" == "opencrane-obot" ]] && key=dsn
-  kubectl create secret generic "$name" -n "$NAMESPACE" \
-    --from-literal="$key=$DB_URL" --dry-run=client -o yaml | kubectl apply -f -
-done
+DB_HOST="${DB_CLUSTER}-rw.${NAMESPACE}.svc.cluster.local:5432"
+
+kubectl create secret generic "$DB_SECRET" -n "$NAMESPACE" \
+  --from-literal=DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}/${DB_NAME}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl create secret generic opencrane-obot -n "$NAMESPACE" \
+  --from-literal=dsn="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}/obot" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl create secret generic opencrane-litellm-db -n "$NAMESPACE" \
+  --from-literal=DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}/litellm" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 kubectl create secret generic opencrane-litellm -n "$NAMESPACE" \
   --from-literal=LITELLM_MASTER_KEY="$LITELLM_MASTER_KEY" --dry-run=client -o yaml | kubectl apply -f -
 
@@ -112,7 +123,7 @@ kubectl create secret generic opencrane-litellm -n "$NAMESPACE" \
 log "Installing the OpenCrane Helm release '$RELEASE'…"
 helm_args=(upgrade --install "$RELEASE" "$CHART_DIR" --namespace "$NAMESPACE" --create-namespace
   --set "controlPlane.database.existingSecret=$DB_SECRET"
-  --set "litellm.existingDatabaseSecret=$DB_SECRET"
+  --set "litellm.existingDatabaseSecret=opencrane-litellm-db"
   --set "litellm.existingSecret=opencrane-litellm")
 [[ -n "$IMAGE_TAG" ]] && helm_args+=(--set "controlPlane.image.tag=$IMAGE_TAG" --set "operator.image.tag=$IMAGE_TAG" --set "tenant.image.tag=$IMAGE_TAG")
 [[ -n "$DOMAIN" ]]    && helm_args+=(--set "ingress.domain=$DOMAIN")

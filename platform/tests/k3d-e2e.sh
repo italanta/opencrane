@@ -150,6 +150,9 @@ spec:
       database: opencrane
       secret:
         name: ${DB_RELEASE_NAME}-creds
+      postInitApplicationSQL:
+        - CREATE DATABASE obot OWNER opencrane;
+        - CREATE DATABASE litellm OWNER opencrane;
 EOF
 
 echo "[e2e] Waiting for Control-Plane Database Engine to stabilize..."
@@ -162,10 +165,15 @@ kubectl create secret generic "$DB_SECRET_NAME" \
   --dry-run=client \
   -o yaml | kubectl apply -f -
 
-echo "[e2e] Bootstrapping credentials secret for Obot MCP Gateway"
 kubectl create secret generic "opencrane-obot" \
   -n "$NAMESPACE" \
-  --from-literal=dsn="postgresql://opencrane:${DB_PASSWORD}@${DB_RELEASE_NAME}-rw.${NAMESPACE}.svc.cluster.local:5432/opencrane" \
+  --from-literal=dsn="postgresql://opencrane:${DB_PASSWORD}@${DB_RELEASE_NAME}-rw.${NAMESPACE}.svc.cluster.local:5432/obot" \
+  --dry-run=client \
+  -o yaml | kubectl apply -f -
+
+kubectl create secret generic "opencrane-litellm-db" \
+  -n "$NAMESPACE" \
+  --from-literal=DATABASE_URL="postgresql://opencrane:${DB_PASSWORD}@${DB_RELEASE_NAME}-rw.${NAMESPACE}.svc.cluster.local:5432/litellm" \
   --dry-run=client \
   -o yaml | kubectl apply -f -
 
@@ -190,7 +198,7 @@ helm upgrade --install "$RELEASE_NAME" "$ROOT_DIR/platform/helm" \
   --namespace "$NAMESPACE" \
   --create-namespace \
   --values "$ROOT_DIR/platform/tests/values-k3d-e2e.yaml" \
-  --set "litellm.existingDatabaseSecret=$DB_SECRET_NAME"
+  --set "litellm.existingDatabaseSecret=opencrane-litellm-db"
 
 # Wait for operator deployment (skip helm --wait because local-path PVCs don't bind
 # until a pod mounts them, creating a chicken-and-egg with Helm's readiness checks).
