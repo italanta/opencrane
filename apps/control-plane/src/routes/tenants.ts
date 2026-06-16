@@ -55,10 +55,17 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
     res.json(report);
   });
 
-  /** List all tenants from the database. */
+  /**
+   * List all tenants from the database, optionally narrowed to a single parent
+   * ClusterTenant via `?clusterTenantRef=<name>` so a federated frontend filters
+   * server-side instead of mapping `team` → ref and filtering client-side.
+   */
   router.get("/", async function _listTenants(req, res)
   {
+    const clusterTenantRef = typeof req.query.clusterTenantRef === "string" ? req.query.clusterTenantRef.trim() : "";
+
     const tenants = await prisma.tenant.findMany({
+      ...(clusterTenantRef ? { where: { clusterTenantRef } } : {}),
       orderBy: { createdAt: "desc" },
     });
 
@@ -69,6 +76,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
         displayName: t.displayName,
         email: t.email,
         team: t.team ?? undefined,
+        clusterTenantRef: t.clusterTenantRef ?? undefined,
         phase: t.phase,
         ingressHost: t.ingressHost ?? undefined,
         createdAt: t.createdAt.toISOString(),
@@ -336,6 +344,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
       displayName: tenant.displayName,
       email: tenant.email,
       team: tenant.team ?? undefined,
+      clusterTenantRef: tenant.clusterTenantRef ?? undefined,
       phase: tenant.phase,
       ingressHost: tenant.ingressHost ?? undefined,
       createdAt: tenant.createdAt.toISOString(),
@@ -357,6 +366,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
         displayName: body.displayName,
         email: body.email,
         team: body.team,
+        clusterTenantRef: body.clusterTenantRef,
         monthlyBudgetUsd: body.monthlyBudgetUsd,
         resources: body.resources,
         skillAllowlist: body.skillAllowlist,
@@ -401,6 +411,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
         displayName: body.displayName,
         email: body.email,
         team: body.team,
+        clusterTenantRef: body.clusterTenantRef,
       },
     });
 
@@ -427,6 +438,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
         ...(body.displayName ? { displayName: body.displayName } : {}),
         ...(body.email ? { email: body.email } : {}),
         ...(body.team ? { team: body.team } : {}),
+        ...(body.clusterTenantRef !== undefined ? { clusterTenantRef: body.clusterTenantRef } : {}),
         ...(body.monthlyBudgetUsd !== undefined ? { monthlyBudgetUsd: body.monthlyBudgetUsd } : {}),
         ...(body.resources ? { resources: body.resources } : {}),
         ...(body.skillAllowlist ? { skillAllowlist: body.skillAllowlist } : {}),
@@ -449,6 +461,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
         ...(body.displayName ? { displayName: body.displayName } : {}),
         ...(body.email ? { email: body.email } : {}),
         ...(body.team ? { team: body.team } : {}),
+        ...(body.clusterTenantRef !== undefined ? { clusterTenantRef: body.clusterTenantRef } : {}),
       },
     });
 

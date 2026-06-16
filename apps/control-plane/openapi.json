@@ -71,6 +71,10 @@
           "team": {
             "type": "string"
           },
+          "clusterTenantRef": {
+            "type": "string",
+            "description": "Parent ClusterTenant (customer) this tenant attaches to; absent on the single-instance path."
+          },
           "phase": {
             "type": "string"
           },
@@ -309,6 +313,59 @@
               },
               "nodePool": {
                 "type": "string"
+              }
+            }
+          },
+          "resources": {
+            "type": "object",
+            "required": [
+              "quota"
+            ],
+            "properties": {
+              "quota": {
+                "$ref": "#/components/schemas/ClusterTenantResourceQuota"
+              }
+            }
+          }
+        }
+      },
+      "ClusterTenantUpdate": {
+        "type": "object",
+        "description": "Partial cluster-tenant update; the immutable name comes from the path. Every field is optional — only those present are changed.",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "description": "New human-readable customer name (must be non-blank when present)."
+          },
+          "baseDomain": {
+            "type": "string",
+            "description": "New customer-owned base domain; an empty string clears it (back to the per-instance ingress.domain fallback)."
+          },
+          "isolationTier": {
+            "type": "string",
+            "enum": [
+              "shared",
+              "dedicatedNodes",
+              "dedicatedCluster"
+            ],
+            "description": "New isolation strength; re-gated against the provisioner registry when changed."
+          },
+          "compute": {
+            "type": "object",
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "shared",
+                  "dedicated"
+                ]
+              },
+              "nodePool": {
+                "type": "string",
+                "description": "Dedicated node pool name; required when mode is 'dedicated'."
               }
             }
           },
@@ -1372,6 +1429,16 @@
         "tags": [
           "Tenants"
         ],
+        "parameters": [
+          {
+            "name": "clusterTenantRef",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Return only tenants attached to this parent ClusterTenant (customer)."
+          }
+        ],
         "responses": {
           "200": {
             "description": "Tenant list.",
@@ -1418,6 +1485,10 @@
                   },
                   "team": {
                     "type": "string"
+                  },
+                  "clusterTenantRef": {
+                    "type": "string",
+                    "description": "Parent ClusterTenant (customer) to attach this tenant to."
                   },
                   "monthlyBudgetUsd": {
                     "type": "number"
@@ -1606,6 +1677,10 @@
                   },
                   "team": {
                     "type": "string"
+                  },
+                  "clusterTenantRef": {
+                    "type": "string",
+                    "description": "Parent ClusterTenant (customer) to attach this tenant to."
                   },
                   "monthlyBudgetUsd": {
                     "type": "number"
@@ -2289,7 +2364,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object"
+                "$ref": "#/components/schemas/ClusterTenantUpdate"
               }
             }
           }
@@ -4165,8 +4240,9 @@
                     "mode": {
                       "type": "string",
                       "enum": [
+                        "development",
                         "oidc",
-                        "none"
+                        "token"
                       ],
                       "description": "Active authentication mode for this instance."
                     },
@@ -4176,15 +4252,54 @@
                     "user": {
                       "type": "object",
                       "nullable": true,
+                      "required": [
+                        "sub",
+                        "issuer",
+                        "role",
+                        "groups"
+                      ],
                       "properties": {
                         "sub": {
                           "type": "string"
                         },
+                        "issuer": {
+                          "type": "string",
+                          "description": "Identity provider that authenticated the user."
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "platform-operator",
+                            "customer-admin"
+                          ],
+                          "description": "Authorization role resolved from the caller's group/role claims. The API stays the enforcement point; the frontend uses this only to hide UI."
+                        },
+                        "groups": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Raw group/role claim values surfaced for the caller."
+                        },
+                        "clusterTenant": {
+                          "type": "string",
+                          "description": "ClusterTenant (customer) key the caller belongs to, when the IdP emits it."
+                        },
                         "email": {
                           "type": "string"
                         },
+                        "emailVerified": {
+                          "type": "boolean"
+                        },
                         "name": {
                           "type": "string"
+                        },
+                        "picture": {
+                          "type": "string"
+                        },
+                        "authenticatedAt": {
+                          "type": "string",
+                          "format": "date-time"
                         }
                       }
                     }

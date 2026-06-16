@@ -1035,6 +1035,8 @@ export interface components {
             /** Format: email */
             email?: string;
             team?: string;
+            /** @description Parent ClusterTenant (customer) this tenant attaches to; absent on the single-instance path. */
+            clusterTenantRef?: string;
             phase?: string;
             ingressHost?: string;
             /** Format: date-time */
@@ -1116,6 +1118,27 @@ export interface components {
                 nodePool?: string;
             };
             resources: {
+                quota: components["schemas"]["ClusterTenantResourceQuota"];
+            };
+        };
+        /** @description Partial cluster-tenant update; the immutable name comes from the path. Every field is optional — only those present are changed. */
+        ClusterTenantUpdate: {
+            /** @description New human-readable customer name (must be non-blank when present). */
+            displayName?: string;
+            /** @description New customer-owned base domain; an empty string clears it (back to the per-instance ingress.domain fallback). */
+            baseDomain?: string;
+            /**
+             * @description New isolation strength; re-gated against the provisioner registry when changed.
+             * @enum {string}
+             */
+            isolationTier?: "shared" | "dedicatedNodes" | "dedicatedCluster";
+            compute?: {
+                /** @enum {string} */
+                mode: "shared" | "dedicated";
+                /** @description Dedicated node pool name; required when mode is 'dedicated'. */
+                nodePool?: string;
+            };
+            resources?: {
                 quota: components["schemas"]["ClusterTenantResourceQuota"];
             };
         };
@@ -1629,7 +1652,10 @@ export interface operations {
     };
     listTenants: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Return only tenants attached to this parent ClusterTenant (customer). */
+                clusterTenantRef?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1662,6 +1688,8 @@ export interface operations {
                     /** Format: email */
                     email: string;
                     team?: string;
+                    /** @description Parent ClusterTenant (customer) to attach this tenant to. */
+                    clusterTenantRef?: string;
                     monthlyBudgetUsd?: number;
                     resources?: Record<string, never>;
                     skillAllowlist?: string[];
@@ -1792,6 +1820,8 @@ export interface operations {
                     /** Format: email */
                     email?: string;
                     team?: string;
+                    /** @description Parent ClusterTenant (customer) to attach this tenant to. */
+                    clusterTenantRef?: string;
                     monthlyBudgetUsd?: number;
                     resources?: Record<string, never>;
                     skillAllowlist?: string[];
@@ -2288,7 +2318,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": components["schemas"]["ClusterTenantUpdate"];
             };
         };
         responses: {
@@ -3578,12 +3608,27 @@ export interface operations {
                          * @description Active authentication mode for this instance.
                          * @enum {string}
                          */
-                        mode: "oidc" | "none";
+                        mode: "development" | "oidc" | "token";
                         authenticated: boolean;
                         user?: {
-                            sub?: string;
+                            sub: string;
+                            /** @description Identity provider that authenticated the user. */
+                            issuer: string;
+                            /**
+                             * @description Authorization role resolved from the caller's group/role claims. The API stays the enforcement point; the frontend uses this only to hide UI.
+                             * @enum {string}
+                             */
+                            role: "platform-operator" | "customer-admin";
+                            /** @description Raw group/role claim values surfaced for the caller. */
+                            groups: string[];
+                            /** @description ClusterTenant (customer) key the caller belongs to, when the IdP emits it. */
+                            clusterTenant?: string;
                             email?: string;
+                            emailVerified?: boolean;
                             name?: string;
+                            picture?: string;
+                            /** Format: date-time */
+                            authenticatedAt?: string;
                         } | null;
                     };
                 };

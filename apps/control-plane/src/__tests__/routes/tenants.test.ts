@@ -252,6 +252,37 @@ describe("tenantsRouter dataset membership endpoints", () =>
   });
 });
 
+describe("tenantsRouter list endpoint — clusterTenantRef projection + filter (WOI.2)", () =>
+{
+  it("surfaces clusterTenantRef in the list response", async () =>
+  {
+    const findManySpy = vi.fn().mockResolvedValue([
+      { name: "acme", displayName: "Acme", email: "o@acme.io", team: "eng", clusterTenantRef: "acme-corp", phase: "Running", ingressHost: null, createdAt: new Date("2026-01-01T00:00:00Z") },
+    ]);
+    const prisma = { tenant: { findMany: findManySpy } } as unknown as PrismaClient;
+
+    const app = _buildTenantsApp({} as k8s.CustomObjectsApi, prisma);
+    const response = await request(app).get("/api/tenants");
+
+    expect(response.status).toBe(200);
+    expect(response.body[0].clusterTenantRef).toBe("acme-corp");
+    // No filter supplied → no where clause.
+    expect(findManySpy).toHaveBeenCalledWith(expect.not.objectContaining({ where: expect.anything() }));
+  });
+
+  it("filters server-side by clusterTenantRef when the query param is present", async () =>
+  {
+    const findManySpy = vi.fn().mockResolvedValue([]);
+    const prisma = { tenant: { findMany: findManySpy } } as unknown as PrismaClient;
+
+    const app = _buildTenantsApp({} as k8s.CustomObjectsApi, prisma);
+    const response = await request(app).get("/api/tenants?clusterTenantRef=acme-corp");
+
+    expect(response.status).toBe(200);
+    expect(findManySpy).toHaveBeenCalledWith(expect.objectContaining({ where: { clusterTenantRef: "acme-corp" } }));
+  });
+});
+
 describe("tenantsRouter create endpoint — Tenant CR appearance validation", () =>
 {
   it("creates a tenant when the Tenant CR appears", async () =>

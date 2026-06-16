@@ -26,27 +26,31 @@ Raised 2026-06-15 by the WeOwnAI frontend (proprietary control-plane UI). Its mo
 additive, and generic (no vendor specifics — they don't touch the provisioner seam or the AGPL
 isolation model).
 
-- [ ] **WOI.1 — Emit identity claims on `/api/v1/auth/me` (or add `/tenants/me`).** Return the
-  caller's **role/group** (platform-operator vs customer-admin) and their **ClusterTenant**, so a
-  federated frontend can authorize without guessing. Today `/auth/me` returns the authenticated user
-  with no role claims, so WeOwnAI derives `isPlatformOperator`/`customerAdmin` from "is authenticated"
-  (placeholder). Keep the **API as the enforcement point** (the SPA only hides UI). The frontend login
-  is OIDC-to-Entra with a phishing-resistant factor (passkey/Windows Hello) — OpenCrane just needs to
-  surface the claims it already resolves at the OIDC session. **Anchors:** the `/auth/me` handler
-  (`apps/control-plane/src/routes/auth*` / `infra/auth`), the OIDC claims mapping,
-  `apps/control-plane/src/openapi/spec.ts`. _Ties to WeOwnAI LIVE.4._
-- [ ] **WOI.2 — Expose `clusterTenantRef` on the Tenant API + a server-side filter.** The Tenant
-  **CRD** already carries `spec.clusterTenantRef` (CT.4), but the `/api/v1/tenants` response schema
-  omits it and there is no `GET /tenants?clusterTenantRef=<name>` filter — so WeOwnAI maps `team` →
-  ref and filters client-side (stopgap). Add `clusterTenantRef` to the Tenant read schema + a
-  list query-param filter. **Anchors:** `apps/control-plane/src/routes/tenants.ts`,
-  `apps/control-plane/src/openapi/spec.ts`, `libs/contracts`. _Ties to WeOwnAI LIVE.3._
-- [ ] **WOI.3 — (minor) Give the ClusterTenant update body a real schema.** `PUT /api/v1/cluster-tenants/{name}`
-  is typed as an open object, so the generated client types its body `Record<string, never>` and the
-  frontend casts. Define the update request schema. **Anchors:** `apps/control-plane/src/openapi/spec.ts`.
-  _Ties to WeOwnAI LIVE.2._
+- [x] **WOI.1 — Emit identity claims on `/api/v1/auth/me`. — LANDED 2026-06-16.** `/auth/me` now
+  surfaces the caller's **role** (`platform-operator` vs `customer-admin`), raw **groups**, and
+  **ClusterTenant**, resolved from the OIDC session so a federated frontend authorizes without
+  guessing. The API stays the enforcement point (the SPA only hides UI). Role derivation is pure +
+  config-driven: `OIDC_PLATFORM_OPERATOR_GROUPS` lists the operator group/role values; a caller whose
+  `OIDC_GROUPS_CLAIM`/`OIDC_ROLES_CLAIM` values intersect that set resolves to `platform-operator`,
+  else least-privilege `customer-admin`. ClusterTenant comes from `OIDC_CLUSTER_TENANT_CLAIM`.
+  **Landed:** `_ResolveIdentityClaims` (`infra/auth/oidc.service.ts`) + config loader fields
+  (`oidc.config*.ts`) + extended `ControlPlaneAuthUser`/session type + `/auth/me` response schema
+  (also fixed the stale `mode` enum to `development|oidc|token`). Unit test `oidc-identity-claims.test.ts`.
+  _Ties to WeOwnAI LIVE.4._
+- [x] **WOI.2 — Expose `clusterTenantRef` on the Tenant API + a server-side filter. — LANDED 2026-06-16.**
+  Projected the Tenant CRD's `spec.clusterTenantRef` (CT.4) into the SQL read model (migration 0016 +
+  Prisma column), dual-write it on create/update (CRD spec + DB), surface it in the list/get responses,
+  and added the `GET /tenants?clusterTenantRef=<name>` server-side filter — so WeOwnAI drops the
+  `team` → ref client-side stopgap. **Landed:** `routes/tenants.ts`, `types.ts`, `openapi/spec.ts`,
+  `prisma/schema.prisma` + `0016_tenant_cluster_tenant_ref`, regenerated `libs/contracts`. Tests in
+  `tenants.test.ts`. _Ties to WeOwnAI LIVE.3._
+- [x] **WOI.3 — Give the ClusterTenant update body a real schema. — LANDED 2026-06-16.** Replaced the
+  open-object `PUT /api/v1/cluster-tenants/{name}` body with a `ClusterTenantUpdate` component
+  (all-optional displayName/baseDomain/isolationTier/compute/resources, name from the path), so the
+  generated client types the body properly instead of `Record<string, never>`. **Landed:**
+  `openapi/spec.ts`, regenerated `libs/contracts`. _Ties to WeOwnAI LIVE.2._
 
-After WOI.1–3 land, WeOwnAI re-syncs the spec (its LIVE.8) and drops the three stopgaps.
+**Track WOI complete (2026-06-16).** WeOwnAI can now re-sync the spec (its LIVE.8) and drop the three stopgaps.
 
 ### Track P5 — Close Phase 5 — ✅ COMPLETE · full history: plan-done.md § Completed Tracks (archived 2026-06-15)
 

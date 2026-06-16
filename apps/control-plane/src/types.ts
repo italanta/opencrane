@@ -37,6 +37,8 @@ export interface CreateTenantRequest
   email: string;
   /** Optional team the tenant belongs to. */
   team?: string;
+  /** Optional parent ClusterTenant (customer) this tenant attaches to (CRD `spec.clusterTenantRef`). */
+  clusterTenantRef?: string;
   /** Optional resource limits for the tenant sandbox. */
   resources?: {
     /** CPU limit (e.g. "500m"). */
@@ -64,6 +66,8 @@ export interface TenantResponse
   email: string;
   /** Optional team the tenant belongs to. */
   team?: string;
+  /** Parent ClusterTenant (customer) this tenant attaches to, if any. */
+  clusterTenantRef?: string;
   /** Current lifecycle phase (e.g. "Running", "Pending"). */
   phase: string;
   /** Assigned ingress hostname, if provisioned. */

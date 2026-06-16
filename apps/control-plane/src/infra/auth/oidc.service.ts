@@ -10,6 +10,13 @@ import { ___LoadOidcAuthConfig } from "./oidc.config.js";
 /** Auth mode exposed to the UI so it can decide whether login is required. */
 export type ControlPlaneAuthMode = "development" | "oidc" | "token";
 
+/**
+ * Authorization role resolved from the caller's identity claims. The API stays
+ * the enforcement point — this is surfaced so a federated frontend can decide
+ * what UI to *hide*, never what it may *do*.
+ */
+export type ControlPlaneRole = "platform-operator" | "customer-admin";
+
 /** Authenticated human identity cached in the control-plane session. */
 export interface ControlPlaneAuthUser
 {
@@ -18,6 +25,19 @@ export interface ControlPlaneAuthUser
 
   /** Issuer that authenticated the user. */
   issuer: string;
+
+  /**
+   * Authorization role resolved from the caller's group/role claims:
+   * `platform-operator` when those claims intersect the configured operator
+   * groups, otherwise `customer-admin` (least privilege).
+   */
+  role: ControlPlaneRole;
+
+  /** Raw group/role claim values surfaced to the caller (union of both claims). */
+  groups: string[];
+
+  /** ClusterTenant (customer) key the caller belongs to, when the IdP emits it. */
+  clusterTenant?: string;
 
   /** Human-readable email address when available. */
   email?: string;
@@ -280,9 +300,14 @@ export class OidcAuthService
       }
     }
 
+    const identity = _ResolveIdentityClaims(claims, this.config);
+
     return {
       sub: subject,
       issuer: this.config.issuerUrl,
+      role: identity.role,
+      groups: identity.groups,
+      ...(identity.clusterTenant ? { clusterTenant: identity.clusterTenant } : {}),
       ...(email ? { email } : {}),
       ...(emailVerified !== undefined ? { emailVerified } : {}),
       ...(typeof claims.name === "string" ? { name: claims.name } : {}),
@@ -290,6 +315,62 @@ export class OidcAuthService
       authenticatedAt: new Date().toISOString(),
     };
   }
+}
+
+/**
+ * Project the IdP's group/role/ClusterTenant claims into the authorization
+ * facts the control-plane surfaces. Pure (no I/O) so it is unit-testable and so
+ * the rule "operator iff a claim value matches a configured operator group" is
+ * verified independently of the OIDC flow.
+ *
+ * @param claims - The merged ID-token + UserInfo claims for the caller.
+ * @param config - OIDC config supplying the claim names and operator group set.
+ */
+export function _ResolveIdentityClaims(
+  claims: Record<string, unknown>,
+  config: { groupsClaim: string; rolesClaim: string; clusterTenantClaim: string; platformOperatorGroups: string[] },
+): { role: ControlPlaneRole; groups: string[]; clusterTenant?: string }
+{
+  // 1. Collect the raw values from both the groups and roles claims — Entra emits
+  //    security groups under `groups` and app roles under `roles`; either may
+  //    grant operator status, so the union is what we authorize against.
+  const groups = [..._ReadStringArrayClaim(claims[config.groupsClaim]), ..._ReadStringArrayClaim(claims[config.rolesClaim])];
+
+  // 2. An empty operator set means nobody is an operator — least privilege.
+  const operatorSet = new Set(config.platformOperatorGroups);
+  const isOperator = operatorSet.size > 0 && groups.some(value => operatorSet.has(value.toLowerCase()));
+
+  // 3. Surface the ClusterTenant only when the configured claim is a non-empty string.
+  const clusterTenantRaw = claims[config.clusterTenantClaim];
+  const clusterTenant = typeof clusterTenantRaw === "string" && clusterTenantRaw.trim() ? clusterTenantRaw.trim() : undefined;
+
+  return {
+    role: isOperator ? "platform-operator" : "customer-admin",
+    groups,
+    ...(clusterTenant ? { clusterTenant } : {}),
+  };
+}
+
+/**
+ * Normalize a claim value into a list of non-empty strings. Identity providers
+ * emit group/role claims as either an array or a single space-/comma-free
+ * string, so both shapes are accepted; anything else yields an empty list.
+ *
+ * @param value - The raw claim value.
+ */
+function _ReadStringArrayClaim(value: unknown): string[]
+{
+  if (Array.isArray(value))
+  {
+    return value.filter((entry): entry is string => typeof entry === "string" && entry.trim() !== "");
+  }
+
+  if (typeof value === "string" && value.trim() !== "")
+  {
+    return [value.trim()];
+  }
+
+  return [];
 }
 
 /** Create the singleton-friendly OIDC auth service used by the Express app. */

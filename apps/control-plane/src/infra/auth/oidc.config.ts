@@ -24,6 +24,10 @@ export function ___LoadOidcAuthConfig(): OidcAuthConfig
       sessionMaxAgeMs: 12 * 60 * 60 * 1000,
       allowedEmailDomains: [],
       allowedEmails: [],
+      groupsClaim: process.env.OIDC_GROUPS_CLAIM?.trim() || "groups",
+      rolesClaim: process.env.OIDC_ROLES_CLAIM?.trim() || "roles",
+      clusterTenantClaim: process.env.OIDC_CLUSTER_TENANT_CLAIM?.trim() || "cluster_tenant",
+      platformOperatorGroups: _readCsv(process.env.OIDC_PLATFORM_OPERATOR_GROUPS),
     };
   }
 
@@ -52,6 +56,10 @@ export function ___LoadOidcAuthConfig(): OidcAuthConfig
     sessionMaxAgeMs: _readNumber(process.env.OIDC_SESSION_MAX_AGE_SECONDS, 12 * 60 * 60) * 1000,
     allowedEmailDomains: _readCsv(process.env.OIDC_ALLOWED_EMAIL_DOMAINS),
     allowedEmails: _readCsv(process.env.OIDC_ALLOWED_EMAILS),
+    groupsClaim: process.env.OIDC_GROUPS_CLAIM?.trim() || "groups",
+    rolesClaim: process.env.OIDC_ROLES_CLAIM?.trim() || "roles",
+    clusterTenantClaim: process.env.OIDC_CLUSTER_TENANT_CLAIM?.trim() || "cluster_tenant",
+    platformOperatorGroups: _readCsv(process.env.OIDC_PLATFORM_OPERATOR_GROUPS),
   };
 }
 

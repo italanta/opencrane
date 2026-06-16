@@ -4,9 +4,13 @@ declare module "express-session"
 {
   interface SessionData
   {
+    // Keep in sync with `ControlPlaneAuthUser` in oidc.service.ts.
     authUser?: {
       sub: string;
       issuer: string;
+      role: "platform-operator" | "customer-admin";
+      groups: string[];
+      clusterTenant?: string;
       email?: string;
       emailVerified?: boolean;
       name?: string;

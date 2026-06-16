@@ -14,6 +14,7 @@ model Tenant {
   team               String?
   phase              String                    @default("Pending")
   ingressHost        String?                   @map("ingress_host")
+  clusterTenantRef   String?                   @map("cluster_tenant_ref")
   configOverrides    Json?                     @map("config_overrides")
   awarenessWave      String?                   @map("awareness_wave")
   createdAt          DateTime                  @default(now()) @map("created_at")

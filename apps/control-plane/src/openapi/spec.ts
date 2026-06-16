@@ -101,6 +101,7 @@ const TenantSchema = {
     displayName: { type: "string" },
     email: { type: "string", format: "email" },
     team: { type: "string" },
+    clusterTenantRef: { type: "string", description: "Parent ClusterTenant (customer) this tenant attaches to; absent on the single-instance path." },
     phase: { type: "string" },
     ingressHost: { type: "string" },
     createdAt: { type: "string", format: "date-time" },
@@ -221,6 +222,29 @@ const ClusterTenantWriteSchema = {
       properties: {
         mode: { type: "string", enum: ["shared", "dedicated"] },
         nodePool: { type: "string" },
+      },
+    },
+    resources: {
+      type: "object",
+      required: ["quota"],
+      properties: { quota: { $ref: "#/components/schemas/ClusterTenantResourceQuota" } },
+    },
+  },
+};
+
+const ClusterTenantUpdateSchema = {
+  type: "object" as const,
+  description: "Partial cluster-tenant update; the immutable name comes from the path. Every field is optional — only those present are changed.",
+  properties: {
+    displayName: { type: "string", description: "New human-readable customer name (must be non-blank when present)." },
+    baseDomain: { type: "string", description: "New customer-owned base domain; an empty string clears it (back to the per-instance ingress.domain fallback)." },
+    isolationTier: { type: "string", enum: ["shared", "dedicatedNodes", "dedicatedCluster"], description: "New isolation strength; re-gated against the provisioner registry when changed." },
+    compute: {
+      type: "object",
+      required: ["mode"],
+      properties: {
+        mode: { type: "string", enum: ["shared", "dedicated"] },
+        nodePool: { type: "string", description: "Dedicated node pool name; required when mode is 'dedicated'." },
       },
     },
     resources: {
@@ -410,6 +434,7 @@ export const spec = {
       McpServerCredential: McpServerCredentialSchema,
       ClusterTenant: ClusterTenantSchema,
       ClusterTenantWrite: ClusterTenantWriteSchema,
+      ClusterTenantUpdate: ClusterTenantUpdateSchema,
       ClusterTenantResourceQuota: ClusterTenantResourceQuotaSchema,
       Group: GroupSchema,
       SkillBundle: SkillBundleSchema,
@@ -720,6 +745,9 @@ export const spec = {
         operationId: "listTenants",
         summary: "List all tenants",
         tags: ["Tenants"],
+        parameters: [
+          { name: "clusterTenantRef", in: "query", schema: { type: "string" }, description: "Return only tenants attached to this parent ClusterTenant (customer)." },
+        ],
         responses: {
           200: ok("Tenant list.", { type: "array", items: { $ref: "#/components/schemas/Tenant" } }),
         },
@@ -740,6 +768,7 @@ export const spec = {
                   displayName: { type: "string" },
                   email: { type: "string", format: "email" },
                   team: { type: "string" },
+                  clusterTenantRef: { type: "string", description: "Parent ClusterTenant (customer) to attach this tenant to." },
                   monthlyBudgetUsd: { type: "number" },
                   resources: { type: "object" },
                   skillAllowlist: { type: "array", items: { type: "string" } },
@@ -808,6 +837,7 @@ export const spec = {
                   displayName: { type: "string" },
                   email: { type: "string", format: "email" },
                   team: { type: "string" },
+                  clusterTenantRef: { type: "string", description: "Parent ClusterTenant (customer) to attach this tenant to." },
                   monthlyBudgetUsd: { type: "number" },
                   resources: { type: "object" },
                   skillAllowlist: { type: "array", items: { type: "string" } },
@@ -1033,7 +1063,7 @@ export const spec = {
         parameters: [{ name: "name", in: "path", required: true, schema: { type: "string" } }],
         requestBody: {
           required: true,
-          content: { "application/json": { schema: { type: "object" } } },
+          content: { "application/json": { schema: { $ref: "#/components/schemas/ClusterTenantUpdate" } } },
         },
         responses: {
           200: ok("Cluster tenant updated.", { $ref: "#/components/schemas/ClusterTenant" }),
@@ -1720,15 +1750,27 @@ export const spec = {
             type: "object",
             required: ["mode", "authenticated"],
             properties: {
-              mode: { type: "string", enum: ["oidc", "none"], description: "Active authentication mode for this instance." },
+              mode: { type: "string", enum: ["development", "oidc", "token"], description: "Active authentication mode for this instance." },
               authenticated: { type: "boolean" },
               user: {
                 type: "object",
                 nullable: true,
+                required: ["sub", "issuer", "role", "groups"],
                 properties: {
                   sub: { type: "string" },
+                  issuer: { type: "string", description: "Identity provider that authenticated the user." },
+                  role: {
+                    type: "string",
+                    enum: ["platform-operator", "customer-admin"],
+                    description: "Authorization role resolved from the caller's group/role claims. The API stays the enforcement point; the frontend uses this only to hide UI.",
+                  },
+                  groups: { type: "array", items: { type: "string" }, description: "Raw group/role claim values surfaced for the caller." },
+                  clusterTenant: { type: "string", description: "ClusterTenant (customer) key the caller belongs to, when the IdP emits it." },
                   email: { type: "string" },
+                  emailVerified: { type: "boolean" },
                   name: { type: "string" },
+                  picture: { type: "string" },
+                  authenticatedAt: { type: "string", format: "date-time" },
                 },
               },
             },

@@ -36,4 +36,21 @@ export interface OidcAuthConfig
 
   /** Lowercased allowlist of full email addresses. */
   allowedEmails: string[];
+
+  /** Claim name carrying the caller's group memberships (default `groups`). */
+  groupsClaim: string;
+
+  /** Claim name carrying the caller's roles (default `roles`). */
+  rolesClaim: string;
+
+  /** Claim name carrying the caller's ClusterTenant (customer) key (default `cluster_tenant`). */
+  clusterTenantClaim: string;
+
+  /**
+   * Lowercased group/role values that mark a caller as a platform operator.
+   * A caller whose `groupsClaim`/`rolesClaim` values intersect this set resolves
+   * to `platform-operator`; everyone else resolves to `customer-admin`. Empty by
+   * default, so callers are least-privilege (`customer-admin`) until configured.
+   */
+  platformOperatorGroups: string[];
 }
