@@ -67,6 +67,20 @@
   border-radius: 12px;
 }
 
+/* Mobile (<960px): VitePress pulls the hero text up under the image with
+   negative margins (margin: -76px -24px -48px, and -108px above 640px) plus a
+   container translate. With our flowing image that bottom margin made the
+   heading overlap the logo lockup (the baked-in tagline). Neutralise the
+   negative margins and translate so image and text stack cleanly. */
+@media (max-width: 959px) {
+  .VPHero .image {
+    margin: 0 auto 12px;
+  }
+  .VPHero .image-container {
+    transform: none;
+  }
+}
+
 /* Architecture diagrams (inline, theme-aware SVG). */
 .oc-diagram {
   margin: 28px auto;
