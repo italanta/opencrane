@@ -103,6 +103,7 @@ export default defineConfig({
         collapsed: true,
         items: [
           { text: 'Hosting & deployment', link: '/operators/hosting' },
+          { text: 'DNS configuration', link: '/operators/dns-config' },
           { text: 'Identity & connection auth', link: '/security/identity' },
           { text: 'Connection security', link: '/security/connection-security' },
           { text: 'Runbook', link: '/operators/runbook' },
