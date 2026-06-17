@@ -50,4 +50,4 @@ fi
 
 log "Cluster ready. Installing OpenCrane…"
 # k3s ships the 'local-path' default StorageClass and a Traefik ingress out of the box.
-exec "$SCRIPT_DIR/k8s-deploy.sh" ${DOMAIN:+--domain "$DOMAIN"} "${PASSTHROUGH[@]}"
+exec "$SCRIPT_DIR/k8s-deploy.sh" ${DOMAIN:+--domain "$DOMAIN"} --set ingress.className=traefik --set networkPolicy.ingressNamespace=kube-system "${PASSTHROUGH[@]}"
