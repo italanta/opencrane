@@ -1,5 +1,5 @@
 {{- if .Values.ingress.enabled -}}
-{{- $host := printf "admin.%s" .Values.ingress.domain -}}
+{{- $host := .Values.ingress.domain -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

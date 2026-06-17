@@ -224,7 +224,7 @@ helm install opencrane platform/helm \
   --set controlPlane.database.existingSecret=opencrane-cloudsql
 
 # 3. Create a tenant via the oc CLI
-export OPENCRANE_URL=https://admin.opencrane.ai
+export OPENCRANE_URL=https://opencrane.ai
 export OPENCRANE_TOKEN=<your-access-token>
 
 oc tenants create \
@@ -250,7 +250,7 @@ The operator provisions everything the tenant needs — storage, identity, an en
 
 ```bash
 # Point the CLI at your control plane
-export OPENCRANE_URL=https://admin.opencrane.ai
+export OPENCRANE_URL=https://opencrane.ai
 export OPENCRANE_TOKEN=<your-access-token>
 
 oc tenants list                         # list all tenants

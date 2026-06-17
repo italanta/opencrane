@@ -32,9 +32,9 @@
     "docs:dev": "pnpm --filter @opencrane/website dev",
     "docs:build": "pnpm --filter @opencrane/website build",
     "docs:preview": "pnpm --filter @opencrane/website preview",
-    "docker:build:tenant": "docker build -f apps/tenant/deploy/Dockerfile -t ghcr.io/opencrane/tenant:latest .",
-    "docker:build:operator": "docker build -f apps/operator/deploy/Dockerfile -t ghcr.io/opencrane/operator:latest .",
-    "docker:build:control-plane": "docker build -f apps/control-plane/deploy/Dockerfile -t ghcr.io/opencrane/control-plane:latest .",
-    "docker:build:docs": "docker build -f website/Dockerfile -t ghcr.io/opencrane/docs:latest ."
+    "docker:build:tenant": "docker build -f apps/tenant/deploy/Dockerfile -t ghcr.io/italanta/opencrane-tenant:latest .",
+    "docker:build:operator": "docker build -f apps/operator/deploy/Dockerfile -t ghcr.io/italanta/opencrane-operator:latest .",
+    "docker:build:control-plane": "docker build -f apps/control-plane/deploy/Dockerfile -t ghcr.io/italanta/opencrane-control-plane:latest .",
+    "docker:build:docs": "docker build -f website/Dockerfile -t ghcr.io/italanta/docs:latest ."
   }
 }

@@ -17,7 +17,7 @@ However you deploy, everything in these guides uses the `oc` CLI. Point it at yo
 control plane:
 
 ```bash
-export OPENCRANE_URL=https://admin.<your-domain>
+export OPENCRANE_URL=https://<your-domain>
 export OPENCRANE_TOKEN=<your-access-token>
 
 oc auth me        # confirms you're connected

@@ -40,6 +40,10 @@ follows [Keep a Changelog](https://keepachangelog.com/); the project uses
   (`clusterTenant.provisionerWebhook.url`); `dedicatedCluster` is rejected `422
   TIER_UNAVAILABLE` until a backend advertises it (fail-closed).
 
+### Changed
+
+- **Expose the control plane ingress at the root domain instead of the `admin` subdomain.** The control plane ingress host maps directly to the base `ingress.domain` configured in Helm (e.g. `opencrane.local`), rather than prepending `admin.`.
+
 ### Security
 
 - **The provisioner webhook refuses a non-`https://` URL at startup**, so the bearer token

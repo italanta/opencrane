@@ -65,9 +65,9 @@ variable "enable_artifact_registry"
 # disabled. Defaults to the public ghcr.io OpenCrane org.
 variable "registry_url"
 {
-  description = "Registry base URL for OpenCrane images when enable_artifact_registry=false (e.g. ghcr.io/opencrane)."
+  description = "Registry base URL for OpenCrane images when enable_artifact_registry=false (e.g. ghcr.io/italanta)."
   type        = string
-  default     = "ghcr.io/opencrane"
+  default     = "ghcr.io/italanta"
 }
 
 # Enable GCS-backed tenant storage (Workload Identity + GCS Fuse). When false

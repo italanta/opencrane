@@ -147,7 +147,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: migrate
-          image: ghcr.io/opencrane/control-plane:${IMAGE_TAG}
+          image: ghcr.io/italanta/opencrane-control-plane:${IMAGE_TAG}
           command: ["npx", "prisma@6", "migrate", "deploy"]
           workingDir: /app/apps/control-plane
           env:
@@ -162,5 +162,5 @@ kubectl rollout status "deployment/${RELEASE}-operator" -n "$NAMESPACE" --timeou
 kubectl rollout status "deployment/${RELEASE}-control-plane" -n "$NAMESPACE" --timeout="${TIMEOUT}s"
 
 log "Done. OpenCrane is installed in namespace '$NAMESPACE'."
-[[ -n "$DOMAIN" ]] && log "Point your DNS at the ingress, then visit https://admin.${DOMAIN}"
+[[ -n "$DOMAIN" ]] && log "Point your DNS at the ingress, then visit https://${DOMAIN}"
 log "Ingress: kubectl get ingress -n $NAMESPACE"
