@@ -219,4 +219,39 @@ describe("modelRegistryRouter", function _suite()
     expect(res.body).toEqual({ id: "model-1", status: "deleted" });
     expect(store.has("model-1")).toBe(false);
   });
+
+  it("rejects a PUT that rebinds a credential owned by another ClusterTenant (400)", async function _putCredentialScopeMismatch()
+  {
+    const store = new Map<string, Row>([
+      ["model-1", { id: "model-1", scope: "ClusterTenant", clusterTenant: "acme", publicModelName: "openai/gpt-4o", litellmModelId: "x", upstreamModel: "openai/gpt-4o", apiBase: null, isDefault: false, providerCredentialId: null, createdAt: new Date(), updatedAt: new Date() }],
+    ]);
+    const credentials = new Map<string, Row>([
+      ["cred-b", { id: "cred-b", scope: "ClusterTenant", clusterTenant: "tenant-b", secretRef: "s" }],
+    ]);
+    const res = await request(_buildApp(_mockPrisma(store, credentials)))
+      .put("/api/v1/models/model-1")
+      .send({ scope: "clusterTenant", clusterTenant: "acme", publicModelName: "openai/gpt-4o", upstreamModel: "openai/gpt-4o", providerCredentialId: "cred-b" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("CREDENTIAL_SCOPE_MISMATCH");
+    expect((store.get("model-1") as Row).providerCredentialId).toBeNull();
+  });
+
+  it("updates fields and binds a Global credential via PUT", async function _putUpdate()
+  {
+    const store = new Map<string, Row>([
+      ["model-1", { id: "model-1", scope: "Global", clusterTenant: null, publicModelName: "openai/gpt-4o", litellmModelId: "x", upstreamModel: "openai/gpt-4o", apiBase: null, isDefault: false, providerCredentialId: null, createdAt: new Date(), updatedAt: new Date() }],
+    ]);
+    const credentials = new Map<string, Row>([
+      ["cred-g", { id: "cred-g", scope: "Global", clusterTenant: null, secretRef: "s" }],
+    ]);
+    const res = await request(_buildApp(_mockPrisma(store, credentials)))
+      .put("/api/v1/models/model-1")
+      .send({ publicModelName: "openai/gpt-4o", upstreamModel: "openai/gpt-4o-mini", providerCredentialId: "cred-g", isDefault: true });
+
+    expect(res.status).toBe(200);
+    expect(res.body.upstreamModel).toBe("openai/gpt-4o-mini");
+    expect(res.body.providerCredentialId).toBe("cred-g");
+    expect(res.body.isDefault).toBe(true);
+  });
 });

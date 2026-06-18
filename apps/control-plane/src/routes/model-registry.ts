@@ -72,6 +72,36 @@ function _validateWrite(body: Record<string, unknown>): { error: string; code: s
 }
 
 /**
+ * Resolve and scope-check the backing credential for a model write. A model may bind only a
+ * Global credential or one owned by its OWN ClusterTenant — never another customer's — which
+ * stops a tenant-scoped model from borrowing another ClusterTenant's provider key. Shared by
+ * create and update so the isolation rule cannot be bypassed via PUT.
+ *
+ * @param prisma - Prisma client used to look up the credential.
+ * @param providerCredentialId - The requested credential id, or undefined/null when none.
+ * @param modelClusterTenant - The owning ClusterTenant of the model (null for Global scope).
+ * @returns `{ secretRef }` (null when no credential requested), or a `{ error, code }` envelope.
+ */
+async function _resolveCredential(prisma: PrismaClient, providerCredentialId: string | null | undefined, modelClusterTenant: string | null): Promise<{ secretRef: string | null } | { error: string; code: string }>
+{
+  if (!providerCredentialId)
+  {
+    return { secretRef: null };
+  }
+  const credential = await prisma.providerCredential.findUnique({ where: { id: providerCredentialId } });
+  if (!credential)
+  {
+    return { error: "providerCredentialId does not reference an existing credential.", code: "VALIDATION_ERROR" };
+  }
+  const credentialClusterTenant = credential.scope === "ClusterTenant" ? credential.clusterTenant : null;
+  if (credentialClusterTenant && credentialClusterTenant !== modelClusterTenant)
+  {
+    return { error: "providerCredentialId is owned by a different ClusterTenant.", code: "CREDENTIAL_SCOPE_MISMATCH" };
+  }
+  return { secretRef: credential.secretRef };
+}
+
+/**
  * CRUD router for {@link ModelDefinition} — routable models registered in LiteLLM (BYOM).
  *
  * On create the row is persisted and the model is registered GLOBALLY with LiteLLM via a
@@ -147,27 +177,14 @@ export function modelRegistryRouter(prisma: PrismaClient): Router
     const write = body as unknown as ModelDefinitionWrite;
     const scope = write.scope ?? ModelRoutingScope.Global;
 
-    // 2. Resolve the backing credential (when set) and enforce scope isolation: a model may only
-    //    bind a Global credential or one owned by its OWN ClusterTenant — never another customer's.
-    //    This stops a tenant-scoped model from borrowing another ClusterTenant's provider key.
-    let apiKeyEnvRef: string | null = null;
-    if (write.providerCredentialId)
+    // 2. Resolve + scope-check the backing credential (when set) — see _resolveCredential.
+    const credentialResult = await _resolveCredential(prisma, write.providerCredentialId, scope === ModelRoutingScope.ClusterTenant ? write.clusterTenant!.trim() : null);
+    if ("error" in credentialResult)
     {
-      const credential = await prisma.providerCredential.findUnique({ where: { id: write.providerCredentialId } });
-      if (!credential)
-      {
-        res.status(400).json({ error: "providerCredentialId does not reference an existing credential.", code: "VALIDATION_ERROR" });
-        return;
-      }
-      const credentialClusterTenant = credential.scope === "ClusterTenant" ? credential.clusterTenant : null;
-      const modelClusterTenant = scope === ModelRoutingScope.ClusterTenant ? write.clusterTenant!.trim() : null;
-      if (credentialClusterTenant && credentialClusterTenant !== modelClusterTenant)
-      {
-        res.status(400).json({ error: "providerCredentialId is owned by a different ClusterTenant.", code: "CREDENTIAL_SCOPE_MISMATCH" });
-        return;
-      }
-      apiKeyEnvRef = credential.secretRef;
+      res.status(400).json(credentialResult);
+      return;
     }
+    const apiKeyEnvRef = credentialResult.secretRef;
 
     // 3. Best-effort LiteLLM registration; returns a deterministic placeholder when unconfigured.
     const litellmModelId = await _RegisterLiteLlmModel({
@@ -215,16 +232,28 @@ export function modelRegistryRouter(prisma: PrismaClient): Router
       return;
     }
 
-    // 2. Apply the validated fields; the LiteLLM deployment id is immutable here.
     const write = body as unknown as ModelDefinitionWrite;
     const scope = write.scope ?? ModelRoutingScope.Global;
-    const data: Prisma.ModelDefinitionUpdateInput = {
+    const modelClusterTenant = scope === ModelRoutingScope.ClusterTenant ? write.clusterTenant!.trim() : null;
+
+    // 2. Re-validate the backing credential with the SAME scope-isolation rule as create, so a PUT
+    //    cannot bind (or smuggle in) another ClusterTenant's credential.
+    const credentialResult = await _resolveCredential(prisma, write.providerCredentialId, modelClusterTenant);
+    if ("error" in credentialResult)
+    {
+      res.status(400).json(credentialResult);
+      return;
+    }
+
+    // 3. Apply the validated fields; the LiteLLM deployment id is immutable here.
+    const data: Prisma.ModelDefinitionUncheckedUpdateInput = {
       scope: _toPrismaScope(scope),
-      clusterTenant: scope === ModelRoutingScope.ClusterTenant ? write.clusterTenant!.trim() : null,
+      clusterTenant: modelClusterTenant,
       publicModelName: write.publicModelName.trim(),
       upstreamModel: write.upstreamModel.trim(),
       apiBase: write.apiBase?.trim() || null,
       isDefault: write.isDefault ?? false,
+      providerCredentialId: write.providerCredentialId ?? null,
     };
     const updated = await prisma.modelDefinition.update({ where: { id: req.params.id }, data });
     res.json(_toContract(updated));
