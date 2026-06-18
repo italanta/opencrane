@@ -58,6 +58,26 @@ export interface OpenClawTenantOperatorConfig
   /** Default monthly budget (USD) applied when tenant does not override it. */
   liteLlmDefaultMonthlyBudgetUsd: number;
 
+  /**
+   * Budget reset window passed to LiteLLM (`budget_duration`) so the per-tenant
+   * spend cap rolls over on a fixed cadence (e.g. "30d"). Without it the
+   * `max_budget` is a lifetime cap that never resets.
+   */
+  liteLlmBudgetDuration: string;
+
+  /**
+   * Default per-key tokens-per-minute throttle applied at key generation.
+   * The Tenant CR has no per-tenant rate-limit field, so this config default is
+   * the only lever; 0 (or negative) leaves the limit unset on LiteLLM.
+   */
+  liteLlmDefaultTpmLimit: number;
+
+  /**
+   * Default per-key requests-per-minute throttle applied at key generation.
+   * Mirrors `liteLlmDefaultTpmLimit`; 0 (or negative) leaves it unset.
+   */
+  liteLlmDefaultRpmLimit: number;
+
   /** Optional default AccessPolicy name used when no explicit or selector match is found. */
   defaultTenantPolicyRef?: string;
 
@@ -120,6 +140,9 @@ export function _LoadOperatorConfig(): OpenClawTenantOperatorConfig
     liteLlmEndpoint: _readEnvValue<string>("LITELLM_ENDPOINT", "string"),
     liteLlmMasterKey: _readEnvValue<string>("LITELLM_MASTER_KEY", "string", false, ""),
     liteLlmDefaultMonthlyBudgetUsd: _readEnvValue<number>("LITELLM_DEFAULT_MONTHLY_BUDGET_USD", "number"),
+    liteLlmBudgetDuration: _readEnvValue<string>("LITELLM_BUDGET_DURATION", "string", false, "30d"),
+    liteLlmDefaultTpmLimit: _readEnvValue<number>("LITELLM_DEFAULT_TPM_LIMIT", "number", false, 0),
+    liteLlmDefaultRpmLimit: _readEnvValue<number>("LITELLM_DEFAULT_RPM_LIMIT", "number", false, 0),
     defaultTenantPolicyRef: _readEnvValue<string>("DEFAULT_TENANT_POLICY_REF", "string", false, ""),
     mcpGatewayUrl: _readEnvValue<string>("MCP_GATEWAY_URL", "string", false, `http://opencrane-mcp-gateway.${ownNamespace}.svc:8080`),
     skillRegistryUrl: _readEnvValue<string>("SKILL_REGISTRY_URL", "string", false, `http://opencrane-skill-registry.${ownNamespace}.svc:5000`),
