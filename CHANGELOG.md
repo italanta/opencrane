@@ -15,6 +15,45 @@ follows [Keep a Changelog](https://keepachangelog.com/); the project uses
 
 ### Added
 
+- **Register any AI model from any provider and make it routable across the platform.** Operators
+  register models (`oc model add|list|update|remove`) and bind provider credentials that store only
+  a Kubernetes Secret reference — a raw API key is never written to the database or transmitted over
+  the wire. Both models and credentials are scoped Global or per-ClusterTenant; the backing
+  LiteLLM instance is updated automatically (`/api/v1/models`, `/api/v1/providers/credentials`).
+- **Pin a model to a skill, or let the platform choose automatically.** Each skill can declare a
+  pinned model or opt into `auto` mode (`oc skill-posture`). Scope-level defaults (global or
+  per-ClusterTenant) are set with `oc model-default`. At runtime the control plane resolves a single
+  effective model per skill following the precedence: explicit request override → skill-pinned →
+  skill-`auto` → ClusterTenant default → Global default — and writes it into the tenant's
+  effective-contract without a pod restart.
+- **Confine each tenant to only the models they are allowed to call.** The LiteLLM virtual key's
+  `models[]` allowlist is now populated from the registry at key-mint time and kept in sync by the
+  operator's reconcile loop (`oc routing …`). A tenant cannot call a model that is not in their
+  allowlist, closing the previous gap where any tenant could call any registered model.
+- **Measure what smarter routing would save before committing to any change.** Operators record
+  golden eval cases (`oc routing eval-case`) and trigger a shadow-mode measurement run
+  (`oc routing measurement run`) that replays each case against a candidate model, scores it with a
+  vendor-neutral judge, and computes bootstrap 95% confidence intervals. A `RoutingProposal` is
+  emitted only when the CI excludes zero savings. The measurement runner and judge are live seams
+  (requiring a deployed LiteLLM + provider keys + `ROUTING_JUDGE_MODEL`; ops recipe in
+  `docs/operators/routing-measurement.md`) — the first live savings number is an operator step on
+  a real cluster, not a synthetic estimate.
+- **Approve or reject routing proposals with a full audit trail; nothing is ever auto-applied.**
+  Each `RoutingProposal` surfaces via `oc routing proposal list|approve|reject`. Approving pins the
+  skill to the proposed model (via the AIR.3 write path) and records the decision; rejecting leaves
+  routing exactly as-is. A RouteLLM/bandit policy learner and staged canary traffic rollout are
+  future additions — the proposal lifecycle is the gate, and that gate is human-only today.
+- **Read AI cost and quality metrics from the console without the browser holding Langfuse
+  credentials.** `GET /api/v1/model-routing/metrics` (`oc routing metrics`) proxies Langfuse's
+  public metrics API with server-side authentication; non-operators receive an automatic
+  tenant-dimension filter; the endpoint returns 503 when Langfuse is not configured and fails
+  closed with 403 when a caller's ClusterTenant cannot be resolved.
+- **Surface a ranked "save up to N%" feed that drives one-click human-gated improvement.**
+  `GET /api/v1/model-routing/recommendations` (`oc routing recommendation list`) joins each
+  skill's latest measurement with any open proposal, sorts by projected savings descending, and
+  scopes results by ClusterTenant — operators see the full fleet; non-operators see only their own.
+  This is the feed behind the console's savings-recommendation tile.
+
 - **Model each customer as a first-class, API-managed isolation unit.** Operators create
   and manage customers with `oc cluster-tenant create|list|show|update|delete` (or
   `/api/v1/cluster-tenants`), choosing an `isolationTier` — `shared`, `dedicatedNodes`, or
@@ -42,9 +81,29 @@ follows [Keep a Changelog](https://keepachangelog.com/); the project uses
 
 ### Changed
 
+- **GKE secret encryption is on by default for all new cluster deployments.** The Terraform GKE
+  module now provisions a dedicated KMS keyring and crypto key (90-day auto-rotation,
+  `prevent_destroy`) and enables GKE application-layer `database_encryption` pointing at that key.
+  Existing clusters are unaffected; enable via `enable_secrets_encryption=true` in Terraform.
+- **LiteLLM is pinned to a stable image tag.** The Helm deployment now references
+  `main-v1.81.0-stable` instead of `:main-latest`, so cluster upgrades are deliberate and
+  reproducible.
+
 - **Expose the control plane ingress at the root domain instead of the `admin` subdomain.** The control plane ingress host maps directly to the base `ingress.domain` configured in Helm (e.g. `opencrane.local`), rather than prepending `admin.`.
 
 ### Security
+
+- **Credential and model mutation routes fail closed outside dev mode.** The
+  `cluster-tenant-scope` middleware guards every POST/PUT/DELETE on model, credential, and
+  skill-posture routes: platform operators may act at any scope; non-operators are restricted to
+  their own ClusterTenant; Global mutations are operator-only; denials return `403
+  FORBIDDEN_SCOPE`. Critically, when no session is present the guard now **fails closed** unless
+  `_IsDevAuthMode()` is true — a sessionless request to a mutation route is denied on any real
+  deployment. The open dev backend remains permissive; production is enforced.
+- **Provider credentials never store a raw key.** The `/api/v1/providers/credentials` endpoint
+  rejects any payload containing a raw key material field with a `400`; only a `secretRef` (a
+  Kubernetes Secret name) is accepted and stored. This applies at both Global and
+  per-ClusterTenant scope.
 
 - **The provisioner webhook refuses a non-`https://` URL at startup**, so the bearer token
   used to authenticate to a vendor's dedicated-cluster backend is never sent in plaintext
