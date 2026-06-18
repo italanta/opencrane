@@ -16,9 +16,9 @@ function _buildProviderKeysApp(prisma: PrismaClient, coreApi: k8s.CoreV1Api): Ex
   return app;
 }
 
-describe("providerKeysRouter", () =>
+describe("providerKeysRouter", function _suite()
 {
-  it("upserts openai key and projects it into org shared Secret", async () =>
+  it("upserts openai key and projects it into org shared Secret", async function _upsertOpenaiKey()
   {
     const prisma = {
       providerApiKey: {
@@ -43,7 +43,7 @@ describe("providerKeysRouter", () =>
     const app = _buildProviderKeysApp(prisma, coreApi);
     const res = await request(app)
       .put("/api/providers/keys/openai")
-      .send({ value: "openai-token" });
+      .send({ apiKey: "openai-token" });
 
     expect(res.status).toBe(204);
     expect(prisma.providerApiKey.upsert).toHaveBeenCalledWith({
@@ -66,7 +66,7 @@ describe("providerKeysRouter", () =>
     });
   });
 
-  it("creates org shared Secret when provider key projection runs for first time", async () =>
+  it("creates org shared Secret when provider key projection runs for first time", async function _createOrgSecretFirstTime()
   {
     const prisma = {
       providerApiKey: {
@@ -83,7 +83,7 @@ describe("providerKeysRouter", () =>
     const app = _buildProviderKeysApp(prisma, coreApi);
     const res = await request(app)
       .put("/api/providers/keys/openai")
-      .send({ value: "openai-token" });
+      .send({ apiKey: "openai-token" });
 
     expect(res.status).toBe(204);
     expect(coreApi.createNamespacedSecret).toHaveBeenCalledWith({
@@ -100,7 +100,7 @@ describe("providerKeysRouter", () =>
     });
   });
 
-  it("treats Kubernetes ApiException code=404 as not found and creates org secret", async () =>
+  it("treats Kubernetes ApiException code=404 as not found and creates org secret", async function _treats404AsNotFound()
   {
     const prisma = {
       providerApiKey: {
@@ -121,13 +121,13 @@ describe("providerKeysRouter", () =>
     const app = _buildProviderKeysApp(prisma, coreApi);
     const res = await request(app)
       .put("/api/providers/keys/openai")
-      .send({ value: "openai-token" });
+      .send({ apiKey: "openai-token" });
 
     expect(res.status).toBe(204);
     expect(coreApi.createNamespacedSecret).toHaveBeenCalledTimes(1);
   });
 
-  it("deletes openai key projection while keeping other org secret entries", async () =>
+  it("deletes openai key projection while keeping other org secret entries", async function _deletesOpenaiKey()
   {
     const prisma = {
       providerApiKey: {

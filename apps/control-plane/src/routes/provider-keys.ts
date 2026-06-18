@@ -83,12 +83,15 @@ export function providerKeysRouter(prisma: PrismaClient, coreApi: k8s.CoreV1Api,
 }
 
 /** Map provider name to the org-shared secret key used by tenant envFrom. */
-function _providerToSecretKey(provider: string): string {
-  if (provider === "openai") {
+function _providerToSecretKey(provider: string): string
+{
+  if (provider === "openai")
+  {
     return "OPENAI_API_KEY";
   }
 
-  if (provider === "claude") {
+  if (provider === "claude")
+  {
     return "ANTHROPIC_API_KEY";
   }
 
@@ -96,11 +99,13 @@ function _providerToSecretKey(provider: string): string {
 }
 
 /** Build a plain-text map from Secret data (base64) so keys can be merged safely. */
-function _decodeSecretData(secret: k8s.V1Secret): Record<string, string> {
+function _decodeSecretData(secret: k8s.V1Secret): Record<string, string>
+{
   const decoded: Record<string, string> = {};
   const data = secret.data ?? {};
 
-  for (const [key, value] of Object.entries(data)) {
+  for (const [key, value] of Object.entries(data))
+  {
     decoded[key] = Buffer.from(value, "base64").toString("utf8");
   }
 
@@ -108,26 +113,33 @@ function _decodeSecretData(secret: k8s.V1Secret): Record<string, string> {
 }
 
 /** Returns true when the Kubernetes error indicates a missing resource (HTTP 404). */
-function _isNotFoundError(err: unknown): boolean {
-  if (!(err instanceof Error)) {
+function _isNotFoundError(err: unknown): boolean
+{
+  if (!(err instanceof Error))
+  {
     return false;
   }
 
   const maybeStatus = err as Error & { code?: number; statusCode?: number; body?: { code?: number } | string };
-  if (maybeStatus.statusCode === 404 || maybeStatus.code === 404) {
+  if (maybeStatus.statusCode === 404 || maybeStatus.code === 404)
+  {
     return true;
   }
 
-  if (typeof maybeStatus.body === "object" && maybeStatus.body?.code === 404) {
+  if (typeof maybeStatus.body === "object" && maybeStatus.body?.code === 404)
+  {
     return true;
   }
 
-  if (typeof maybeStatus.body === "string") {
-    try {
+  if (typeof maybeStatus.body === "string")
+  {
+    try
+    {
       const parsedBody = JSON.parse(maybeStatus.body) as { code?: number };
       return parsedBody.code === 404;
     }
-    catch {
+    catch
+    {
       return false;
     }
   }
@@ -144,10 +156,12 @@ async function _upsertOrgProviderSecret(
   secretName: string,
   provider: string,
   keyValue: string,
-): Promise<void> {
+): Promise<void>
+{
   const secretKey = _providerToSecretKey(provider);
 
-  try {
+  try
+  {
     // 1. Read the existing Secret so we can preserve unrelated provider keys.
     const existing = await coreApi.readNamespacedSecret({ name: secretName, namespace });
     const mergedData = _decodeSecretData(existing);
@@ -172,8 +186,10 @@ async function _upsertOrgProviderSecret(
       },
     });
   }
-  catch (err) {
-    if (!_isNotFoundError(err)) {
+  catch (err)
+  {
+    if (!_isNotFoundError(err))
+    {
       throw err;
     }
 
@@ -204,10 +220,12 @@ async function _deleteOrgProviderSecretKey(
   namespace: string,
   secretName: string,
   provider: string,
-): Promise<void> {
+): Promise<void>
+{
   const secretKey = _providerToSecretKey(provider);
 
-  try {
+  try
+  {
     // 1. Read the existing Secret and decode all keys to preserve unrelated entries.
     const existing = await coreApi.readNamespacedSecret({ name: secretName, namespace });
     const mergedData = _decodeSecretData(existing);
@@ -234,9 +252,12 @@ async function _deleteOrgProviderSecretKey(
       },
     });
   }
-  catch (err) {
-    if (!_isNotFoundError(err)) {
+  catch (err)
+  {
+    if (!_isNotFoundError(err))
+    {
       throw err;
     }
   }
 }
+
