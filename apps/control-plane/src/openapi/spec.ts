@@ -514,6 +514,25 @@ const RoutingProposalSchema = {
   },
 };
 
+const SavingsRecommendationSchema = {
+  type: "object" as const,
+  required: ["skillName", "skillScope", "skillTeam", "projectedSavingsPct", "ciLowPct", "ciHighPct", "hasOpenProposal", "measurementId", "runAt"],
+  properties: {
+    skillName: { type: "string", description: "Owning skill name." },
+    skillScope: { type: "string", description: "Owning skill scope." },
+    skillTeam: { type: "string", description: "Owning skill team (empty for org/global)." },
+    currentModel: { type: "string", nullable: true, description: "The model the skill resolves to today — proposal fromModel, else the skill's pin, else null." },
+    recommendedModel: { type: "string", nullable: true, description: "The cheaper model recommended — proposal proposedModel, else the measurement candidate, else null." },
+    projectedSavingsPct: { type: "number", description: "Point estimate of % spend saved at equal quality (from the latest measurement)." },
+    ciLowPct: { type: "number", description: "Lower bound of the bootstrap 95% CI on projected savings." },
+    ciHighPct: { type: "number", description: "Upper bound of the bootstrap 95% CI on projected savings." },
+    hasOpenProposal: { type: "boolean", description: "True when an open Pending proposal exists for this skill." },
+    proposalId: { type: "string", nullable: true, description: "Id of the open Pending proposal, when one exists; null otherwise." },
+    measurementId: { type: "string", description: "Id of the latest measurement this recommendation is derived from." },
+    runAt: { type: "string", format: "date-time", description: "When the latest measurement ran (ISO-8601)." },
+  },
+};
+
 const DeviceGrantSchema = {
   type: "object" as const,
   required: ["deviceCode", "userCode", "verificationUri", "expiresIn", "interval"],
@@ -652,6 +671,7 @@ export const spec = {
       RoutingEvalCaseWrite: RoutingEvalCaseWriteSchema,
       RoutingMeasurement: RoutingMeasurementSchema,
       RoutingProposal: RoutingProposalSchema,
+      SavingsRecommendation: SavingsRecommendationSchema,
       AwarenessRollout: {
         type: "object",
         properties: {
@@ -2195,6 +2215,43 @@ export const spec = {
           403: { description: "Caller is not authorized for the owning skill's scope (code FORBIDDEN_SCOPE).", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
           404: notFound("Proposal not found."),
           409: conflict("Proposal is no longer pending (code PROPOSAL_ALREADY_DECIDED)."),
+        },
+      },
+    },
+
+    // ------------------------------------------------------------------
+    // Savings recommendations (AIR.11 — frontend feed) + metrics proxy (AIR.10)
+    // ------------------------------------------------------------------
+
+    "/model-routing/recommendations": {
+      get: {
+        operationId: "listSavingsRecommendations",
+        summary: "List savings recommendations (latest measurement + any open proposal, per skill)",
+        tags: ["Model Registry"],
+        parameters: [
+          { name: "clusterTenant", in: "query", required: false, schema: { type: "string" }, description: "Filter to skills owned by this ClusterTenant (the skill's team)." },
+          { name: "skillScope", in: "query", required: false, schema: { type: "string" }, description: "Filter to one owning skill scope." },
+          { name: "onlyOpen", in: "query", required: false, schema: { type: "string", enum: ["true"] }, description: "When 'true', return only skills with an open Pending proposal." },
+        ],
+        responses: {
+          200: ok("Recommendations sorted by projected savings desc; scope-filtered to the caller's ClusterTenant for non-operators.", { type: "array", items: { $ref: "#/components/schemas/SavingsRecommendation" } }),
+        },
+      },
+    },
+
+    "/model-routing/metrics": {
+      get: {
+        operationId: "getRoutingMetrics",
+        summary: "Proxy a metrics query to the self-hosted Langfuse backend (server-side auth; non-operators scoped to their tenant)",
+        tags: ["Model Registry"],
+        parameters: [
+          { name: "query", in: "query", required: false, schema: { type: "string" }, description: "Langfuse v1 metrics `query` JSON, forwarded verbatim (a tenant filter is injected for non-operators)." },
+        ],
+        responses: {
+          200: ok("Upstream Langfuse metrics JSON (loosely-typed passthrough).", { type: "object", additionalProperties: true }),
+          403: { description: "A non-operator caller with no resolved ClusterTenant has no metrics scope (code FORBIDDEN_SCOPE).", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          502: { description: "The Langfuse backend was unreachable or returned a non-2xx status.", content: { "application/json": { schema: { type: "object", properties: { status: { type: "string" }, error: { type: "string" } } } } } },
+          503: { description: "The Langfuse backend is not configured (host/keys missing).", content: { "application/json": { schema: { type: "object", properties: { status: { type: "string" } } } } } },
         },
       },
     },

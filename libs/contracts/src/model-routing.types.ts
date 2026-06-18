@@ -260,6 +260,39 @@ export const RoutingProposalStatus = {
 /** Union of the {@link RoutingProposalStatus} values. */
 export type RoutingProposalStatus = (typeof RoutingProposalStatus)[keyof typeof RoutingProposalStatus];
 
+/**
+ * A frontend-facing savings recommendation for one skill (AIR.11). Joins the skill's latest
+ * {@link RoutingMeasurement} with any open Pending {@link RoutingProposal} on the same compound key,
+ * so a UI can surface "switch X to the cheaper Y, saving ~Z%" and link the one-click approval.
+ */
+export interface SavingsRecommendation
+{
+  /** Owning skill name. */
+  skillName: string;
+  /** Owning skill scope. */
+  skillScope: string;
+  /** Owning skill team (empty for org/global). */
+  skillTeam: string;
+  /** The model the skill resolves to today — proposal `fromModel`, else the skill's pin, else null. */
+  currentModel: string | null;
+  /** The cheaper model recommended — proposal `proposedModel`, else the measurement candidate, else null. */
+  recommendedModel: string | null;
+  /** Point estimate of % spend saved at equal quality (from the latest measurement). */
+  projectedSavingsPct: number;
+  /** Lower bound of the bootstrap 95% CI on projected savings. */
+  ciLowPct: number;
+  /** Upper bound of the bootstrap 95% CI on projected savings. */
+  ciHighPct: number;
+  /** True when an open Pending proposal exists for this skill — the UI can offer one-click approval. */
+  hasOpenProposal: boolean;
+  /** Id of the open Pending proposal, when one exists; null otherwise. */
+  proposalId: string | null;
+  /** Id of the latest measurement this recommendation is derived from. */
+  measurementId: string;
+  /** When the latest measurement ran (ISO-8601). */
+  runAt: string;
+}
+
 /** A human-gated routing-change proposal (AIR.7) — applied only after explicit approval. */
 export interface RoutingProposal
 {

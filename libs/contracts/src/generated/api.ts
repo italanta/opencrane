@@ -963,6 +963,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/model-routing/recommendations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List savings recommendations (latest measurement + any open proposal, per skill) */
+        get: operations["listSavingsRecommendations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/model-routing/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Proxy a metrics query to the self-hosted Langfuse backend (server-side auth; non-operators scoped to their tenant) */
+        get: operations["getRoutingMetrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ai-budget/global": {
         parameters: {
             query?: never;
@@ -1859,6 +1893,35 @@ export interface components {
             decidedAt?: string | null;
             /** Format: date-time */
             createdAt?: string;
+        };
+        SavingsRecommendation: {
+            /** @description Owning skill name. */
+            skillName: string;
+            /** @description Owning skill scope. */
+            skillScope: string;
+            /** @description Owning skill team (empty for org/global). */
+            skillTeam: string;
+            /** @description The model the skill resolves to today — proposal fromModel, else the skill's pin, else null. */
+            currentModel?: string | null;
+            /** @description The cheaper model recommended — proposal proposedModel, else the measurement candidate, else null. */
+            recommendedModel?: string | null;
+            /** @description Point estimate of % spend saved at equal quality (from the latest measurement). */
+            projectedSavingsPct: number;
+            /** @description Lower bound of the bootstrap 95% CI on projected savings. */
+            ciLowPct: number;
+            /** @description Upper bound of the bootstrap 95% CI on projected savings. */
+            ciHighPct: number;
+            /** @description True when an open Pending proposal exists for this skill. */
+            hasOpenProposal: boolean;
+            /** @description Id of the open Pending proposal, when one exists; null otherwise. */
+            proposalId?: string | null;
+            /** @description Id of the latest measurement this recommendation is derived from. */
+            measurementId: string;
+            /**
+             * Format: date-time
+             * @description When the latest measurement ran (ISO-8601).
+             */
+            runAt: string;
         };
         AwarenessRollout: {
             targetVersion?: string;
@@ -5052,6 +5115,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listSavingsRecommendations: {
+        parameters: {
+            query?: {
+                /** @description Filter to skills owned by this ClusterTenant (the skill's team). */
+                clusterTenant?: string;
+                /** @description Filter to one owning skill scope. */
+                skillScope?: string;
+                /** @description When 'true', return only skills with an open Pending proposal. */
+                onlyOpen?: "true";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recommendations sorted by projected savings desc; scope-filtered to the caller's ClusterTenant for non-operators. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavingsRecommendation"][];
+                };
+            };
+        };
+    };
+    getRoutingMetrics: {
+        parameters: {
+            query?: {
+                /** @description Langfuse v1 metrics `query` JSON, forwarded verbatim (a tenant filter is injected for non-operators). */
+                query?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Upstream Langfuse metrics JSON (loosely-typed passthrough). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A non-operator caller with no resolved ClusterTenant has no metrics scope (code FORBIDDEN_SCOPE). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The Langfuse backend was unreachable or returned a non-2xx status. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status?: string;
+                        error?: string;
+                    };
+                };
+            };
+            /** @description The Langfuse backend is not configured (host/keys missing). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status?: string;
+                    };
                 };
             };
         };

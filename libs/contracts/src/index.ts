@@ -33,6 +33,7 @@ export {
   type RoutingEvalCaseWrite,
   type RoutingMeasurement,
   type RoutingProposal,
+  type SavingsRecommendation,
 } from "./model-routing.types.js";
 export { SkillBundleStatus, SkillPromotionStatus, type SkillBundle, type SkillPromotion } from "./skill-bundle.types.js";
 export {

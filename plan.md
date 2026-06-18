@@ -596,12 +596,21 @@ With one agent per lane, wall-clock ≈ 4 sequential slices instead of 7.
   external OSS service (LiteLLM's built-in callbacks are Enterprise), emit verdicts to Langfuse keyed by
   skill id; use as a hard routing filter + a safety term in the per-skill score — **not** the quality
   judge. No such service exists today.
-- [ ] **AIR.10 (FRONTEND ENABLER) Langfuse-metrics proxy.** Control-plane read endpoint proxying
+- [x] **AIR.10 (FRONTEND ENABLER) Langfuse-metrics proxy. — LANDED 2026-06-18.** `GET /api/v1/model-routing/metrics`
+  proxies Langfuse v1 `/api/public/metrics` (overridable via `LANGFUSE_METRICS_PATH`) with server-side HTTP Basic
+  auth; **503** when unconfigured, **502** on upstream error; non-operators get a tenant-dimension filter injected
+  (fail-closed **403** when their ClusterTenant can't be resolved); `oc routing metrics`. **Open:** the tenant
+  filter field (`metadata.clusterTenant`) is a documented `TODO(AIR.10)` to confirm once the gateway stamps the
+  tenant dimension into trace metadata. _(Original:)_ Control-plane read endpoint proxying
   Langfuse's **v1** Metrics/Public API (v2 is Cloud-only) with project keys held server-side + scoped
   per tenant, so the WeOwnAI console can render native eval/cost trend tiles without the browser ever
   holding Langfuse credentials. IAM-gated. (Verified 2026-06-18: Langfuse has no iframe embed → build
   native over the API + link out for deep eval UX.)
-- [ ] **AIR.11 (FRONTEND ENABLER) Savings-recommendation read endpoint.** Aggregate the latest
+- [x] **AIR.11 (FRONTEND ENABLER) Savings-recommendation read endpoint. — LANDED 2026-06-18.**
+  `GET /api/v1/model-routing/recommendations` joins each skill's latest `RoutingMeasurement` with any open
+  Pending `RoutingProposal`, sorted by `projectedSavingsPct` desc, scope-filtered (operator sees all,
+  non-operator only their own ClusterTenant, fail-closed `[]`); new `SavingsRecommendation` contract type;
+  `oc routing recommendation list`. The "save up to N%" feed behind the console differentiator. _(Original:)_ Aggregate the latest
   `RoutingMeasurement` + open `RoutingProposal` per skill/tenant into a "save up to N%" feed — the API
   behind the console's headline differentiator (the inline savings-recommendation + one-click human-gated
   apply, market whitespace; see `litellm-router-autonomous-improvement-research.md` §14). Pure read over

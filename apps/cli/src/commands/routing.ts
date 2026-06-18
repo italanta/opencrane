@@ -34,6 +34,15 @@ const _PROPOSAL_COLUMNS = [
   "status",
 ];
 
+/** Columns shown for `oc routing recommendation list` in table mode. */
+const _RECOMMENDATION_COLUMNS = [
+  "skillName",
+  "currentModel",
+  "recommendedModel",
+  "projectedSavingsPct",
+  "hasOpenProposal",
+];
+
 /** Filter flags shared by the eval-case and measurement list commands. */
 interface _SkillFilterOptions
 {
@@ -88,6 +97,28 @@ interface _ProposalListOptions
 {
   /** Filter by lifecycle status. */
   status?: "pending" | "approved" | "rejected" | "applied";
+  /** Output format. */
+  output: OutputFormat;
+}
+
+/** Flag values for `oc routing recommendation list`. */
+interface _RecommendationListOptions
+{
+  /** Filter to skills owned by this ClusterTenant. */
+  clusterTenant?: string;
+  /** Filter to one owning skill scope. */
+  skillScope?: string;
+  /** When set, return only skills with an open Pending proposal. */
+  onlyOpen?: boolean;
+  /** Output format. */
+  output: OutputFormat;
+}
+
+/** Flag values for `oc routing metrics`. */
+interface _MetricsOptions
+{
+  /** Langfuse v1 metrics query as a JSON string (parsed + re-stringified before forwarding). */
+  query?: string;
   /** Output format. */
   output: OutputFormat;
 }
@@ -354,14 +385,66 @@ function _registerProposal(parent: Command, getConfig: () => CliConfig): void
     });
 }
 
+/** Register the `oc routing recommendation *` sub-commands on the given parent. */
+function _registerRecommendation(parent: Command, getConfig: () => CliConfig): void
+{
+  const recommendation = parent
+    .command("recommendation")
+    .description("Inspect ranked savings recommendations derived from shadow measurements (AIR.10)");
+
+  recommendation
+    .command("list")
+    .description("List savings recommendations, sorted by projected savings desc")
+    .option("--cluster-tenant <id>", "Filter to skills owned by this cluster tenant")
+    .option("--skill-scope <scope>", "Filter to one owning skill scope")
+    .option("--only-open", "Return only skills with an open Pending proposal")
+    .option("-o, --output <format>", "Output format: table|json", "table")
+    .action(async function _list(opts: _RecommendationListOptions)
+    {
+      const query = {
+        ...(opts.clusterTenant ? { clusterTenant: opts.clusterTenant } : {}),
+        ...(opts.skillScope ? { skillScope: opts.skillScope } : {}),
+        ...(opts.onlyOpen ? { onlyOpen: "true" as const } : {}),
+      };
+      const client = _MakeClient(getConfig());
+      const { data, error } = await client.GET("/model-routing/recommendations", { params: { query } });
+      if (error) _PrintApiError("routing recommendation list", error);
+      _Print(data, opts.output, _RECOMMENDATION_COLUMNS);
+    });
+}
+
+/** Register the `oc routing metrics` sub-command on the given parent. */
+function _registerMetrics(parent: Command, getConfig: () => CliConfig): void
+{
+  parent
+    .command("metrics")
+    .description("Fetch Langfuse v1 routing metrics (loosely-typed passthrough; may return unconfigured) (AIR.11)")
+    .option("--query <json>", "Langfuse v1 metrics query as a JSON object string")
+    .option("-o, --output <format>", "Output format: table|json", "table")
+    .action(async function _metrics(opts: _MetricsOptions)
+    {
+      // The endpoint expects a `query` string; validate + normalise the supplied
+      // JSON here so a malformed value fails cleanly before the request goes out.
+      const query = opts.query !== undefined
+        ? { query: JSON.stringify(_parseJsonFlag("--query", opts.query)) }
+        : {};
+      const client = _MakeClient(getConfig());
+      const { data, error } = await client.GET("/model-routing/metrics", { params: { query } });
+      if (error) _PrintApiError("routing metrics", error);
+      _Print(data, opts.output);
+    });
+}
+
 /** Register all `oc routing *` sub-commands on the given parent Command. */
 export function _RegisterRouting(parent: Command, getConfig: () => CliConfig): void
 {
   const routing = parent
     .command("routing")
-    .description("Manage model-routing eval cases, shadow-savings measurements, and change proposals (AIR.6/7)");
+    .description("Manage model-routing eval cases, shadow-savings measurements, proposals, recommendations, and metrics (AIR.6/7/10/11)");
 
   _registerEvalCase(routing, getConfig);
   _registerMeasurement(routing, getConfig);
   _registerProposal(routing, getConfig);
+  _registerRecommendation(routing, getConfig);
+  _registerMetrics(routing, getConfig);
 }

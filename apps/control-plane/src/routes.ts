@@ -19,6 +19,8 @@ import { providerKeysRouter } from "./routes/provider-keys.js";
 import { providerCredentialsRouter } from "./routes/provider-credentials.js";
 import { modelRegistryRouter } from "./routes/model-registry.js";
 import { modelRoutingDefaultsRouter } from "./routes/model-routing-defaults.js";
+import { modelRoutingRecommendationsRouter } from "./routes/model-routing-recommendations.js";
+import { modelRoutingMetricsRouter } from "./routes/model-routing-metrics.js";
 import { routingEvalCasesRouter } from "./routes/routing-eval-cases.js";
 import { routingMeasurementsRouter } from "./routes/routing-measurements.js";
 import { routingProposalsRouter } from "./routes/routing-proposals.js";
@@ -108,6 +110,8 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
   app.use("/api/v1/model-routing/eval-cases", routingEvalCasesRouter(prisma));
   app.use("/api/v1/model-routing/measurements", routingMeasurementsRouter(prisma, _BuildShadowSeams));
   app.use("/api/v1/model-routing/proposals", routingProposalsRouter(prisma));
+  app.use("/api/v1/model-routing/recommendations", modelRoutingRecommendationsRouter(prisma));
+  app.use("/api/v1/model-routing/metrics", modelRoutingMetricsRouter(prisma));
   app.use("/api/v1/third-party-sources", thirdPartySourcesRouter(prisma));
   app.use("/api/v1/org/workspace-docs", companyDocsRouter(prisma, _BuildDocMergeReconciler()));
   app.use("/api/v1/platform/dns", platformDnsRouter(customApi, coreApi));
