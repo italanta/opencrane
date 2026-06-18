@@ -20,6 +20,7 @@ export { McpCredentialBrokeringMode, McpServerStatus, McpServerTransport, type M
 export {
   AutoRoutingObjective,
   ModelRoutingScope,
+  RoutingProposalStatus,
   SkillModelMode,
   type AutoRoutingConfig,
   type ModelDefinition,
@@ -28,6 +29,10 @@ export {
   type ModelRoutingDefaultWrite,
   type ProviderCredential,
   type ProviderCredentialWrite,
+  type RoutingEvalCase,
+  type RoutingEvalCaseWrite,
+  type RoutingMeasurement,
+  type RoutingProposal,
 } from "./model-routing.types.js";
 export { SkillBundleStatus, SkillPromotionStatus, type SkillBundle, type SkillPromotion } from "./skill-bundle.types.js";
 export {

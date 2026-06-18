@@ -807,6 +807,162 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/model-routing/eval-cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List routing eval cases */
+        get: operations["listRoutingEvalCases"];
+        put?: never;
+        /** Create a routing eval case for a skill */
+        post: operations["createRoutingEvalCase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/model-routing/eval-cases/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a single routing eval case by id */
+        get: operations["getRoutingEvalCase"];
+        /** Update a routing eval case by id */
+        put: operations["updateRoutingEvalCase"];
+        post?: never;
+        /** Delete a routing eval case by id */
+        delete: operations["deleteRoutingEvalCase"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/model-routing/measurements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List shadow-savings measurements */
+        get: operations["listRoutingMeasurements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/model-routing/measurements/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Trigger a shadow-savings measurement for a skill + candidate (operator-gated, best-effort) */
+        post: operations["runRoutingMeasurement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/model-routing/measurements/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a single measurement by id */
+        get: operations["getRoutingMeasurement"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/model-routing/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List routing-change proposals */
+        get: operations["listRoutingProposals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/model-routing/proposals/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a single proposal by id */
+        get: operations["getRoutingProposal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/model-routing/proposals/{id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve a proposal — pin the skill to the proposed model and mark it Applied */
+        post: operations["approveRoutingProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/model-routing/proposals/{id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject a proposal — flip status to Rejected; the skill posture is untouched */
+        post: operations["rejectRoutingProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ai-budget/global": {
         parameters: {
             query?: never;
@@ -1609,6 +1765,100 @@ export interface components {
                 /** @description Fraction of traffic to explore alternatives on (0 = pure exploit). */
                 explorationRate: number;
             } | null;
+        };
+        RoutingEvalCase: {
+            /** @description Stable identifier. */
+            id: string;
+            /** @description Owning skill name. */
+            skillName: string;
+            /** @description Owning skill scope. */
+            skillScope: string;
+            /** @description Owning skill team (empty for org/global). */
+            skillTeam: string;
+            /** @description The prompt/inputs for this case. */
+            input?: unknown;
+            /** @description Optional golden answer or grader rubric. */
+            expected?: unknown;
+            /** @description Minimum judge score (0..1) a model must clear on this case. */
+            qualityBar: number;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        /** @description Create/update body for a routing eval case (AIR.6). */
+        RoutingEvalCaseWrite: {
+            /** @description Owning skill name. */
+            skillName: string;
+            /** @description Owning skill scope. */
+            skillScope: string;
+            /** @description Owning skill team (defaults to empty). */
+            skillTeam?: string;
+            /** @description The prompt/inputs for this case. */
+            input: unknown;
+            /** @description Optional golden answer or grader rubric. */
+            expected?: unknown;
+            /** @description Minimum judge score (0..1); defaults to 0.8. */
+            qualityBar?: number;
+        };
+        RoutingMeasurement: {
+            /** @description Stable identifier. */
+            id: string;
+            /** @description Owning skill name. */
+            skillName: string;
+            /** @description Owning skill scope. */
+            skillScope: string;
+            /** @description Owning skill team. */
+            skillTeam: string;
+            /** @description The cheaper candidate model evaluated against the current default. */
+            candidateModel?: string | null;
+            /** @description Number of logged calls sampled + shadow-graded. */
+            sampledCalls: number;
+            /** @description Fraction of sampled traffic the candidate served at-or-above the skill's bar. */
+            atBarCheapFraction: number;
+            /** @description Point estimate of % spend saved at equal quality. */
+            projectedSavingsPct: number;
+            /** @description Lower bound of the bootstrap 95% CI on projected savings. */
+            ciLowPct: number;
+            /** @description Upper bound of the bootstrap 95% CI on projected savings. */
+            ciHighPct: number;
+            /** @description Token overhead of running the measurement, as % of the skill's serve spend. */
+            overheadPct: number;
+            /** Format: date-time */
+            runAt?: string;
+        };
+        RoutingProposal: {
+            /** @description Stable identifier. */
+            id: string;
+            /** @description Owning skill name. */
+            skillName: string;
+            /** @description Owning skill scope. */
+            skillScope: string;
+            /** @description Owning skill team. */
+            skillTeam: string;
+            /** @description The model the skill resolves to today (null when unset). */
+            fromModel?: string | null;
+            /** @description The cheaper model the loop proposes switching to. */
+            proposedModel: string;
+            /** @description Point estimate of % spend saved at equal quality. */
+            projectedSavingsPct: number;
+            /** @description Lower bound of the bootstrap 95% CI (must exclude zero to propose). */
+            ciLowPct: number;
+            /** @description Upper bound of the bootstrap 95% CI. */
+            ciHighPct: number;
+            /** @description The measurement that produced this proposal. */
+            measurementId?: string | null;
+            /**
+             * @description Lifecycle status.
+             * @enum {string}
+             */
+            status: "pending" | "approved" | "rejected" | "applied";
+            /** @description Principal who approved/rejected, when decided. */
+            decidedBy?: string | null;
+            /** Format: date-time */
+            decidedAt?: string | null;
+            /** Format: date-time */
+            createdAt?: string;
         };
         AwarenessRollout: {
             targetVersion?: string;
@@ -4316,6 +4566,487 @@ export interface operations {
             };
             /** @description Skill not found. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listRoutingEvalCases: {
+        parameters: {
+            query?: {
+                /** @description Filter to one owning skill name. */
+                skillName?: string;
+                /** @description Filter to one owning skill scope. */
+                skillScope?: string;
+                /** @description Filter to one owning skill team. */
+                skillTeam?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Routing eval-case list. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutingEvalCase"][];
+                };
+            };
+        };
+    };
+    createRoutingEvalCase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoutingEvalCaseWrite"];
+            };
+        };
+        responses: {
+            /** @description Eval case created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutingEvalCase"];
+                };
+            };
+            /** @description Request body failed validation (code VALIDATION_ERROR). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Caller is not authorized for the owning skill's scope (code FORBIDDEN_SCOPE). Org/global cases are operator-only. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getRoutingEvalCase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Eval case detail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutingEvalCase"];
+                };
+            };
+            /** @description Eval case not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateRoutingEvalCase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoutingEvalCaseWrite"];
+            };
+        };
+        responses: {
+            /** @description Eval case updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutingEvalCase"];
+                };
+            };
+            /** @description Request body failed validation (code VALIDATION_ERROR). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Caller is not authorized for the owning skill's scope (code FORBIDDEN_SCOPE). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Eval case not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteRoutingEvalCase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Eval case deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id?: string;
+                        status?: string;
+                    };
+                };
+            };
+            /** @description Caller is not authorized for the owning skill's scope (code FORBIDDEN_SCOPE). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Eval case not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listRoutingMeasurements: {
+        parameters: {
+            query?: {
+                /** @description Filter to one owning skill name. */
+                skillName?: string;
+                /** @description Filter to one owning skill scope. */
+                skillScope?: string;
+                /** @description Filter to one owning skill team. */
+                skillTeam?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Measurement list. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutingMeasurement"][];
+                };
+            };
+        };
+    };
+    runRoutingMeasurement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    skillName: string;
+                    skillScope: string;
+                    /** @description Defaults to empty. */
+                    skillTeam?: string;
+                    /** @description The cheaper candidate model to evaluate. */
+                    candidateModel: string;
+                    /** @description Baseline model; resolved from the skill's pin when omitted. */
+                    currentModel?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Seams unconfigured — no-op; nothing recorded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status?: string;
+                        note?: string;
+                    };
+                };
+            };
+            /** @description Measurement run completed; the persisted measurement (and proposalId when the savings CI excluded zero). */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status?: string;
+                        measurement?: components["schemas"]["RoutingMeasurement"];
+                        proposalId?: string | null;
+                    };
+                };
+            };
+            /** @description Request body failed validation (code VALIDATION_ERROR). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Caller is not a platform operator (code FORBIDDEN_SCOPE). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getRoutingMeasurement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Measurement detail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutingMeasurement"];
+                };
+            };
+            /** @description Measurement not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listRoutingProposals: {
+        parameters: {
+            query?: {
+                /** @description Filter by lifecycle status. */
+                status?: "pending" | "approved" | "rejected" | "applied";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Proposal list. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutingProposal"][];
+                };
+            };
+        };
+    };
+    getRoutingProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Proposal detail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutingProposal"];
+                };
+            };
+            /** @description Proposal not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    approveRoutingProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Proposal applied. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id?: string;
+                        status?: string;
+                        appliedModel?: string | null;
+                    };
+                };
+            };
+            /** @description Caller is not authorized for the owning skill's scope (code FORBIDDEN_SCOPE). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Proposal or target skill not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Proposal is no longer pending (code PROPOSAL_ALREADY_DECIDED). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    rejectRoutingProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Proposal rejected. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id?: string;
+                        status?: string;
+                        appliedModel?: string | null;
+                    };
+                };
+            };
+            /** @description Caller is not authorized for the owning skill's scope (code FORBIDDEN_SCOPE). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Proposal not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Proposal is no longer pending (code PROPOSAL_ALREADY_DECIDED). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

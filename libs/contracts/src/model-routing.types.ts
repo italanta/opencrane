@@ -179,3 +179,116 @@ export interface ModelRoutingDefaultWrite
   /** Default auto-routing config. */
   autoConfig?: AutoRoutingConfig;
 }
+
+/** A golden eval case for a skill — graded against the skill's quality bar (AIR.6). */
+export interface RoutingEvalCase
+{
+  /** Stable identifier. */
+  id: string;
+  /** Owning skill name. */
+  skillName: string;
+  /** Owning skill scope. */
+  skillScope: string;
+  /** Owning skill team (empty for org/global). */
+  skillTeam: string;
+  /** The prompt/inputs for this case. */
+  input: unknown;
+  /** Optional golden answer or grader rubric. */
+  expected: unknown;
+  /** Minimum judge score (0..1) a model must clear on this case. */
+  qualityBar: number;
+  /** Creation timestamp (ISO-8601). */
+  createdAt: string;
+  /** Last-update timestamp (ISO-8601). */
+  updatedAt: string;
+}
+
+/** Create/update body for a {@link RoutingEvalCase}. */
+export interface RoutingEvalCaseWrite
+{
+  /** Owning skill name. */
+  skillName: string;
+  /** Owning skill scope. */
+  skillScope: string;
+  /** Owning skill team (defaults to empty). */
+  skillTeam?: string;
+  /** The prompt/inputs for this case. */
+  input: unknown;
+  /** Optional golden answer or grader rubric. */
+  expected?: unknown;
+  /** Minimum judge score (0..1); defaults to 0.8. */
+  qualityBar?: number;
+}
+
+/** A shadow-mode savings measurement for one skill (AIR.6 output), with a bootstrap CI. */
+export interface RoutingMeasurement
+{
+  /** Stable identifier. */
+  id: string;
+  /** Owning skill name. */
+  skillName: string;
+  /** Owning skill scope. */
+  skillScope: string;
+  /** Owning skill team. */
+  skillTeam: string;
+  /** The cheaper candidate model evaluated against the current default. */
+  candidateModel: string | null;
+  /** Number of logged calls sampled + shadow-graded. */
+  sampledCalls: number;
+  /** Fraction of sampled traffic the candidate served at-or-above the skill's bar. */
+  atBarCheapFraction: number;
+  /** Point estimate of % spend saved at equal quality. */
+  projectedSavingsPct: number;
+  /** Lower bound of the bootstrap 95% CI on projected savings. */
+  ciLowPct: number;
+  /** Upper bound of the bootstrap 95% CI on projected savings. */
+  ciHighPct: number;
+  /** Token overhead of running the measurement, as % of the skill's serve spend. */
+  overheadPct: number;
+  /** When the measurement ran (ISO-8601). */
+  runAt: string;
+}
+
+/** Lifecycle of a {@link RoutingProposal}. Mirrors Prisma `RoutingProposalStatus`. */
+export const RoutingProposalStatus = {
+  Pending: "pending",
+  Approved: "approved",
+  Rejected: "rejected",
+  Applied: "applied",
+} as const;
+
+/** Union of the {@link RoutingProposalStatus} values. */
+export type RoutingProposalStatus = (typeof RoutingProposalStatus)[keyof typeof RoutingProposalStatus];
+
+/** A human-gated routing-change proposal (AIR.7) — applied only after explicit approval. */
+export interface RoutingProposal
+{
+  /** Stable identifier. */
+  id: string;
+  /** Owning skill name. */
+  skillName: string;
+  /** Owning skill scope. */
+  skillScope: string;
+  /** Owning skill team. */
+  skillTeam: string;
+  /** The model the skill resolves to today (null when unset). */
+  fromModel: string | null;
+  /** The cheaper model the loop proposes switching to. */
+  proposedModel: string;
+  /** Point estimate of % spend saved at equal quality. */
+  projectedSavingsPct: number;
+  /** Lower bound of the bootstrap 95% CI on projected savings (must exclude zero to propose). */
+  ciLowPct: number;
+  /** Upper bound of the bootstrap 95% CI. */
+  ciHighPct: number;
+  /** The measurement that produced this proposal. */
+  measurementId: string | null;
+  /** Lifecycle status. */
+  status: RoutingProposalStatus;
+  /** Principal who approved/rejected, when decided. */
+  decidedBy: string | null;
+  /** When the proposal was decided (ISO-8601). */
+  decidedAt: string | null;
+  /** Creation timestamp (ISO-8601). */
+  createdAt: string;
+}

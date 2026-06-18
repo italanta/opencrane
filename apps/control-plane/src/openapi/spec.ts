@@ -444,6 +444,76 @@ const SkillModelPostureWriteSchema = {
   },
 };
 
+const RoutingEvalCaseSchema = {
+  type: "object" as const,
+  required: ["id", "skillName", "skillScope", "skillTeam", "qualityBar"],
+  properties: {
+    id: { type: "string", description: "Stable identifier." },
+    skillName: { type: "string", description: "Owning skill name." },
+    skillScope: { type: "string", description: "Owning skill scope." },
+    skillTeam: { type: "string", description: "Owning skill team (empty for org/global)." },
+    input: { description: "The prompt/inputs for this case." },
+    expected: { nullable: true, description: "Optional golden answer or grader rubric." },
+    qualityBar: { type: "number", minimum: 0, maximum: 1, description: "Minimum judge score (0..1) a model must clear on this case." },
+    createdAt: { type: "string", format: "date-time" },
+    updatedAt: { type: "string", format: "date-time" },
+  },
+};
+
+const RoutingEvalCaseWriteSchema = {
+  type: "object" as const,
+  required: ["skillName", "skillScope", "input"],
+  description: "Create/update body for a routing eval case (AIR.6).",
+  properties: {
+    skillName: { type: "string", description: "Owning skill name." },
+    skillScope: { type: "string", description: "Owning skill scope." },
+    skillTeam: { type: "string", description: "Owning skill team (defaults to empty)." },
+    input: { description: "The prompt/inputs for this case." },
+    expected: { nullable: true, description: "Optional golden answer or grader rubric." },
+    qualityBar: { type: "number", minimum: 0, maximum: 1, description: "Minimum judge score (0..1); defaults to 0.8." },
+  },
+};
+
+const RoutingMeasurementSchema = {
+  type: "object" as const,
+  required: ["id", "skillName", "skillScope", "skillTeam", "sampledCalls", "atBarCheapFraction", "projectedSavingsPct", "ciLowPct", "ciHighPct", "overheadPct"],
+  properties: {
+    id: { type: "string", description: "Stable identifier." },
+    skillName: { type: "string", description: "Owning skill name." },
+    skillScope: { type: "string", description: "Owning skill scope." },
+    skillTeam: { type: "string", description: "Owning skill team." },
+    candidateModel: { type: "string", nullable: true, description: "The cheaper candidate model evaluated against the current default." },
+    sampledCalls: { type: "integer", description: "Number of logged calls sampled + shadow-graded." },
+    atBarCheapFraction: { type: "number", description: "Fraction of sampled traffic the candidate served at-or-above the skill's bar." },
+    projectedSavingsPct: { type: "number", description: "Point estimate of % spend saved at equal quality." },
+    ciLowPct: { type: "number", description: "Lower bound of the bootstrap 95% CI on projected savings." },
+    ciHighPct: { type: "number", description: "Upper bound of the bootstrap 95% CI on projected savings." },
+    overheadPct: { type: "number", description: "Token overhead of running the measurement, as % of the skill's serve spend." },
+    runAt: { type: "string", format: "date-time" },
+  },
+};
+
+const RoutingProposalSchema = {
+  type: "object" as const,
+  required: ["id", "skillName", "skillScope", "skillTeam", "proposedModel", "projectedSavingsPct", "ciLowPct", "ciHighPct", "status"],
+  properties: {
+    id: { type: "string", description: "Stable identifier." },
+    skillName: { type: "string", description: "Owning skill name." },
+    skillScope: { type: "string", description: "Owning skill scope." },
+    skillTeam: { type: "string", description: "Owning skill team." },
+    fromModel: { type: "string", nullable: true, description: "The model the skill resolves to today (null when unset)." },
+    proposedModel: { type: "string", description: "The cheaper model the loop proposes switching to." },
+    projectedSavingsPct: { type: "number", description: "Point estimate of % spend saved at equal quality." },
+    ciLowPct: { type: "number", description: "Lower bound of the bootstrap 95% CI (must exclude zero to propose)." },
+    ciHighPct: { type: "number", description: "Upper bound of the bootstrap 95% CI." },
+    measurementId: { type: "string", nullable: true, description: "The measurement that produced this proposal." },
+    status: { type: "string", enum: ["pending", "approved", "rejected", "applied"], description: "Lifecycle status." },
+    decidedBy: { type: "string", nullable: true, description: "Principal who approved/rejected, when decided." },
+    decidedAt: { type: "string", format: "date-time", nullable: true },
+    createdAt: { type: "string", format: "date-time" },
+  },
+};
+
 const DeviceGrantSchema = {
   type: "object" as const,
   required: ["deviceCode", "userCode", "verificationUri", "expiresIn", "interval"],
@@ -578,6 +648,10 @@ export const spec = {
       ModelRoutingDefaultWrite: ModelRoutingDefaultWriteSchema,
       SkillModelPosture: SkillModelPostureSchema,
       SkillModelPostureWrite: SkillModelPostureWriteSchema,
+      RoutingEvalCase: RoutingEvalCaseSchema,
+      RoutingEvalCaseWrite: RoutingEvalCaseWriteSchema,
+      RoutingMeasurement: RoutingMeasurementSchema,
+      RoutingProposal: RoutingProposalSchema,
       AwarenessRollout: {
         type: "object",
         properties: {
@@ -1933,6 +2007,194 @@ export const spec = {
           400: badRequest("Request body or query failed validation (code VALIDATION_ERROR)."),
           403: { description: "Caller is not authorized for the resource scope (code FORBIDDEN_SCOPE). Org/global skills are operator-only.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
           404: notFound("Skill not found."),
+        },
+      },
+    },
+
+    // ------------------------------------------------------------------
+    // Routing eval cases (AIR.6)
+    // ------------------------------------------------------------------
+
+    "/model-routing/eval-cases": {
+      get: {
+        operationId: "listRoutingEvalCases",
+        summary: "List routing eval cases",
+        tags: ["Model Registry"],
+        parameters: [
+          { name: "skillName", in: "query", required: false, schema: { type: "string" }, description: "Filter to one owning skill name." },
+          { name: "skillScope", in: "query", required: false, schema: { type: "string" }, description: "Filter to one owning skill scope." },
+          { name: "skillTeam", in: "query", required: false, schema: { type: "string" }, description: "Filter to one owning skill team." },
+        ],
+        responses: {
+          200: ok("Routing eval-case list.", { type: "array", items: { $ref: "#/components/schemas/RoutingEvalCase" } }),
+        },
+      },
+      post: {
+        operationId: "createRoutingEvalCase",
+        summary: "Create a routing eval case for a skill",
+        tags: ["Model Registry"],
+        requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/RoutingEvalCaseWrite" } } } },
+        responses: {
+          201: created("Eval case created.", { $ref: "#/components/schemas/RoutingEvalCase" }),
+          400: badRequest("Request body failed validation (code VALIDATION_ERROR)."),
+          403: { description: "Caller is not authorized for the owning skill's scope (code FORBIDDEN_SCOPE). Org/global cases are operator-only.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        },
+      },
+    },
+
+    "/model-routing/eval-cases/{id}": {
+      get: {
+        operationId: "getRoutingEvalCase",
+        summary: "Get a single routing eval case by id",
+        tags: ["Model Registry"],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          200: ok("Eval case detail.", { $ref: "#/components/schemas/RoutingEvalCase" }),
+          404: notFound("Eval case not found."),
+        },
+      },
+      put: {
+        operationId: "updateRoutingEvalCase",
+        summary: "Update a routing eval case by id",
+        tags: ["Model Registry"],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/RoutingEvalCaseWrite" } } } },
+        responses: {
+          200: ok("Eval case updated.", { $ref: "#/components/schemas/RoutingEvalCase" }),
+          400: badRequest("Request body failed validation (code VALIDATION_ERROR)."),
+          403: { description: "Caller is not authorized for the owning skill's scope (code FORBIDDEN_SCOPE).", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          404: notFound("Eval case not found."),
+        },
+      },
+      delete: {
+        operationId: "deleteRoutingEvalCase",
+        summary: "Delete a routing eval case by id",
+        tags: ["Model Registry"],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          200: ok("Eval case deleted.", { type: "object", properties: { id: { type: "string" }, status: { type: "string" } } }),
+          403: { description: "Caller is not authorized for the owning skill's scope (code FORBIDDEN_SCOPE).", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          404: notFound("Eval case not found."),
+        },
+      },
+    },
+
+    // ------------------------------------------------------------------
+    // Routing measurements (AIR.6 — shadow savings)
+    // ------------------------------------------------------------------
+
+    "/model-routing/measurements": {
+      get: {
+        operationId: "listRoutingMeasurements",
+        summary: "List shadow-savings measurements",
+        tags: ["Model Registry"],
+        parameters: [
+          { name: "skillName", in: "query", required: false, schema: { type: "string" }, description: "Filter to one owning skill name." },
+          { name: "skillScope", in: "query", required: false, schema: { type: "string" }, description: "Filter to one owning skill scope." },
+          { name: "skillTeam", in: "query", required: false, schema: { type: "string" }, description: "Filter to one owning skill team." },
+        ],
+        responses: {
+          200: ok("Measurement list.", { type: "array", items: { $ref: "#/components/schemas/RoutingMeasurement" } }),
+        },
+      },
+    },
+
+    "/model-routing/measurements/run": {
+      post: {
+        operationId: "runRoutingMeasurement",
+        summary: "Trigger a shadow-savings measurement for a skill + candidate (operator-gated, best-effort)",
+        tags: ["Model Registry"],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: {
+            type: "object",
+            required: ["skillName", "skillScope", "candidateModel"],
+            properties: {
+              skillName: { type: "string" },
+              skillScope: { type: "string" },
+              skillTeam: { type: "string", description: "Defaults to empty." },
+              candidateModel: { type: "string", description: "The cheaper candidate model to evaluate." },
+              currentModel: { type: "string", nullable: true, description: "Baseline model; resolved from the skill's pin when omitted." },
+            },
+          } } },
+        },
+        responses: {
+          200: ok("Seams unconfigured — no-op; nothing recorded.", { type: "object", properties: { status: { type: "string" }, note: { type: "string" } } }),
+          202: { description: "Measurement run completed; the persisted measurement (and proposalId when the savings CI excluded zero).", content: { "application/json": { schema: { type: "object", properties: { status: { type: "string" }, measurement: { $ref: "#/components/schemas/RoutingMeasurement" }, proposalId: { type: "string", nullable: true } } } } } },
+          400: badRequest("Request body failed validation (code VALIDATION_ERROR)."),
+          403: { description: "Caller is not a platform operator (code FORBIDDEN_SCOPE).", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        },
+      },
+    },
+
+    "/model-routing/measurements/{id}": {
+      get: {
+        operationId: "getRoutingMeasurement",
+        summary: "Get a single measurement by id",
+        tags: ["Model Registry"],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          200: ok("Measurement detail.", { $ref: "#/components/schemas/RoutingMeasurement" }),
+          404: notFound("Measurement not found."),
+        },
+      },
+    },
+
+    // ------------------------------------------------------------------
+    // Routing proposals (AIR.7 — human-gated improvement loop)
+    // ------------------------------------------------------------------
+
+    "/model-routing/proposals": {
+      get: {
+        operationId: "listRoutingProposals",
+        summary: "List routing-change proposals",
+        tags: ["Model Registry"],
+        parameters: [{ name: "status", in: "query", required: false, schema: { type: "string", enum: ["pending", "approved", "rejected", "applied"] }, description: "Filter by lifecycle status." }],
+        responses: {
+          200: ok("Proposal list.", { type: "array", items: { $ref: "#/components/schemas/RoutingProposal" } }),
+        },
+      },
+    },
+
+    "/model-routing/proposals/{id}": {
+      get: {
+        operationId: "getRoutingProposal",
+        summary: "Get a single proposal by id",
+        tags: ["Model Registry"],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          200: ok("Proposal detail.", { $ref: "#/components/schemas/RoutingProposal" }),
+          404: notFound("Proposal not found."),
+        },
+      },
+    },
+
+    "/model-routing/proposals/{id}/approve": {
+      post: {
+        operationId: "approveRoutingProposal",
+        summary: "Approve a proposal — pin the skill to the proposed model and mark it Applied",
+        tags: ["Model Registry"],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          200: ok("Proposal applied.", { type: "object", properties: { id: { type: "string" }, status: { type: "string" }, appliedModel: { type: "string", nullable: true } } }),
+          403: { description: "Caller is not authorized for the owning skill's scope (code FORBIDDEN_SCOPE).", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          404: notFound("Proposal or target skill not found."),
+          409: conflict("Proposal is no longer pending (code PROPOSAL_ALREADY_DECIDED)."),
+        },
+      },
+    },
+
+    "/model-routing/proposals/{id}/reject": {
+      post: {
+        operationId: "rejectRoutingProposal",
+        summary: "Reject a proposal — flip status to Rejected; the skill posture is untouched",
+        tags: ["Model Registry"],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          200: ok("Proposal rejected.", { type: "object", properties: { id: { type: "string" }, status: { type: "string" }, appliedModel: { type: "string", nullable: true } } }),
+          403: { description: "Caller is not authorized for the owning skill's scope (code FORBIDDEN_SCOPE).", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          404: notFound("Proposal not found."),
+          409: conflict("Proposal is no longer pending (code PROPOSAL_ALREADY_DECIDED)."),
         },
       },
     },

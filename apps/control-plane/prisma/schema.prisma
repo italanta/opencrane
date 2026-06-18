@@ -621,6 +621,73 @@ model ModelRoutingDefault {
   @@map("model_routing_defaults")
 }
 
+/// Lifecycle of a routing-change proposal (AIR.7 safe-rollout spine: never auto-applied).
+enum RoutingProposalStatus {
+  Pending  @map("pending")
+  Approved @map("approved")
+  Rejected @map("rejected")
+  Applied  @map("applied")
+}
+
+/// A golden eval case for a skill — the per-skill quality-bar substrate the shadow measurement
+/// grades candidate models against (AIR.6). Keyed loosely by the skill's (name, scope, team).
+model RoutingEvalCase {
+  id         String   @id @default(cuid())
+  skillName  String   @map("skill_name")
+  skillScope String   @map("skill_scope")
+  skillTeam  String   @default("") @map("skill_team")
+  input      Json
+  expected   Json?
+  qualityBar Float    @default(0.8) @map("quality_bar")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([skillName, skillScope, skillTeam])
+  @@map("routing_eval_cases")
+}
+
+/// A shadow-mode savings measurement for one skill (AIR.6 output): what routing WOULD save at
+/// equal quality, with a bootstrap CI, computed without changing any live routing.
+model RoutingMeasurement {
+  id                  String   @id @default(cuid())
+  skillName           String   @map("skill_name")
+  skillScope          String   @map("skill_scope")
+  skillTeam           String   @default("") @map("skill_team")
+  candidateModel      String?  @map("candidate_model")
+  sampledCalls        Int      @map("sampled_calls")
+  atBarCheapFraction  Float    @map("at_bar_cheap_fraction")
+  projectedSavingsPct Float    @map("projected_savings_pct")
+  ciLowPct            Float    @map("ci_low_pct")
+  ciHighPct           Float    @map("ci_high_pct")
+  overheadPct         Float    @default(0) @map("overhead_pct")
+  runAt               DateTime @default(now()) @map("run_at")
+
+  @@index([skillName, skillScope, skillTeam])
+  @@map("routing_measurements")
+}
+
+/// A human-gated routing-change proposal (AIR.7). Emitted only when the savings CI excludes zero;
+/// applied (write the per-skill default) ONLY after explicit approval — never auto-deployed.
+model RoutingProposal {
+  id                  String                @id @default(cuid())
+  skillName           String                @map("skill_name")
+  skillScope          String                @map("skill_scope")
+  skillTeam           String                @default("") @map("skill_team")
+  fromModel           String?               @map("from_model")
+  proposedModel       String                @map("proposed_model")
+  projectedSavingsPct Float                 @map("projected_savings_pct")
+  ciLowPct            Float                 @map("ci_low_pct")
+  ciHighPct           Float                 @map("ci_high_pct")
+  measurementId       String?               @map("measurement_id")
+  status              RoutingProposalStatus @default(Pending)
+  decidedBy           String?               @map("decided_by")
+  decidedAt           DateTime?             @map("decided_at")
+  createdAt           DateTime              @default(now()) @map("created_at")
+
+  @@index([status])
+  @@map("routing_proposals")
+}
+
 model OrgDocument {
   id                  String   @id @default(cuid())
   source              String

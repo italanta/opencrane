@@ -557,14 +557,31 @@ With one agent per lane, wall-clock ≈ 4 sequential slices instead of 7.
   early-return; complete revocation (`/key/delete`); stop the `org-shared-secrets` `envFrom` broadcast
   (keys stay at the proxy). **Anchors:** `apps/operator/src/tenants/internal/tenant-litellm-keys.ts`,
   `deploy/3-deployment.ts`, `core/ai-budget/ai-budget.logic.ts`.
-- [ ] **AIR.6 Shadow-mode savings measurement (FIRST loop slice — zero production risk).** LiteLLM
+- [x] **AIR.6 Shadow-mode savings measurement. — LANDED 2026-06-18 (foundation).** `RoutingEvalCase`
+  data model + `/api/v1/model-routing/eval-cases` API + `oc routing eval-case`; pure `savings.ts`
+  estimator (at-bar fraction → `1 - effective/baseline`, bootstrap 95% CI, injectable rng) +
+  `shadow-measure.ts` orchestrator (per-case run+judge → `RoutingMeasurement`, emits a Pending proposal
+  only when CI excludes zero) behind `JudgeClient`/`ModelRunner` seams (`_BuildShadowSeams`, env-gated,
+  no-op when unconfigured); `/model-routing/measurements` (+ `POST /run`) + `oc routing measurement`;
+  Langfuse trace-capture wiring (LiteLLM `LITELLM_SUCCESS_CALLBACK=langfuse` + `LANGFUSE_*`, values-gated
+  default-off, points at an operator-provided Langfuse — not bundled). **Seams (live-infra slice):** the
+  LiteLLM-backed runner + neutral judge implementations, and reading sampled traffic back out of Langfuse.
+  309 control-plane tests green. _(Original:)_ LiteLLM
   `CustomLogger` → **Langfuse** (skill id, model, cost, latency, propensity); per-skill golden eval set
   + quality bar; nightly shadow-grade a sample with a **neutral judge** (not the candidates' vendor);
   **OPE** (Open Bandit Pipeline, doubly-robust + bootstrap CIs + per-tenant breakdown); produce the
   per-skill **go/no-go savings table**. (Router §11.) **Deliverable:** "routing would save X%±Y at equal
   quality; overhead Z%." Needs AIR.0 + candidate models registered (AIR.1). **Anchors:** new optimizer
   service/job, Langfuse self-host (MIT), LiteLLM callback.
-- [ ] **AIR.7 Nightly improvement loop for "auto" skills (WALK/RUN).** judge → OPE → propose
+- [x] **AIR.7 Nightly improvement loop for "auto" skills. — LANDED 2026-06-18 (foundation).** Human-gated
+  `RoutingProposal` lifecycle (`/api/v1/model-routing/proposals` + `oc routing proposal` approve/reject):
+  a proposal is emitted only when the savings CI excludes zero, and **apply happens ONLY on explicit
+  approve** (pins the skill to `proposedModel` via the AIR.3 write, status→Applied, audited) — never
+  auto-deployed; reject leaves routing untouched. Pure `ope.ts` off-policy estimators (replay +
+  doubly-robust + bootstrap CI) provide the AIR.7 substrate for assessing a candidate policy from logs.
+  **Deferred (live-infra / next slices):** live judge+runner execution, Langfuse-backed sampling, the
+  RouteLLM/bandit policy learner, and staged canary % rollout (proposal status exists; graded traffic-%
+  rollout not implemented). _(Original:)_ judge → OPE → propose
   (cheapest-≥-bar; later RouteLLM matrix-factorization/BERT or a bandit) → gate on a frozen private
   hold-out + significance (95% CI excludes zero) → **canary** → **human-approved diff via the control
   plane** → write per-skill default + LiteLLM `/model/update` + per-key `models[]`. IAM-gated + audited;
