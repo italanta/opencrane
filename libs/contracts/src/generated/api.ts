@@ -662,6 +662,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/providers/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List provider credentials (references only — never the key value) */
+        get: operations["listProviderCredentials"];
+        put?: never;
+        /** Create a provider credential reference (rejects any raw-key field) */
+        post: operations["createProviderCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/providers/credentials/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a single provider credential by id */
+        get: operations["getProviderCredential"];
+        /** Update a provider credential reference (rejects any raw-key field) */
+        put: operations["updateProviderCredential"];
+        post?: never;
+        /** Delete a provider credential */
+        delete: operations["deleteProviderCredential"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List model definitions */
+        get: operations["listModels"];
+        put?: never;
+        /** Create a model definition and register it best-effort with LiteLLM */
+        post: operations["createModel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/models/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a single model definition by id */
+        get: operations["getModel"];
+        /** Update a model definition */
+        put: operations["updateModel"];
+        post?: never;
+        /** Delete a model definition */
+        delete: operations["deleteModel"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ai-budget/global": {
         parameters: {
             query?: never;
@@ -1202,6 +1276,88 @@ export interface components {
             configured?: boolean;
             /** Format: date-time */
             updatedAt?: string;
+        };
+        ProviderCredential: {
+            /** @description Stable identifier. */
+            id: string;
+            /**
+             * @description Whether the credential is platform-wide or owned by one ClusterTenant.
+             * @enum {string}
+             */
+            scope: "global" | "clusterTenant";
+            /** @description Owning ClusterTenant when scope is clusterTenant; null for Global. */
+            clusterTenant?: string | null;
+            /** @description Free-text provider key (e.g. openai, anthropic, bedrock). */
+            provider: string;
+            /** @description Name of the External-Secrets-synced k8s Secret carrying the provider key (never the raw key). */
+            secretRef: string;
+            /** @description LiteLLM /credentials name when registered for the dynamic path; null for the env baseline. */
+            litellmCredentialName?: string | null;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        ProviderCredentialWrite: {
+            /**
+             * @description Defaults to global when omitted.
+             * @enum {string}
+             */
+            scope?: "global" | "clusterTenant";
+            /** @description Required when scope is clusterTenant. */
+            clusterTenant?: string;
+            /** @description Free-text provider key. */
+            provider: string;
+            /** @description Name of the External-Secrets-synced k8s Secret carrying the provider key. A raw key field (apiKey/keyValue/key) is rejected with 400. */
+            secretRef: string;
+            /** @description Optional LiteLLM /credentials name for the dynamic no-restart path. */
+            litellmCredentialName?: string;
+        };
+        ModelDefinition: {
+            /** @description Stable identifier. */
+            id: string;
+            /**
+             * @description Whether the model is platform-wide or owned by one ClusterTenant.
+             * @enum {string}
+             */
+            scope: "global" | "clusterTenant";
+            /** @description Owning ClusterTenant when scope is clusterTenant; null for Global. */
+            clusterTenant?: string | null;
+            /** @description The routable public slug callers request, e.g. openai/gpt-4o. */
+            publicModelName: string;
+            /** @description Deployment id returned by LiteLLM /model/new (or a deterministic placeholder when LiteLLM is unconfigured). */
+            litellmModelId: string;
+            /** @description Upstream model the deployment targets. */
+            upstreamModel: string;
+            /** @description Optional non-default API base for self-hosted / proxied endpoints. */
+            apiBase?: string | null;
+            /** @description Whether this is the default model at its scope. */
+            isDefault: boolean;
+            /** @description The provider credential backing this model, when set. */
+            providerCredentialId?: string | null;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        ModelDefinitionWrite: {
+            /**
+             * @description Defaults to global when omitted.
+             * @enum {string}
+             */
+            scope?: "global" | "clusterTenant";
+            /** @description Required when scope is clusterTenant. */
+            clusterTenant?: string;
+            /** @description The routable public slug, e.g. openai/gpt-4o. */
+            publicModelName: string;
+            /** @description Upstream model the deployment targets. */
+            upstreamModel: string;
+            /** @description Optional non-default API base. */
+            apiBase?: string;
+            /** @description Whether this is the default model at its scope. */
+            isDefault?: boolean;
+            /** @description Provider credential backing this model. */
+            providerCredentialId?: string;
         };
         AwarenessRollout: {
             targetVersion?: string;
@@ -3262,6 +3418,390 @@ export interface operations {
                 content?: never;
             };
             /** @description Provider key not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listProviderCredentials: {
+        parameters: {
+            query?: {
+                /** @description Filter to one owning ClusterTenant. */
+                clusterTenant?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider credential list. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderCredential"][];
+                };
+            };
+        };
+    };
+    createProviderCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderCredentialWrite"];
+            };
+        };
+        responses: {
+            /** @description Provider credential created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderCredential"];
+                };
+            };
+            /** @description Request body failed validation, or carried a raw key (code RAW_KEY_REJECTED). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Caller is not authorized for the resource scope (code FORBIDDEN_SCOPE). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getProviderCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider credential detail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderCredential"];
+                };
+            };
+            /** @description Provider credential not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateProviderCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderCredentialWrite"];
+            };
+        };
+        responses: {
+            /** @description Provider credential updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderCredential"];
+                };
+            };
+            /** @description Request body failed validation, or carried a raw key (code RAW_KEY_REJECTED). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Caller is not authorized for the resource scope (code FORBIDDEN_SCOPE). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Provider credential not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteProviderCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider credential deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id?: string;
+                        status?: string;
+                    };
+                };
+            };
+            /** @description Caller is not authorized for the resource scope (code FORBIDDEN_SCOPE). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Provider credential not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listModels: {
+        parameters: {
+            query?: {
+                /** @description Filter to one owning ClusterTenant. */
+                clusterTenant?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Model definition list. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelDefinition"][];
+                };
+            };
+        };
+    };
+    createModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelDefinitionWrite"];
+            };
+        };
+        responses: {
+            /** @description Model definition created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelDefinition"];
+                };
+            };
+            /** @description Request body failed validation, or the providerCredentialId is missing or owned by another ClusterTenant (code CREDENTIAL_SCOPE_MISMATCH). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Caller is not authorized for the resource scope (code FORBIDDEN_SCOPE). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Model definition detail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelDefinition"];
+                };
+            };
+            /** @description Model definition not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelDefinitionWrite"];
+            };
+        };
+        responses: {
+            /** @description Model definition updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelDefinition"];
+                };
+            };
+            /** @description Request body failed validation. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Caller is not authorized for the resource scope (code FORBIDDEN_SCOPE). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Model definition not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Model definition deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id?: string;
+                        status?: string;
+                    };
+                };
+            };
+            /** @description Caller is not authorized for the resource scope (code FORBIDDEN_SCOPE). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Model definition not found. */
             404: {
                 headers: {
                     [name: string]: unknown;

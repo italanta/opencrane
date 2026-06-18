@@ -481,7 +481,14 @@ With one agent per lane, wall-clock ≈ 4 sequential slices instead of 7.
 > mutation routes handle live secrets + cost policy and **must get ClusterTenant-scoped route authz
 > before they ship** (AIR.0b).
 
-- [ ] **AIR.0 Platform hardening prereqs (Helm/Terraform — no behaviour change).** (a) **CMEK by
+- [x] **AIR.0 Platform hardening prereqs (Helm/Terraform — no behaviour change). — LANDED 2026-06-18.**
+  CMEK default-on in the GKE module (KMS keyring/key with `prevent_destroy` + 90d rotation, robot IAM,
+  `database_encryption`, gated by `enable_secrets_encryption=true`); `STORE_MODEL_IN_DB` + `LITELLM_SALT_KEY`
+  + Redis are **values-gated** (`litellm.storeModelInDb/redis.*`, salt auto-gen in `litellm-secret.yaml`),
+  **on for `values/gcp.yaml` (has Postgres), off for DB-less k3d** — i.e. DB-backing is wired everywhere but
+  only enabled where a DB exists, not force-on for all profiles; image pinned to `main-v1.81.0-stable`.
+  Validated: `helm template` (base + gcp) renders, multi-instance conformance passes; terraform not installed
+  (manual HCL pass). Original scope — (a) **CMEK by
   default** in `platform/terraform/modules/gke/main.tf`: KMS keyring + crypto key (`prevent_destroy`)
   + GKE robot `roles/cloudkms.cryptoKeyEncrypterDecrypter` IAM + `database_encryption { state=ENCRYPTED;
   key_name=… }`. (b) **DB-backed LiteLLM for all profiles**: `DATABASE_URL` + `STORE_MODEL_IN_DB=True`
@@ -490,10 +497,23 @@ With one agent per lane, wall-clock ≈ 4 sequential slices instead of 7.
   off `:main-latest`. **Acceptance:** existing per-tenant virtual keys still mint + persist across
   restart; `helm template` clean. **Anchors:** `platform/terraform/modules/gke/main.tf`,
   `platform/helm/templates/litellm-deployment.yaml`, `platform/helm/values*.yaml`.
-- [ ] **AIR.0b Route authz for credential/model/skill-model mutations.** ClusterTenant-scoped
-  authorization at the route layer — the mutation routes cannot inherit the dev fallback gate. Prereq
-  for AIR.1/AIR.3/AIR.4 shipping. **Anchors:** `apps/control-plane/src/infra/middleware/`, the new routes.
-- [ ] **AIR.1 Model registry (BYOM) — control-plane + LiteLLM.** `ModelDefinition` (scope
+- [x] **AIR.0b Route authz for credential/model/skill-model mutations. — LANDED 2026-06-18.**
+  `infra/middleware/cluster-tenant-scope.ts` guard on all POST/PUT/DELETE of the new routers: platform
+  operators allowed at any scope; non-operators only on a `clusterTenant`-scoped resource whose owner equals
+  their freshly-resolved `clusterTenant`; Global mutations operator-only; denials → 403 `FORBIDDEN_SCOPE`.
+  **Open item:** the dev open-auth fallthrough (no session) is still permitted with a `// TODO(AIR.0b)`
+  marker — prod tightening (deny-by-default once OIDC/token is mandatory) tracked here.
+  **Anchors:** `apps/control-plane/src/infra/middleware/cluster-tenant-scope.ts`, the new routes.
+- [x] **AIR.1 Model registry (BYOM) — control-plane + LiteLLM. — LANDED 2026-06-18.** Prisma
+  `ModelDefinition` + `ProviderCredential` (scope `global|clusterTenant`, **stores `secretRef` — never a raw
+  key**) + enum `ModelRoutingScope` + migration `0017_model_routing`; contract types in `libs/contracts`;
+  `GET/POST/PUT/DELETE /api/v1/models` + `/api/v1/providers/credentials` (raw-key fields rejected 400;
+  cross-tenant credential binding rejected); `oc model …` + `oc credential …` CLI; LiteLLM `POST /model/new`
+  is a **best-effort GLOBAL seam** (guarded by `LITELLM_ENDPOINT`+master key, deterministic placeholder id in
+  dev). Build green; control-plane 242 tests pass (+18). **Deviations:** the orphaned `ProviderApiKey` table +
+  `/providers/keys` route are **kept for now** (retirement deferred to a cutover slice to avoid breaking
+  WeOwnAI); the CLI uses `--secret-ref` (not `--token-file`) — uploading a raw key to GCP-SM is a deliberate
+  future enhancement. _(Original scope:)_ `ModelDefinition` (scope
   `global|clusterTenant`) + `ProviderCredential` (scope `global|clusterTenant`, references the
   ESO-synced k8s Secret — **no raw key**) Prisma tables; `GET /models` + `POST/PATCH/DELETE /models`
   (global) + `/cluster-tenants/{id}/models`; `oc model add/list/update/remove [--cluster-tenant]` +

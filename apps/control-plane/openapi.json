@@ -554,6 +554,193 @@
           }
         }
       },
+      "ProviderCredential": {
+        "type": "object",
+        "required": [
+          "id",
+          "scope",
+          "provider",
+          "secretRef"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable identifier."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "clusterTenant"
+            ],
+            "description": "Whether the credential is platform-wide or owned by one ClusterTenant."
+          },
+          "clusterTenant": {
+            "type": "string",
+            "nullable": true,
+            "description": "Owning ClusterTenant when scope is clusterTenant; null for Global."
+          },
+          "provider": {
+            "type": "string",
+            "description": "Free-text provider key (e.g. openai, anthropic, bedrock)."
+          },
+          "secretRef": {
+            "type": "string",
+            "description": "Name of the External-Secrets-synced k8s Secret carrying the provider key (never the raw key)."
+          },
+          "litellmCredentialName": {
+            "type": "string",
+            "nullable": true,
+            "description": "LiteLLM /credentials name when registered for the dynamic path; null for the env baseline."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ProviderCredentialWrite": {
+        "type": "object",
+        "required": [
+          "provider",
+          "secretRef"
+        ],
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "clusterTenant"
+            ],
+            "description": "Defaults to global when omitted."
+          },
+          "clusterTenant": {
+            "type": "string",
+            "description": "Required when scope is clusterTenant."
+          },
+          "provider": {
+            "type": "string",
+            "description": "Free-text provider key."
+          },
+          "secretRef": {
+            "type": "string",
+            "description": "Name of the External-Secrets-synced k8s Secret carrying the provider key. A raw key field (apiKey/keyValue/key) is rejected with 400."
+          },
+          "litellmCredentialName": {
+            "type": "string",
+            "description": "Optional LiteLLM /credentials name for the dynamic no-restart path."
+          }
+        }
+      },
+      "ModelDefinition": {
+        "type": "object",
+        "required": [
+          "id",
+          "scope",
+          "publicModelName",
+          "litellmModelId",
+          "upstreamModel",
+          "isDefault"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable identifier."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "clusterTenant"
+            ],
+            "description": "Whether the model is platform-wide or owned by one ClusterTenant."
+          },
+          "clusterTenant": {
+            "type": "string",
+            "nullable": true,
+            "description": "Owning ClusterTenant when scope is clusterTenant; null for Global."
+          },
+          "publicModelName": {
+            "type": "string",
+            "description": "The routable public slug callers request, e.g. openai/gpt-4o."
+          },
+          "litellmModelId": {
+            "type": "string",
+            "description": "Deployment id returned by LiteLLM /model/new (or a deterministic placeholder when LiteLLM is unconfigured)."
+          },
+          "upstreamModel": {
+            "type": "string",
+            "description": "Upstream model the deployment targets."
+          },
+          "apiBase": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional non-default API base for self-hosted / proxied endpoints."
+          },
+          "isDefault": {
+            "type": "boolean",
+            "description": "Whether this is the default model at its scope."
+          },
+          "providerCredentialId": {
+            "type": "string",
+            "nullable": true,
+            "description": "The provider credential backing this model, when set."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ModelDefinitionWrite": {
+        "type": "object",
+        "required": [
+          "publicModelName",
+          "upstreamModel"
+        ],
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "clusterTenant"
+            ],
+            "description": "Defaults to global when omitted."
+          },
+          "clusterTenant": {
+            "type": "string",
+            "description": "Required when scope is clusterTenant."
+          },
+          "publicModelName": {
+            "type": "string",
+            "description": "The routable public slug, e.g. openai/gpt-4o."
+          },
+          "upstreamModel": {
+            "type": "string",
+            "description": "Upstream model the deployment targets."
+          },
+          "apiBase": {
+            "type": "string",
+            "description": "Optional non-default API base."
+          },
+          "isDefault": {
+            "type": "boolean",
+            "description": "Whether this is the default model at its scope."
+          },
+          "providerCredentialId": {
+            "type": "string",
+            "description": "Provider credential backing this model."
+          }
+        }
+      },
       "AwarenessRollout": {
         "type": "object",
         "properties": {
@@ -3736,6 +3923,508 @@
           },
           "404": {
             "description": "Provider key not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/providers/credentials": {
+      "get": {
+        "operationId": "listProviderCredentials",
+        "summary": "List provider credentials (references only — never the key value)",
+        "tags": [
+          "Provider Credentials"
+        ],
+        "parameters": [
+          {
+            "name": "clusterTenant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter to one owning ClusterTenant."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Provider credential list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderCredential"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createProviderCredential",
+        "summary": "Create a provider credential reference (rejects any raw-key field)",
+        "tags": [
+          "Provider Credentials"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderCredentialWrite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Provider credential created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderCredential"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request body failed validation, or carried a raw key (code RAW_KEY_REJECTED).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not authorized for the resource scope (code FORBIDDEN_SCOPE).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/providers/credentials/{id}": {
+      "get": {
+        "operationId": "getProviderCredential",
+        "summary": "Get a single provider credential by id",
+        "tags": [
+          "Provider Credentials"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Provider credential detail.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderCredential"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Provider credential not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateProviderCredential",
+        "summary": "Update a provider credential reference (rejects any raw-key field)",
+        "tags": [
+          "Provider Credentials"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderCredentialWrite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Provider credential updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderCredential"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request body failed validation, or carried a raw key (code RAW_KEY_REJECTED).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not authorized for the resource scope (code FORBIDDEN_SCOPE).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Provider credential not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteProviderCredential",
+        "summary": "Delete a provider credential",
+        "tags": [
+          "Provider Credentials"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Provider credential deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not authorized for the resource scope (code FORBIDDEN_SCOPE).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Provider credential not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/models": {
+      "get": {
+        "operationId": "listModels",
+        "summary": "List model definitions",
+        "tags": [
+          "Model Registry"
+        ],
+        "parameters": [
+          {
+            "name": "clusterTenant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter to one owning ClusterTenant."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Model definition list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelDefinition"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createModel",
+        "summary": "Create a model definition and register it best-effort with LiteLLM",
+        "tags": [
+          "Model Registry"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelDefinitionWrite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Model definition created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelDefinition"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request body failed validation, or the providerCredentialId is missing or owned by another ClusterTenant (code CREDENTIAL_SCOPE_MISMATCH).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not authorized for the resource scope (code FORBIDDEN_SCOPE).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/models/{id}": {
+      "get": {
+        "operationId": "getModel",
+        "summary": "Get a single model definition by id",
+        "tags": [
+          "Model Registry"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Model definition detail.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelDefinition"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Model definition not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateModel",
+        "summary": "Update a model definition",
+        "tags": [
+          "Model Registry"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelDefinitionWrite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Model definition updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelDefinition"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request body failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not authorized for the resource scope (code FORBIDDEN_SCOPE).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Model definition not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteModel",
+        "summary": "Delete a model definition",
+        "tags": [
+          "Model Registry"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Model definition deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not authorized for the resource scope (code FORBIDDEN_SCOPE).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Model definition not found.",
             "content": {
               "application/json": {
                 "schema": {

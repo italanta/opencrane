@@ -16,6 +16,8 @@ import { openapiRouter } from "./routes/openapi-route.js";
 import { policiesRouter } from "./routes/policies.js";
 import { prometheusMetricsRouter } from "./routes/prometheus-metrics.js";
 import { providerKeysRouter } from "./routes/provider-keys.js";
+import { providerCredentialsRouter } from "./routes/provider-credentials.js";
+import { modelRegistryRouter } from "./routes/model-registry.js";
 import { skillCatalogRouter } from "./routes/skill-catalog.js";
 import { tenantsRouter } from "./routes/tenants.js";
 import { thirdPartySourcesRouter } from "./routes/third-party-sources.js";
@@ -104,6 +106,8 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
   app.use("/api/v1/sessions", sessionsRouter(prisma));
   app.use("/api/v1/access-tokens", accessTokensRouter(prisma));
   app.use("/api/v1/providers/keys", providerKeysRouter(prisma));
+  app.use("/api/v1/providers/credentials", providerCredentialsRouter(prisma));
+  app.use("/api/v1/models", modelRegistryRouter(prisma));
   app.use("/api/v1/openapi.json", openapiRouter());
   app.get("/healthz", _CheckDbHealth(prisma));
   app.use("/prom", prometheusMetricsRouter(prisma, customApi));

@@ -316,6 +316,65 @@ const ProviderKeySchema = {
   },
 };
 
+const ProviderCredentialSchema = {
+  type: "object" as const,
+  required: ["id", "scope", "provider", "secretRef"],
+  properties: {
+    id: { type: "string", description: "Stable identifier." },
+    scope: { type: "string", enum: ["global", "clusterTenant"], description: "Whether the credential is platform-wide or owned by one ClusterTenant." },
+    clusterTenant: { type: "string", nullable: true, description: "Owning ClusterTenant when scope is clusterTenant; null for Global." },
+    provider: { type: "string", description: "Free-text provider key (e.g. openai, anthropic, bedrock)." },
+    secretRef: { type: "string", description: "Name of the External-Secrets-synced k8s Secret carrying the provider key (never the raw key)." },
+    litellmCredentialName: { type: "string", nullable: true, description: "LiteLLM /credentials name when registered for the dynamic path; null for the env baseline." },
+    createdAt: { type: "string", format: "date-time" },
+    updatedAt: { type: "string", format: "date-time" },
+  },
+};
+
+const ProviderCredentialWriteSchema = {
+  type: "object" as const,
+  required: ["provider", "secretRef"],
+  properties: {
+    scope: { type: "string", enum: ["global", "clusterTenant"], description: "Defaults to global when omitted." },
+    clusterTenant: { type: "string", description: "Required when scope is clusterTenant." },
+    provider: { type: "string", description: "Free-text provider key." },
+    secretRef: { type: "string", description: "Name of the External-Secrets-synced k8s Secret carrying the provider key. A raw key field (apiKey/keyValue/key) is rejected with 400." },
+    litellmCredentialName: { type: "string", description: "Optional LiteLLM /credentials name for the dynamic no-restart path." },
+  },
+};
+
+const ModelDefinitionSchema = {
+  type: "object" as const,
+  required: ["id", "scope", "publicModelName", "litellmModelId", "upstreamModel", "isDefault"],
+  properties: {
+    id: { type: "string", description: "Stable identifier." },
+    scope: { type: "string", enum: ["global", "clusterTenant"], description: "Whether the model is platform-wide or owned by one ClusterTenant." },
+    clusterTenant: { type: "string", nullable: true, description: "Owning ClusterTenant when scope is clusterTenant; null for Global." },
+    publicModelName: { type: "string", description: "The routable public slug callers request, e.g. openai/gpt-4o." },
+    litellmModelId: { type: "string", description: "Deployment id returned by LiteLLM /model/new (or a deterministic placeholder when LiteLLM is unconfigured)." },
+    upstreamModel: { type: "string", description: "Upstream model the deployment targets." },
+    apiBase: { type: "string", nullable: true, description: "Optional non-default API base for self-hosted / proxied endpoints." },
+    isDefault: { type: "boolean", description: "Whether this is the default model at its scope." },
+    providerCredentialId: { type: "string", nullable: true, description: "The provider credential backing this model, when set." },
+    createdAt: { type: "string", format: "date-time" },
+    updatedAt: { type: "string", format: "date-time" },
+  },
+};
+
+const ModelDefinitionWriteSchema = {
+  type: "object" as const,
+  required: ["publicModelName", "upstreamModel"],
+  properties: {
+    scope: { type: "string", enum: ["global", "clusterTenant"], description: "Defaults to global when omitted." },
+    clusterTenant: { type: "string", description: "Required when scope is clusterTenant." },
+    publicModelName: { type: "string", description: "The routable public slug, e.g. openai/gpt-4o." },
+    upstreamModel: { type: "string", description: "Upstream model the deployment targets." },
+    apiBase: { type: "string", description: "Optional non-default API base." },
+    isDefault: { type: "boolean", description: "Whether this is the default model at its scope." },
+    providerCredentialId: { type: "string", description: "Provider credential backing this model." },
+  },
+};
+
 const DeviceGrantSchema = {
   type: "object" as const,
   required: ["deviceCode", "userCode", "verificationUri", "expiresIn", "interval"],
@@ -441,6 +500,10 @@ export const spec = {
       AuditEntry: AuditEntrySchema,
       AccessToken: AccessTokenSchema,
       ProviderKey: ProviderKeySchema,
+      ProviderCredential: ProviderCredentialSchema,
+      ProviderCredentialWrite: ProviderCredentialWriteSchema,
+      ModelDefinition: ModelDefinitionSchema,
+      ModelDefinitionWrite: ModelDefinitionWriteSchema,
       AwarenessRollout: {
         type: "object",
         properties: {
@@ -1548,6 +1611,147 @@ export const spec = {
         responses: {
           204: { description: "Key deleted." },
           404: notFound("Provider key not found."),
+        },
+      },
+    },
+
+    // ------------------------------------------------------------------
+    // Provider credentials (Track AIR) — references only, never raw keys.
+    // Owned at Global or ClusterTenant scope; never per openclaw tenant.
+    // ------------------------------------------------------------------
+
+    "/providers/credentials": {
+      get: {
+        operationId: "listProviderCredentials",
+        summary: "List provider credentials (references only — never the key value)",
+        tags: ["Provider Credentials"],
+        parameters: [{ name: "clusterTenant", in: "query", required: false, schema: { type: "string" }, description: "Filter to one owning ClusterTenant." }],
+        responses: {
+          200: ok("Provider credential list.", { type: "array", items: { $ref: "#/components/schemas/ProviderCredential" } }),
+        },
+      },
+      post: {
+        operationId: "createProviderCredential",
+        summary: "Create a provider credential reference (rejects any raw-key field)",
+        tags: ["Provider Credentials"],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { $ref: "#/components/schemas/ProviderCredentialWrite" } } },
+        },
+        responses: {
+          201: created("Provider credential created.", { $ref: "#/components/schemas/ProviderCredential" }),
+          400: badRequest("Request body failed validation, or carried a raw key (code RAW_KEY_REJECTED)."),
+          403: { description: "Caller is not authorized for the resource scope (code FORBIDDEN_SCOPE).", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        },
+      },
+    },
+
+    "/providers/credentials/{id}": {
+      get: {
+        operationId: "getProviderCredential",
+        summary: "Get a single provider credential by id",
+        tags: ["Provider Credentials"],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          200: ok("Provider credential detail.", { $ref: "#/components/schemas/ProviderCredential" }),
+          404: notFound("Provider credential not found."),
+        },
+      },
+      put: {
+        operationId: "updateProviderCredential",
+        summary: "Update a provider credential reference (rejects any raw-key field)",
+        tags: ["Provider Credentials"],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { $ref: "#/components/schemas/ProviderCredentialWrite" } } },
+        },
+        responses: {
+          200: ok("Provider credential updated.", { $ref: "#/components/schemas/ProviderCredential" }),
+          400: badRequest("Request body failed validation, or carried a raw key (code RAW_KEY_REJECTED)."),
+          403: { description: "Caller is not authorized for the resource scope (code FORBIDDEN_SCOPE).", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          404: notFound("Provider credential not found."),
+        },
+      },
+      delete: {
+        operationId: "deleteProviderCredential",
+        summary: "Delete a provider credential",
+        tags: ["Provider Credentials"],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          200: ok("Provider credential deleted.", { type: "object", properties: { id: { type: "string" }, status: { type: "string" } } }),
+          403: { description: "Caller is not authorized for the resource scope (code FORBIDDEN_SCOPE).", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          404: notFound("Provider credential not found."),
+        },
+      },
+    },
+
+    // ------------------------------------------------------------------
+    // Model registry (Track AIR) — routable models registered in LiteLLM (BYOM).
+    // ------------------------------------------------------------------
+
+    "/models": {
+      get: {
+        operationId: "listModels",
+        summary: "List model definitions",
+        tags: ["Model Registry"],
+        parameters: [{ name: "clusterTenant", in: "query", required: false, schema: { type: "string" }, description: "Filter to one owning ClusterTenant." }],
+        responses: {
+          200: ok("Model definition list.", { type: "array", items: { $ref: "#/components/schemas/ModelDefinition" } }),
+        },
+      },
+      post: {
+        operationId: "createModel",
+        summary: "Create a model definition and register it best-effort with LiteLLM",
+        tags: ["Model Registry"],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { $ref: "#/components/schemas/ModelDefinitionWrite" } } },
+        },
+        responses: {
+          201: created("Model definition created.", { $ref: "#/components/schemas/ModelDefinition" }),
+          400: badRequest("Request body failed validation, or the providerCredentialId is missing or owned by another ClusterTenant (code CREDENTIAL_SCOPE_MISMATCH)."),
+          403: { description: "Caller is not authorized for the resource scope (code FORBIDDEN_SCOPE).", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        },
+      },
+    },
+
+    "/models/{id}": {
+      get: {
+        operationId: "getModel",
+        summary: "Get a single model definition by id",
+        tags: ["Model Registry"],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          200: ok("Model definition detail.", { $ref: "#/components/schemas/ModelDefinition" }),
+          404: notFound("Model definition not found."),
+        },
+      },
+      put: {
+        operationId: "updateModel",
+        summary: "Update a model definition",
+        tags: ["Model Registry"],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { $ref: "#/components/schemas/ModelDefinitionWrite" } } },
+        },
+        responses: {
+          200: ok("Model definition updated.", { $ref: "#/components/schemas/ModelDefinition" }),
+          400: badRequest("Request body failed validation."),
+          403: { description: "Caller is not authorized for the resource scope (code FORBIDDEN_SCOPE).", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          404: notFound("Model definition not found."),
+        },
+      },
+      delete: {
+        operationId: "deleteModel",
+        summary: "Delete a model definition",
+        tags: ["Model Registry"],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          200: ok("Model definition deleted.", { type: "object", properties: { id: { type: "string" }, status: { type: "string" } } }),
+          403: { description: "Caller is not authorized for the resource scope (code FORBIDDEN_SCOPE).", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+          404: notFound("Model definition not found."),
         },
       },
     },

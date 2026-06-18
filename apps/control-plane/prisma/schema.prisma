@@ -543,6 +543,57 @@ model ProviderApiKey {
   @@map("provider_api_keys")
 }
 
+/// Scope at which a provider credential or model definition is owned (Track AIR).
+/// Provider keys are central (Global) or per-customer (ClusterTenant) — NEVER per openclaw tenant.
+enum ModelRoutingScope {
+  Global        @map("global")
+  ClusterTenant @map("clusterTenant")
+}
+
+/// A provider API credential owned at control-plane (Global) or ClusterTenant scope.
+/// OpenCrane stores only a REFERENCE to the External-Secrets-synced k8s Secret holding the key —
+/// never the raw key. `litellmCredentialName` is set only when registered via LiteLLM /credentials
+/// for the dynamic no-restart path; the baseline rides `os.environ/<KEY>` from the synced Secret.
+model ProviderCredential {
+  id                    String            @id @default(cuid())
+  scope                 ModelRoutingScope @default(Global)
+  clusterTenant         String?           @map("cluster_tenant")
+  provider              String
+  secretRef             String            @map("secret_ref")
+  litellmCredentialName String?           @map("litellm_credential_name")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+
+  models ModelDefinition[]
+
+  @@unique([scope, clusterTenant, provider])
+  @@index([clusterTenant])
+  @@map("provider_credentials")
+}
+
+/// A routable model registered in LiteLLM, owned at Global or ClusterTenant scope (BYOM).
+/// The control plane registers it via LiteLLM `POST /model/new` (global) and records the returned
+/// deployment id here; access is scoped per tenant via the virtual key's `models[]` allowlist.
+model ModelDefinition {
+  id                   String              @id @default(cuid())
+  scope                ModelRoutingScope   @default(Global)
+  clusterTenant        String?             @map("cluster_tenant")
+  publicModelName      String              @map("public_model_name")
+  litellmModelId       String              @unique @map("litellm_model_id")
+  upstreamModel        String              @map("upstream_model")
+  apiBase              String?             @map("api_base")
+  isDefault            Boolean             @default(false) @map("is_default")
+  providerCredentialId String?             @map("provider_credential_id")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+
+  providerCredential ProviderCredential? @relation(fields: [providerCredentialId], references: [id], onDelete: SetNull)
+
+  @@unique([scope, clusterTenant, publicModelName])
+  @@index([clusterTenant])
+  @@map("model_definitions")
+}
+
 model OrgDocument {
   id                  String   @id @default(cuid())
   source              String
