@@ -11,12 +11,28 @@ import { ___LoadOidcAuthConfig } from "./oidc.config.js";
  * real auth deployment must never reach a scoped mutation or leak cross-tenant reads (AIR.0b).
  *
  * Reads the environment live (OIDC config is env-derived) so it reflects the current process
- * configuration, including in tests that set the env before issuing a request.
+ * configuration, including in tests that set the env before issuing a request — unlike
+ * `auth.middleware`, which snapshots the config once at module load (it would otherwise fail to
+ * start on a partial OIDC config, so the live read here never diverges in a running deployment).
+ *
+ * If the OIDC config can't be loaded (partial/invalid config), treat it as NOT dev mode — i.e.
+ * fail closed (deny) rather than throwing a 500 or silently opening the bypass.
  *
  * @returns True when no real auth is configured (dev-mode bypass active).
  */
 export function _IsDevAuthMode(): boolean
 {
   const envToken = process.env.OPENCRANE_API_TOKEN?.trim() ?? "";
-  return envToken === "" && !___LoadOidcAuthConfig().enabled;
+  if (envToken !== "")
+  {
+    return false;
+  }
+  try
+  {
+    return !___LoadOidcAuthConfig().enabled;
+  }
+  catch
+  {
+    return false;
+  }
 }
