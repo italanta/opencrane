@@ -150,6 +150,14 @@ describe("shadow-seams live runner + judge", function _suite()
       const { judge } = _BuildShadowSeams();
       expect(await judge!.score("in", "out", null)).toBe(0);
     });
+
+    it("throws on a non-OK judge response (hard failure, not a silent 0)", async function _judgeThrows()
+    {
+      vi.stubGlobal("fetch", vi.fn(async function _f() { return new Response("boom", { status: 500 }); }));
+      const { judge } = _BuildShadowSeams();
+
+      await expect(judge!.score("in", "out", null)).rejects.toThrow(/500/);
+    });
   });
 
   describe("_BuildShadowSeams gating", function _gatingSuite()
