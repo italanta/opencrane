@@ -107,7 +107,7 @@ describe("modelRoutingRecommendationsRouter", function _suite()
   {
     const seeds: Seeds = {
       measurements: [_measurement({ id: "m1", skillName: "translate", candidateModel: "cand" })],
-      skills: [{ name: "translate", scope: "org", team: "", pinnedModel: "pinned" }],
+      skills: [{ name: "translate", scope: "org", team: "", pinnedModel: "pinned", modelMode: "Pinned" }],
     };
     const res = await request(_buildApp(_mockPrisma(seeds))).get("/api/v1/model-routing/recommendations");
 
@@ -115,6 +115,7 @@ describe("modelRoutingRecommendationsRouter", function _suite()
     expect(res.body[0].proposalId).toBe(null);
     expect(res.body[0].currentModel).toBe("pinned");
     expect(res.body[0].recommendedModel).toBe("cand");
+    expect(res.body[0].modelMode).toBe("pinned"); // Prisma "Pinned" → contract "pinned"
   });
 
   it("sorts recommendations by projected savings desc", async function _sort()

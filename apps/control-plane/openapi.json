@@ -1436,6 +1436,15 @@
             "type": "string",
             "description": "Owning skill team (empty for org/global)."
           },
+          "modelMode": {
+            "type": "string",
+            "enum": [
+              "pinned",
+              "auto"
+            ],
+            "nullable": true,
+            "description": "The skill's posture: pinned, auto, or null (inherits the scope default) — lets the UI flag a fixed-model advisory distinctly."
+          },
           "currentModel": {
             "type": "string",
             "nullable": true,

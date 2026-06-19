@@ -273,6 +273,9 @@ export interface SavingsRecommendation
   skillScope: string;
   /** Owning skill team (empty for org/global). */
   skillTeam: string;
+  /** The skill's model-selection posture: `pinned`, `auto`, or null (inherits the scope default) — lets
+   * the console phrase a fixed-model advisory distinctly ("this pinned skill could save N%"). */
+  modelMode: SkillModelMode | null;
   /** The model the skill resolves to today — proposal `fromModel`, else the skill's pin, else null. */
   currentModel: string | null;
   /** The cheaper model recommended — proposal `proposedModel`, else the measurement candidate, else null. */

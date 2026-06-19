@@ -37,6 +37,7 @@ const _PROPOSAL_COLUMNS = [
 /** Columns shown for `oc routing recommendation list` in table mode. */
 const _RECOMMENDATION_COLUMNS = [
   "skillName",
+  "modelMode",
   "currentModel",
   "recommendedModel",
   "projectedSavingsPct",

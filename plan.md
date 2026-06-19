@@ -615,7 +615,10 @@ With one agent per lane, wall-clock ≈ 4 sequential slices instead of 7.
   to a fixed model (not auto), run the shadow evaluator continuously and **surface an advisory — never
   auto-change a pinned skill**: WeOwnAI/CLI lists fixed-model skills with *"by changing this skill's
   model you could save up to N% in token cost at equal quality,"* one-click **"switch to recommended"** /
-  **"enable auto."** (Router §12.)
+  **"enable auto."** (Router §12.) **In-repo enablers DONE:** the savings-recommendation feed
+  (`/model-routing/recommendations`, AIR.11) now also carries the skill's `modelMode` (pinned|auto|null) so the
+  console can flag a *fixed-model* skill distinctly; the one-click actions map to existing APIs (proposal
+  approve = AIR.7, enable-auto = `oc skill-posture set --mode auto` = AIR.3). Remaining is the WeOwnAI view itself.
 - [ ] **AIR.9 (FUTURE) Safety / guardrail stream.** If/when a guardrail service is adopted, run it as an
   external OSS service (LiteLLM's built-in callbacks are Enterprise), emit verdicts to Langfuse keyed by
   skill id; use as a hard routing filter + a safety term in the per-skill score — **not** the quality

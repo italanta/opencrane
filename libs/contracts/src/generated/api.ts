@@ -1901,6 +1901,11 @@ export interface components {
             skillScope: string;
             /** @description Owning skill team (empty for org/global). */
             skillTeam: string;
+            /**
+             * @description The skill's posture: pinned, auto, or null (inherits the scope default) — lets the UI flag a fixed-model advisory distinctly.
+             * @enum {string|null}
+             */
+            modelMode?: "pinned" | "auto" | null;
             /** @description The model the skill resolves to today — proposal fromModel, else the skill's pin, else null. */
             currentModel?: string | null;
             /** @description The cheaper model recommended — proposal proposedModel, else the measurement candidate, else null. */

@@ -521,6 +521,7 @@ const SavingsRecommendationSchema = {
     skillName: { type: "string", description: "Owning skill name." },
     skillScope: { type: "string", description: "Owning skill scope." },
     skillTeam: { type: "string", description: "Owning skill team (empty for org/global)." },
+    modelMode: { type: "string", enum: ["pinned", "auto"], nullable: true, description: "The skill's posture: pinned, auto, or null (inherits the scope default) — lets the UI flag a fixed-model advisory distinctly." },
     currentModel: { type: "string", nullable: true, description: "The model the skill resolves to today — proposal fromModel, else the skill's pin, else null." },
     recommendedModel: { type: "string", nullable: true, description: "The cheaper model recommended — proposal proposedModel, else the measurement candidate, else null." },
     projectedSavingsPct: { type: "number", description: "Point estimate of % spend saved at equal quality (from the latest measurement)." },
