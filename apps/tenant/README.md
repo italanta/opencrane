@@ -76,9 +76,10 @@ The tenant entrypoint reads `opencrane-managed-runtime.json` before startup, app
 Today this means:
 - when the `skills` MCP server is denied, org and team shared skills are not linked into the tenant runtime
 - when the `skills` MCP server is allowed or no MCP policy is enforced, existing shared-skill linking behavior is preserved
-- entitled skill bundles named in the contract's `skills.entitled` (each `{ id, name, digest }`) are pulled from `OPENCRANE_SKILL_REGISTRY_URL` using the `skill-registry`-audience projected token and written to `<state>/agents/main/skills/<name>/SKILL.md`, at boot and on every contract change. The registry enforces entitlement (a non-entitled or unknown digest returns 404); `Tenant.spec.skillAllowlist` (`OPENCRANE_ALLOWED_SKILLS`) narrows further. Delivery is additive — a de-entitled skill stops being advertised in TOOLS.md and 404s at the registry, but its on-disk copy is not yet pruned.
+- entitled skill bundles named in the contract's `skills.entitled` (each `{ id, name, digest }`) are pulled from `OPENCRANE_SKILL_REGISTRY_URL` using the `skill-registry`-audience projected token and written to `<state>/agents/main/skills/<name>/SKILL.md`, at boot and on every contract change. The registry enforces entitlement (a non-entitled or unknown digest returns 404); `Tenant.spec.skillAllowlist` (`OPENCRANE_ALLOWED_SKILLS`) narrows further.
+- skills that fall out of entitlement (or the allowlist) are pruned from disk on the next pull. Pruning is tracked via a `<state>/agents/main/skills/.opencrane/managed-skills.json` marker, so only platform-delivered skills are removed — tenant-created skills and shared-skill symlinks are never touched.
 
-This is an early enforcement slice. Broader MCP tool blocking, deny/audit events, and pruning of de-entitled skills are still deferred.
+This is an early enforcement slice. Broader MCP tool blocking and deny/audit events are still deferred.
 
 ## Files
 
