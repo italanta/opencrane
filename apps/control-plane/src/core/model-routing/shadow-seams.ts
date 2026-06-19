@@ -1,3 +1,6 @@
+import { ___WithOperation } from "@opencrane/observability";
+
+import { _log } from "../../log.js";
 import type { JudgeClient, ModelRunResult, ModelRunner } from "./shadow-measure.types.js";
 
 /** Bounded timeout (ms) for a single LiteLLM chat-completions call — keeps a hung run from stalling the whole measurement. */
@@ -71,29 +74,36 @@ function _buildModelRunner(endpoint: string, masterKey: string): ModelRunner
   return {
     run: async function _run(model: string, input: unknown): Promise<ModelRunResult>
     {
-      // 1. Derive OpenAI-style messages from the arbitrary eval-case input so any case shape runs.
-      const messages = _deriveMessages(input);
-
-      // 2. POST the chat-completion under a bounded timeout so a hung upstream cannot stall the run.
-      const response = await _postChatCompletion(endpoint, masterKey, model, messages);
-
-      // 3. Hard failure → throw: a non-OK response means no trustworthy output/cost for this case,
-      //    and recording a corrupt sample would bias the measurement. Fail the run instead.
-      if (!response.ok)
+      // Trace each candidate execution as a `litellm.chat.run` span so a slow or
+      // failing leg of a shadow measurement is attributable to a specific model.
+      return ___WithOperation("litellm.chat.run", { model }, async function _traced(): Promise<ModelRunResult>
       {
-        const detail = await _safeText(response);
-        throw new Error(`LiteLLM chat-completion failed (${response.status}) for model "${model}": ${detail}`);
-      }
+        // 1. Derive OpenAI-style messages from the arbitrary eval-case input so any case shape runs.
+        const messages = _deriveMessages(input);
 
-      // 4. Cost: read the LiteLLM per-response cost header (USD). Absent → fall back to 0 with a warn
-      //    (soft, non-corrupting: the savings estimator simply sees a zero-cost run for this leg).
-      const costUsd = _parseResponseCost(response, model);
+        // 2. POST the chat-completion under a bounded timeout so a hung upstream cannot stall the run.
+        const response = await _postChatCompletion(endpoint, masterKey, model, messages);
 
-      // 5. Extract the assistant message content as the verbatim output passed to the judge.
-      const payload = await response.json() as _ChatCompletionResponse;
-      const output = payload?.choices?.[0]?.message?.content ?? "";
+        // 3. Hard failure → throw: a non-OK response means no trustworthy output/cost for this case,
+        //    and recording a corrupt sample would bias the measurement. Fail the run instead.
+        if (!response.ok)
+        {
+          const detail = await _safeText(response);
+          _log.warn({ model, status: response.status }, "litellm chat-completion failed");
+          throw new Error(`LiteLLM chat-completion failed (${response.status}) for model "${model}": ${detail}`);
+        }
 
-      return { output, costUsd };
+        // 4. Cost: read the LiteLLM per-response cost header (USD). Absent → fall back to 0 with a warn
+        //    (soft, non-corrupting: the savings estimator simply sees a zero-cost run for this leg).
+        const costUsd = _parseResponseCost(response, model);
+
+        // 5. Extract the assistant message content as the verbatim output passed to the judge.
+        const payload = await response.json() as _ChatCompletionResponse;
+        const output = payload?.choices?.[0]?.message?.content ?? "";
+
+        _log.debug({ model, costUsd, outputChars: output.length }, "litellm chat-completion ok");
+        return { output, costUsd };
+      });
     },
   };
 }
@@ -127,24 +137,32 @@ function _buildJudgeClient(endpoint: string, masterKey: string, judgeModel: stri
   return {
     score: async function _score(input: unknown, output: unknown, expected: unknown): Promise<number>
     {
-      // 1. Build a grading prompt presenting the input, candidate output, and optional rubric, and
-      //    instruct the judge to reply with a single JSON `{ "score": n }` in [0, 1].
-      const messages = _buildJudgePrompt(input, output, expected);
-
-      // 2. POST to the independent judge model under the bounded timeout.
-      const response = await _postChatCompletion(endpoint, masterKey, judgeModel, messages);
-
-      // 3. Hard failure → throw to fail the run cleanly (matches the runner contract).
-      if (!response.ok)
+      // Trace each grading call as a `routing.judge.score` span, keyed by the
+      // independent judge model, so judge latency/failures are separable from runs.
+      return ___WithOperation("routing.judge.score", { judgeModel }, async function _traced(): Promise<number>
       {
-        const detail = await _safeText(response);
-        throw new Error(`Judge chat-completion failed (${response.status}) for model "${judgeModel}": ${detail}`);
-      }
+        // 1. Build a grading prompt presenting the input, candidate output, and optional rubric, and
+        //    instruct the judge to reply with a single JSON `{ "score": n }` in [0, 1].
+        const messages = _buildJudgePrompt(input, output, expected);
 
-      // 4. Parse the assistant content into a clamped [0, 1] score; soft parse failure → penalizing 0.
-      const payload = await response.json() as _ChatCompletionResponse;
-      const content = payload?.choices?.[0]?.message?.content ?? "";
-      return _parseScore(content);
+        // 2. POST to the independent judge model under the bounded timeout.
+        const response = await _postChatCompletion(endpoint, masterKey, judgeModel, messages);
+
+        // 3. Hard failure → throw to fail the run cleanly (matches the runner contract).
+        if (!response.ok)
+        {
+          const detail = await _safeText(response);
+          _log.warn({ judgeModel, status: response.status }, "judge chat-completion failed");
+          throw new Error(`Judge chat-completion failed (${response.status}) for model "${judgeModel}": ${detail}`);
+        }
+
+        // 4. Parse the assistant content into a clamped [0, 1] score; soft parse failure → penalizing 0.
+        const payload = await response.json() as _ChatCompletionResponse;
+        const content = payload?.choices?.[0]?.message?.content ?? "";
+        const score = _parseScore(content);
+        _log.debug({ judgeModel, score }, "judge score parsed");
+        return score;
+      });
     },
   };
 }
@@ -270,14 +288,14 @@ function _parseResponseCost(response: Response, model: string): number
   const raw = response.headers.get("x-litellm-response-cost");
   if (raw === null || raw.trim() === "")
   {
-    console.warn(`[shadow-seams] no x-litellm-response-cost header for model "${model}"; treating cost as 0`);
+    _log.warn({ model }, "no x-litellm-response-cost header; treating cost as 0");
     return 0;
   }
 
   const cost = parseFloat(raw);
   if (!Number.isFinite(cost) || cost < 0)
   {
-    console.warn(`[shadow-seams] unparseable x-litellm-response-cost "${raw}" for model "${model}"; treating cost as 0`);
+    _log.warn({ model, rawCost: raw }, "unparseable x-litellm-response-cost; treating cost as 0");
     return 0;
   }
 
@@ -317,7 +335,7 @@ function _parseScore(content: unknown): number
   }
 
   // 3. Nothing recoverable: penalize rather than throw so the rest of the suite proceeds.
-  console.warn(`[shadow-seams] judge reply had no parseable score; penalizing to 0: ${text.slice(0, 200)}`);
+  _log.warn({ replyPreview: text.slice(0, 200) }, "judge reply had no parseable score; penalizing to 0");
   return 0;
 }
 

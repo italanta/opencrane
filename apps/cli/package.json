@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@opencrane/contracts": "workspace:*",
+    "@opencrane/observability": "workspace:*",
     "commander": "^12.0.0"
   },
   "devDependencies": {

@@ -1,5 +1,10 @@
 import { execSync } from "node:child_process";
 
+import { ___CreateLogger } from "@opencrane/observability";
+
+/** Structured logger for the migration init container — JSON to stdout for central scraping. */
+const _log = ___CreateLogger("control-plane-migrate");
+
 /**
  * Standalone migration runner for the control plane database.
  * Intended for use as an init container or pre-start hook.
@@ -7,7 +12,7 @@ import { execSync } from "node:child_process";
  */
 function _runMigrations(): void
 {
-  console.log("[opencrane] Running database migrations...");
+  _log.info("running database migrations");
 
   try
   {
@@ -17,11 +22,11 @@ function _runMigrations(): void
       // where prisma/schema.prisma lives (the cwd `prisma migrate deploy` expects).
       cwd: new URL("../../", import.meta.url).pathname,
     });
-    console.log("[opencrane] Migrations complete");
+    _log.info("migrations complete");
   }
   catch (err)
   {
-    console.error("[opencrane] Migration failed:", err);
+    _log.error({ err }, "migration failed");
     process.exit(1);
   }
 }

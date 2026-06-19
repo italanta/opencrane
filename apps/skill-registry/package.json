@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@kubernetes/client-node": "^0.21.0",
+    "@opencrane/observability": "workspace:*",
     "express": "^4.18.2",
     "pino": "^9.6.0",
     "pino-http": "^10.0.0"

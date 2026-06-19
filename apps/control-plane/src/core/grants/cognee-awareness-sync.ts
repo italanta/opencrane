@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 
+import { _log } from "../../log.js";
 import { compile } from "./grant-compiler.js";
 import { GrantCompilerAccess, GrantCompilerPayloadType } from "./grant-compiler.types.js";
 import type { AwarenessGrantSyncResult, CogneeAwarenessGrant, CogneeGrantTransport, PolicyPropagationResult } from "./cognee-awareness-sync.types.js";
@@ -45,10 +46,12 @@ export async function _SyncTenantAwarenessGrants(prisma: PrismaClient,
   try
   {
     await transport(tenant, grants, authorization);
+    _log.debug({ tenant, allowed, denied }, "cognee awareness grants synced");
     return { tenant, allowed, denied, ok: true };
   }
   catch (err)
   {
+    _log.warn({ tenant, allowed, denied, err }, "cognee awareness grant sync failed (captured, not thrown)");
     return { tenant, allowed, denied, ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
@@ -83,7 +86,7 @@ export async function _ResolvePolicyAffectedTenants(prisma: PrismaClient, policy
   // 1. No DB-resolvable criteria → defer to pod-side reconcile; resolve nothing here.
   if (!team && !name)
   {
-    console.warn(`[awareness-sync] policy ${policyName} selector is not DB-resolvable (arbitrary labels); pod-side reconcile applies`);
+    _log.warn({ policyName }, "policy selector is not DB-resolvable (arbitrary labels); pod-side reconcile applies");
     return [];
   }
 

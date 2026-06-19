@@ -12,6 +12,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@opencrane/observability": "workspace:*",
     "@prisma/client": "^6.0.0",
     "pino": "^9.6.0"
   },
