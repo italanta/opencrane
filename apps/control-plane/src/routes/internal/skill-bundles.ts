@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { PrismaClient } from "@prisma/client";
 
+import { _log } from "../../log.js";
 import { compile } from "../../core/grants/grant-compiler.js";
 import { GrantCompilerAccess, GrantCompilerPayloadType } from "../../core/grants/grant-compiler.types.js";
 import type { OciBundleStore } from "../../core/oci/oci-bundle-store.js";
@@ -34,7 +35,7 @@ export async function _ResolveBundleContent(ociStore: OciBundleStore | null, dig
     {
       // Fall back to DB content during the dual-write window, but log so a registry
       // outage or a digest mismatch (never served — see OciBundleStore) is visible.
-      console.warn(`[skill-bundles] OCI pull failed for ${digest}, falling back to DB content:`, err instanceof Error ? err.message : err);
+      _log.warn({ digest, err }, "OCI pull failed; falling back to DB content");
     }
   }
 

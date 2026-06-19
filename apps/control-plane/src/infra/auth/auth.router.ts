@@ -3,6 +3,7 @@ import { Router } from "express";
 import type { PrismaClient } from "@prisma/client";
 import type * as k8s from "@kubernetes/client-node";
 
+import { _log } from "../../log.js";
 import type { OidcAuthService } from "./oidc.service.js";
 import { _AuthorizeDeviceGrant, _CreateDeviceGrant, _FindGrantByUserCode, _PollDeviceGrant } from "./device-grant.js";
 import { _ResolveOpenClawPairing } from "./openclaw-pairing.js";
@@ -130,7 +131,7 @@ export function ___AuthRouter(authService: OidcAuthService, prisma: PrismaClient
       }
       catch (err)
       {
-        console.warn(`[auth] failed to record brokered device for ${tenant.name}/${subject}:`, err instanceof Error ? err.message : err);
+        _log.warn({ tenant: tenant.name, subject, err }, "failed to record brokered device (connection still granted)");
       }
 
       // 5. Return the connection details for the gateway `connect` handshake.

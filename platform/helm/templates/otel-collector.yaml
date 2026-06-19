@@ -1,0 +1,195 @@
+{{- if (((.Values.observability).otel).enabled) }}
+{{- $otel := .Values.observability.otel }}
+{{- $collector := $otel.collector | default dict }}
+{{- $exporter := $otel.exporter | default dict }}
+{{- $logsMode := (($otel.logs).collector) | default "filelog" }}
+{{- $backend := $exporter.backend | default "googlecloud" }}
+{{- $otlpPort := int (default 4318 $collector.otlpPort) }}
+{{- $fullName := printf "%s-otel-collector" (include "opencrane.fullname" .) }}
+{{- /* filelog log scraping needs node-local pod logs → only valid as a DaemonSet. */ -}}
+{{- $useFilelog := and (eq $logsMode "filelog") (eq (default "daemonset" $collector.mode) "daemonset") }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-collector
+---
+{{- if $useFilelog }}
+# The collector reads pod stdout from the node filesystem; it needs to list/watch
+# pods/namespaces so the k8sattributes processor can enrich logs with metadata.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-collector
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "namespaces"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-collector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $fullName }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $fullName }}
+    namespace: {{ .Release.Namespace }}
+---
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-collector
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:{{ $otlpPort }}
+          grpc:
+            endpoint: 0.0.0.0:4317
+    {{- if $useFilelog }}
+      filelog:
+        include: [ /var/log/pods/*/*/*.log ]
+        include_file_path: true
+        operators:
+          # Containerd/CRI log line → structured record (timestamp, stream, log body).
+          - type: container
+            id: cri-parser
+          # App lines are pino JSON; parse so severity + trace_id/span_id are first-class.
+          - type: json_parser
+            parse_from: body
+            on_error: send_quiet
+          - type: severity_parser
+            parse_from: attributes.level
+            on_error: send_quiet
+    {{- end }}
+    processors:
+      batch: {}
+      resourcedetection:
+        detectors: [env, gcp, system]
+        timeout: 5s
+        override: false
+    {{- if $useFilelog }}
+      k8sattributes:
+        auth_type: serviceAccount
+        passthrough: false
+        extract:
+          metadata: [k8s.namespace.name, k8s.pod.name, k8s.container.name, k8s.deployment.name]
+    {{- end }}
+    exporters:
+    {{- if eq $backend "googlecloud" }}
+      googlecloud:
+        log:
+          default_log_name: opencrane
+    {{- else }}
+      otlp:
+        endpoint: {{ (($exporter.otlp).endpoint) | default "" | quote }}
+        tls:
+          insecure: true
+    {{- end }}
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [resourcedetection, batch]
+          exporters: [{{ $backend }}]
+      {{- if $useFilelog }}
+        logs:
+          receivers: [filelog]
+          processors: [k8sattributes, resourcedetection, batch]
+          exporters: [{{ $backend }}]
+      {{- end }}
+---
+{{- $kind := ternary "DaemonSet" "Deployment" (eq (default "daemonset" $collector.mode) "daemonset") }}
+apiVersion: apps/v1
+kind: {{ $kind }}
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-collector
+spec:
+  {{- if eq $kind "Deployment" }}
+  replicas: 1
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "opencrane.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: otel-collector
+  template:
+    metadata:
+      labels:
+        {{- include "opencrane.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: otel-collector
+      annotations:
+        # Roll the pod(s) when the collector config changes.
+        checksum/config: {{ tpl (.Files.Get "templates/otel-collector.yaml" | default "") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ $fullName }}
+      containers:
+        - name: otel-collector
+          image: {{ $collector.image | default "otel/opentelemetry-collector-contrib:0.115.0" | quote }}
+          args: ["--config=/etc/otel/config.yaml"]
+          ports:
+            - name: otlp-http
+              containerPort: {{ $otlpPort }}
+            - name: otlp-grpc
+              containerPort: 4317
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otel
+            {{- if $useFilelog }}
+            - name: varlogpods
+              mountPath: /var/log/pods
+              readOnly: true
+            {{- end }}
+          resources:
+            {{- toYaml ($collector.resources | default dict) | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $fullName }}
+        {{- if $useFilelog }}
+        - name: varlogpods
+          hostPath:
+            path: /var/log/pods
+            type: Directory
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-collector
+spec:
+  selector:
+    {{- include "opencrane.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-collector
+  ports:
+    - name: otlp-http
+      port: {{ $otlpPort }}
+      targetPort: otlp-http
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+{{- end }}

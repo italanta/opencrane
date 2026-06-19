@@ -1,3 +1,6 @@
+import { ___DoWithTrace } from "@opencrane/observability";
+
+import { _log } from "../../log.js";
 import type { LiteLlmModelRegistration } from "./litellm-model-registration.types.js";
 
 /**
@@ -19,14 +22,34 @@ export async function _RegisterLiteLlmModel(input: LiteLlmModelRegistration): Pr
 {
   const endpoint = process.env.LITELLM_ENDPOINT?.trim() ?? "";
   const masterKey = process.env.LITELLM_MASTER_KEY?.trim() ?? "";
+  const configured = Boolean(endpoint && masterKey);
 
   // 1. Unconfigured (dev / tests): skip the network call and return a stable placeholder
   //    so creates succeed and are reproducible without a live LiteLLM.
-  if (!endpoint || !masterKey)
+  if (!configured)
   {
-    return _placeholderModelId(input);
+    const placeholder = _placeholderModelId(input);
+    _log.debug({ publicModelName: input.publicModelName, configured: false, litellmModelId: placeholder }, "litellm model registration skipped (unconfigured)");
+    return placeholder;
   }
 
+  return ___DoWithTrace(
+    "litellm.model.register",
+    { publicModelName: input.publicModelName, upstreamModel: input.upstreamModel, scope: input.scope },
+    function _register(): Promise<string> { return _registerLive(endpoint, masterKey, input); },
+  );
+}
+
+/**
+ * Perform the live `POST /model/new` registration against LiteLLM, falling back to a deterministic
+ * placeholder on any non-OK response or network/parse error so the create path never fails.
+ * @param endpoint  - LiteLLM base URL.
+ * @param masterKey - LiteLLM bearer credential.
+ * @param input     - The registration inputs.
+ * @returns The LiteLLM deployment id, or a placeholder when the call fails.
+ */
+async function _registerLive(endpoint: string, masterKey: string, input: LiteLlmModelRegistration): Promise<string>
+{
   try
   {
     // 2. Register the deployment GLOBALLY. `api_key` is an `os.environ/<KEY>` reference so the
@@ -57,15 +80,19 @@ export async function _RegisterLiteLlmModel(input: LiteLlmModelRegistration): Pr
     //    and the deployment can be reconciled later; the create must not fail on a flaky LiteLLM.
     if (!response.ok)
     {
+      _log.warn({ publicModelName: input.publicModelName, status: response.status }, "litellm model registration failed; using placeholder id");
       return _placeholderModelId(input);
     }
 
     const payload = await response.json() as { model_id?: string; id?: string; model_info?: { id?: string } };
-    return payload.model_id ?? payload.id ?? payload.model_info?.id ?? _placeholderModelId(input);
+    const litellmModelId = payload.model_id ?? payload.id ?? payload.model_info?.id ?? _placeholderModelId(input);
+    _log.info({ publicModelName: input.publicModelName, litellmModelId }, "litellm model registered");
+    return litellmModelId;
   }
-  catch
+  catch (err)
   {
     // 4. Network / parse failure is non-fatal — keep the create working with a placeholder.
+    _log.warn({ publicModelName: input.publicModelName, err }, "litellm model registration errored; using placeholder id");
     return _placeholderModelId(input);
   }
 }

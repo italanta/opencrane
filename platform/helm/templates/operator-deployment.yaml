@@ -30,6 +30,7 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            {{- include "opencrane.observabilityEnv" (dict "ctx" $ "component" "operator") | nindent 12 }}
             - name: WATCH_NAMESPACE
               value: {{ .Values.operator.watchNamespace | quote }}
             # -- Multi-instance fail-closed guard (brief B2): when true the operator

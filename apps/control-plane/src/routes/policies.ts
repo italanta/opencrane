@@ -2,6 +2,7 @@ import * as k8s from "@kubernetes/client-node";
 import { Router } from "express";
 import type { PrismaClient } from "@prisma/client";
 
+import { _log } from "../log.js";
 import type { CreatePolicyRequest } from "../types.js";
 import { _PropagatePolicyToCognee, _ResolvePolicyAffectedTenants } from "../core/grants/cognee-awareness-sync.js";
 import { _DetectPolicyProjectionDrift } from "./internal/projection-drift.js";
@@ -45,12 +46,12 @@ export function policiesRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCl
       const result = await _PropagatePolicyToCognee(prisma, policyName, affected, auth);
       if (result.failures > 0)
       {
-        console.warn(`[policies] Cognee awareness propagation for ${policyName}: ${result.failures}/${affected.length} tenant(s) failed`);
+        _log.warn({ policyName, failures: result.failures, affected: affected.length }, "cognee awareness propagation had tenant failures");
       }
     }
     catch (err)
     {
-      console.warn(`[policies] Cognee awareness propagation for ${policyName} errored:`, err instanceof Error ? err.message : err);
+      _log.warn({ policyName, err }, "cognee awareness propagation errored");
     }
   }
 
@@ -226,7 +227,7 @@ export function policiesRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCl
     //    a resolution hiccup must not block the delete (propagation is downstream).
     const affectedTenants = await _ResolvePolicyAffectedTenants(prisma, name).catch(function _onResolveErr(err)
     {
-      console.warn(`[policies] could not resolve affected tenants for ${name} before delete:`, err instanceof Error ? err.message : err);
+      _log.warn({ policyName: name, err }, "could not resolve affected tenants before policy delete");
       return [] as string[];
     });
 

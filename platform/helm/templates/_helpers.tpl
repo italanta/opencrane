@@ -250,6 +250,40 @@ This Secret is provisioned out-of-band (operator/installer), not by the chart.
 {{- end }}
 
 {{/*
+Observability env block for an app container.
+
+Call with a dict carrying the root context + the logical service name, e.g.:
+  {{- include "opencrane.observabilityEnv" (dict "ctx" $ "component" "control-plane") | nindent 12 }}
+
+NODE_ENV + LOG_LEVEL are always emitted so logs are consistent JSON. The OTEL_*
+vars are emitted only when observability.otel.enabled, pointing apps at the
+release-local collector Service; omitting them leaves @opencrane/observability's
+startTelemetry a no-op (it keys off OTEL_EXPORTER_OTLP_ENDPOINT). The service name
+is also set in code, so this stays correct even if the env var is dropped.
+*/}}
+{{- define "opencrane.observabilityEnv" -}}
+{{- $ctx := .ctx -}}
+{{- $component := .component -}}
+{{- $o := $ctx.Values.observability | default dict -}}
+{{- $otel := $o.otel | default dict -}}
+{{- $collector := $otel.collector | default dict -}}
+- name: NODE_ENV
+  value: {{ default "production" $otel.nodeEnv | quote }}
+- name: LOG_LEVEL
+  value: {{ default "info" $otel.logLevel | quote }}
+{{- if $otel.enabled }}
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: "http://{{ include "opencrane.fullname" $ctx }}-otel-collector.{{ $ctx.Release.Namespace }}.svc:{{ default 4318 $collector.otlpPort }}"
+- name: OTEL_EXPORTER_OTLP_PROTOCOL
+  value: "http/protobuf"
+- name: OTEL_SERVICE_NAME
+  value: {{ $component | quote }}
+- name: OTEL_RESOURCE_ATTRIBUTES
+  value: "service.namespace=opencrane,deployment.environment={{ include "opencrane.environment" $ctx }}"
+{{- end }}
+{{- end }}
+
+{{/*
 Validation guardrails for sensitive LiteLLM configuration.
 */}}
 {{- define "opencrane.validate" -}}

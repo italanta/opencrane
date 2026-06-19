@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
 
+import { ___DoWithTrace } from "@opencrane/observability";
+
+import { _log } from "../../log.js";
 import type { OciBundleStoreConfig, OciFetch, OciPushResult, OciResponse } from "./oci-bundle-store.types.js";
 
 /** Media type for the stored skill-bundle layer blob. */
@@ -101,18 +104,28 @@ export class OciBundleStore
   public async pushBundle(content: string): Promise<OciPushResult>
   {
     const digest = _Digest(content);
+    const size = Buffer.byteLength(content, "utf8");
+    // Capture `this` so the traced callback can be a named function expression
+    // (repo style) while still reaching the instance's transport + helpers.
+    const self = this;
 
-    // 1. Upload the bundle as a layer blob and the empty config blob. Both must
-    //    exist before the manifest that references them can be accepted.
-    await this._uploadBlob(content, digest);
-    await this._uploadBlob(_EMPTY_CONFIG, _Digest(_EMPTY_CONFIG));
+    // Trace the push as `oci.bundle.push`; the digest + size make a slow or
+    // failing registry interaction attributable to a specific bundle.
+    return ___DoWithTrace("oci.bundle.push", { repository: this.repository, digest, sizeBytes: size }, async function _push(): Promise<OciPushResult>
+    {
+      // 1. Upload the bundle as a layer blob and the empty config blob. Both must
+      //    exist before the manifest that references them can be accepted.
+      await self._uploadBlob(content, digest);
+      await self._uploadBlob(_EMPTY_CONFIG, _Digest(_EMPTY_CONFIG));
 
-    // 2. PUT a manifest referencing the layer so the registry keeps the blob
-    //    (unreferenced blobs are eligible for garbage collection). The manifest
-    //    is tagged by the layer's hex digest, a valid OCI tag.
-    await this._putManifest(content, digest);
+      // 2. PUT a manifest referencing the layer so the registry keeps the blob
+      //    (unreferenced blobs are eligible for garbage collection). The manifest
+      //    is tagged by the layer's hex digest, a valid OCI tag.
+      await self._putManifest(content, digest);
 
-    return { digest, size: Buffer.byteLength(content, "utf8") };
+      _log.info({ repository: self.repository, digest, sizeBytes: size }, "oci bundle pushed");
+      return { digest, size };
+    });
   }
 
   /**
@@ -126,32 +139,40 @@ export class OciBundleStore
   {
     // 0. Reject a malformed digest before it reaches the registry URL.
     _AssertDigest(digest);
+    // Capture `this` so the traced callback can be a named function expression.
+    const self = this;
 
-    // 1. Fetch the blob directly by its content-addressable digest.
-    const res = await this.fetchFn(`${this.registryUrl}/v2/${this.repository}/blobs/${digest}`, {
-      method: "GET",
-      headers: { accept: _BUNDLE_MEDIA_TYPE },
+    // Trace the pull as `oci.bundle.pull`.
+    return ___DoWithTrace("oci.bundle.pull", { repository: this.repository, digest }, async function _pull(): Promise<string | null>
+    {
+      // 1. Fetch the blob directly by its content-addressable digest.
+      const res = await self.fetchFn(`${self.registryUrl}/v2/${self.repository}/blobs/${digest}`, {
+        method: "GET",
+        headers: { accept: _BUNDLE_MEDIA_TYPE },
+      });
+
+      // 2. A missing blob is an expected "not stored" signal, not an error.
+      if (res.status === 404)
+      {
+        _log.debug({ repository: self.repository, digest }, "oci bundle not found");
+        return null;
+      }
+      if (!res.ok)
+      {
+        throw new Error(`OCI blob GET failed for ${digest}: HTTP ${res.status}`);
+      }
+
+      // 3. Re-verify the digest — never serve bytes that do not hash to what was asked for.
+      const content = await res.text();
+      const actual = _Digest(content);
+      if (actual !== digest)
+      {
+        throw new Error(`OCI digest mismatch: requested ${digest}, got ${actual}`);
+      }
+
+      _log.debug({ repository: self.repository, digest, sizeBytes: Buffer.byteLength(content, "utf8") }, "oci bundle pulled");
+      return content;
     });
-
-    // 2. A missing blob is an expected "not stored" signal, not an error.
-    if (res.status === 404)
-    {
-      return null;
-    }
-    if (!res.ok)
-    {
-      throw new Error(`OCI blob GET failed for ${digest}: HTTP ${res.status}`);
-    }
-
-    // 3. Re-verify the digest — never serve bytes that do not hash to what was asked for.
-    const content = await res.text();
-    const actual = _Digest(content);
-    if (actual !== digest)
-    {
-      throw new Error(`OCI digest mismatch: requested ${digest}, got ${actual}`);
-    }
-
-    return content;
   }
 
   /**

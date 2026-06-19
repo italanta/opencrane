@@ -2,6 +2,7 @@ import type * as k8s from "@kubernetes/client-node";
 import type { PrismaClient } from "@prisma/client";
 import type { Request, Response } from "express";
 
+import { _log } from "../../log.js";
 import { SpendLogic } from "../spend/spend.logic.js";
 
 /** AI-budget controller dependencies. */
@@ -195,10 +196,14 @@ export async function _RevokeLiteLlmKey(req: Request, res: Response, deps: AiBud
   {
     await deps.coreApi.deleteNamespacedSecret({ name: secretName, namespace: deps.namespace });
     secretDeleted = true;
+    _log.info({ tenant: tenantName, secretName, namespace: deps.namespace }, "litellm key secret deleted");
   }
-  catch
+  catch (err)
   {
+    // Absent secret is the common case (already revoked / never issued); log at debug so a real
+    // RBAC/API failure is still visible without spamming on the benign 404.
     secretDeleted = false;
+    _log.debug({ tenant: tenantName, secretName, namespace: deps.namespace, err }, "litellm key secret not deleted");
   }
 
   await deps.prisma.tenantLiteLlmKey.updateMany({
@@ -239,6 +244,10 @@ async function _deleteLiteLlmKey(keyAlias: string | null): Promise<{ deleted: bo
   // 1. Unconfigured or no alias to target → nothing to delete upstream.
   if (!endpoint || !masterKey || !keyAlias)
   {
+    _log.debug(
+      { endpointConfigured: Boolean(endpoint), masterKeyConfigured: Boolean(masterKey), keyAlias },
+      "litellm key delete skipped (unconfigured or no alias)",
+    );
     return { deleted: false };
   }
 
@@ -253,11 +262,13 @@ async function _deleteLiteLlmKey(keyAlias: string | null): Promise<{ deleted: bo
       },
       body: JSON.stringify({ key_aliases: [keyAlias] }),
     });
+    _log.info({ keyAlias, deleted: response.ok, status: response.status }, "litellm key delete attempted");
     return { deleted: response.ok };
   }
-  catch
+  catch (err)
   {
     // 3. Network / parse failure is non-fatal — the Secret delete still revokes access locally.
+    _log.warn({ keyAlias, err }, "litellm key delete errored; relying on local secret delete");
     return { deleted: false };
   }
 }
