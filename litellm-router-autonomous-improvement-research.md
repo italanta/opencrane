@@ -218,6 +218,31 @@ Routing is **opt-in**. Most calls use an explicitly chosen model; the autonomous
 
 Mechanically the resolved model is written into the effective-contract (per-skill) + the pod's `models[]`/default; the per-tenant virtual key's `models[]` allowlist is the hard ceiling on what *any* mode may select (control-plane-enforced, §4 rules). Auto is a per-skill (or per-tenant-default) flag — never global-implicit.
 
+### How per-skill resolution works — intent → resolution → enforcement
+
+A common misread is "model selection is a property of the skill." It isn't — the skill carries **intent** (its posture); the **concrete model** a tenant runs is `posture × the tenant's scope defaults`, resolved per-tenant when the effective-contract is compiled. Three distinct layers:
+
+| Layer | Where it lives | What it holds |
+|---|---|---|
+| **Intent** | the `Skill` row's posture (`modelMode`/`pinnedModel`/`autoConfig`) | the author's choice: pinned · auto · inherit |
+| **Resolution** | `_ResolveContractSkillModels` → `_ResolveSkillModel` at contract-compile | `posture × scope defaults` → the concrete model for *this* tenant, *now* |
+| **Enforcement** | the per-tenant LiteLLM virtual key's `models[]` allowlist (AIR.0c) | the hard runtime gate on what any selection may reach |
+
+**The resolver** (`apps/control-plane/src/core/model-routing/`): `_ResolveContractSkillModels` (the DB wrapper) loads the scope defaults **once** — the Global `ModelRoutingDefault` plus the tenant's ClusterTenant default when it has one — and the posture rows for the entitled skills (joined by name; a posture-bearing row beats a null one). It then runs the **pure** `_ResolveSkillModel` per entitled skill, emitting `{ skillId, model, auto }` into the contract's `skills.models`. The resolver does **no I/O and never calls LiteLLM** — the wrapper does the loads, so the precedence stays unit-testable and the compile stays cheap.
+
+**Per-posture resolution** (the precedence chain `_ResolveSkillModel` implements):
+- **`pinned`** → `pinnedModel`. The *only* case where the skill itself names the concrete model.
+- **`auto`** → the **scope default** is the anchor model (ClusterTenant default, else Global), with the skill's `autoConfig`, and `auto: true`. The resolver does **not** pick the cheapest-passing model here — there's no live measurement at compile time; the live pick is the runtime/optimization-loop's job (the loop writes a new default, which the next contract re-pull reflects).
+- **`null` (inherit)** → the scope default (and it inherits the default's auto-ness when that default is itself an auto config).
+- **nothing resolves** → `model: null`; the pod falls back to its own configured default.
+
+**Why resolution can't be a skill field:**
+- **Tenant-specific** — one `Skill` (keyed `name/scope/team`, entitled to many tenants) resolves to *different* models per customer, because ClusterTenant defaults differ.
+- **Time-varying** — a scope-default change, or an AIR.7 proposal approval, re-resolves the model with **no edit to the skill**.
+- **Compiled + re-pulled** — the contract is the per-tenant view the pod re-pulls at each agentic-loop boundary; that's the right place to materialise "the model for this tenant, right now."
+
+**Where the other precedence tiers sit:** the **explicit per-request model** (top of the chain) is honoured at request time by the pod/gateway and is deliberately *not* an input to the resolver; the **pod's own configured default** is the `model: null` fallback at the bottom. The resolver owns only the middle tiers (pinned → auto → scope-default). The contract field is emitted by `routes/internal/tenant-contract.ts` (`skills.models`).
+
 ### Skill-level model definition
 A skill can declare its own model in the skill-registry metadata — either a **pinned** model (mode 2) or **`auto`** with a per-skill auto config (mode 3). This is the same artifact as the per-skill eval set (§5): developing a skill includes deciding its model posture. Surfaced API-first + `oc skill …` + WeOwnAI.
 
