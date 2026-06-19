@@ -26,6 +26,10 @@ OPENCRANE_MCP_POLICY_ENFORCED="${OPENCRANE_MCP_POLICY_ENFORCED:-false}"
 # MCP policy from Tenant CRD spec (tenant-level governance override, injected by operator)
 OPENCRANE_TENANT_MCP_ALLOW="${OPENCRANE_TENANT_MCP_ALLOW:-}"
 OPENCRANE_TENANT_MCP_DENY="${OPENCRANE_TENANT_MCP_DENY:-}"
+# Skill-registry delivery: pull entitled skill bundles by digest from the in-cluster
+# skill-registry, authenticating with the audience-bound projected SA token.
+OPENCRANE_SKILL_REGISTRY_URL="${OPENCRANE_SKILL_REGISTRY_URL:-}"
+OPENCRANE_SKILL_REGISTRY_TOKEN_PATH="${OPENCRANE_SKILL_REGISTRY_TOKEN_PATH:-/var/run/opencrane/tokens/skill-registry.token}"
 
 function _csv_contains()
 {
@@ -138,6 +142,96 @@ for (const doc of docs) {
   fs.writeFileSync(markerPath, String(version));
   process.stderr.write(`[opencrane] Delivered managed doc ${doc.file} v${version} to workspace\n`);
 }
+EOF
+}
+
+function _pull_entitled_skills()
+{
+  local contract_file="$1"
+
+  # Need a registry URL, a readable projected token, and a contract to do anything.
+  # On a cold boot the bootstrap contract has skills.entitled=[], so this is a no-op
+  # until the first control-plane poll lands the live contract (mirrors TOOLS.md).
+  if [ -z "$OPENCRANE_SKILL_REGISTRY_URL" ] || [ ! -f "$contract_file" ] || [ ! -r "$OPENCRANE_SKILL_REGISTRY_TOKEN_PATH" ]; then
+    return 0
+  fi
+
+  # Node owns the fetch+write so JSON parsing, the Bearer call, and the exact bytes
+  # stay in one place. Entitlement is already enforced by the registry + control-plane
+  # (a non-entitled digest 404s); OPENCRANE_ALLOWED_SKILLS is the optional tenant-level
+  # (Tenant.spec.skillAllowlist) narrowing applied on top.
+  node - "$contract_file" "$OPENCRANE_SKILL_REGISTRY_URL" "$OPENCRANE_SKILL_REGISTRY_TOKEN_PATH" "$SKILLS_DIR" "${OPENCRANE_ALLOWED_SKILLS:-}" <<'EOF' || true
+const fs = require("node:fs");
+const path = require("node:path");
+
+const [, , contractPath, registryUrl, tokenPath, skillsDir, allowedCsv] = process.argv;
+
+let contract;
+try { contract = JSON.parse(fs.readFileSync(contractPath, "utf8")); } catch { process.exit(0); }
+
+const entitled = Array.isArray(contract?.skills?.entitled) ? contract.skills.entitled : [];
+if (entitled.length === 0) { process.exit(0); }
+
+let token;
+try { token = fs.readFileSync(tokenPath, "utf8").trim(); } catch { process.exit(0); }
+if (!token) { process.exit(0); }
+
+// Optional tenant-level allowlist; empty/unset => deliver everything the contract entitles.
+const allowed = (allowedCsv || "").split(",").map((s) => s.trim()).filter(Boolean);
+const base = registryUrl.replace(/\/+$/, "");
+
+async function _pull()
+{
+  for (const skill of entitled)
+  {
+    // Tolerate both the enriched object shape {id,name,digest} and a legacy bare-id string.
+    const name = typeof skill === "string" ? skill : skill?.name;
+    const digest = typeof skill === "string" ? null : skill?.digest;
+    if (!name || !digest) { continue; }
+    // Keep the on-disk name a single safe path segment so a write can never escape the skills dir.
+    if (name.includes("/") || name.includes("..")) { continue; }
+    if (allowed.length > 0 && !allowed.includes(name)) { continue; }
+
+    let res;
+    try
+    {
+      res = await fetch(`${base}/bundles/${encodeURIComponent(digest)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+    }
+    catch (err)
+    {
+      process.stderr.write(`[opencrane] skill '${name}' fetch failed: ${err && err.message ? err.message : "error"}\n`);
+      continue;
+    }
+
+    if (!res.ok)
+    {
+      // 404 = not entitled / not found (existence-hiding at the registry); other codes are transient.
+      process.stderr.write(`[opencrane] skill '${name}' not delivered (status ${res.status})\n`);
+      continue;
+    }
+
+    const body = await res.text();
+    try
+    {
+      const dir = path.join(skillsDir, name);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "SKILL.md"), body);
+    }
+    catch (err)
+    {
+      // A write failure (permissions, disk full) must surface and must not abort the
+      // remaining entitled skills — log and move on to the next bundle.
+      process.stderr.write(`[opencrane] skill '${name}' write failed: ${err && err.message ? err.message : "error"}\n`);
+      continue;
+    }
+    process.stderr.write(`[opencrane] Delivered skill '${name}' (${digest}) to workspace\n`);
+  }
+}
+
+_pull().catch(() => process.exit(0));
 EOF
 }
 
@@ -262,6 +356,12 @@ function _contract_poll_loop()
         # agent sees the new tool list as soon as it restarts.
         _apply_workspace_docs "$writable_path"
 
+        # Pull any newly-entitled skill bundles from the registry before the reload so
+        # the agent can use them on restart. Additive: a de-entitled skill stops being
+        # advertised in TOOLS.md and 404s at the registry, but its on-disk copy is left
+        # in place (pruning de-entitled skills is a separate follow-up).
+        _pull_entitled_skills "$writable_path"
+
         # Re-source the updated policy into local variables, then signal OpenClaw
         # to restart so the new policy takes effect without a full pod restart.
         # SIGHUP is used for graceful reload; if OpenClaw exits, the outer wait
@@ -358,8 +458,10 @@ function _main()
   # copy; fall back to the ConfigMap-mounted original.
   if [ -f "$RUNTIME_CONTRACT_WRITABLE" ]; then
     _apply_workspace_docs "$RUNTIME_CONTRACT_WRITABLE"
+    _pull_entitled_skills "$RUNTIME_CONTRACT_WRITABLE"
   else
     _apply_workspace_docs "$RUNTIME_CONTRACT_PATH"
+    _pull_entitled_skills "$RUNTIME_CONTRACT_PATH"
   fi
 
   echo "[opencrane] Starting OpenClaw gateway"
