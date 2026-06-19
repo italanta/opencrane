@@ -84,7 +84,12 @@ export class ObotHealthChecker
   }
 
   /**
-   * Perform a single health-check request against the gateway's `/healthz` endpoint.
+   * Perform a single health-check request against the gateway's `/api/healthz` endpoint.
+   *
+   * The path must match the liveness/readiness probe in the Obot Deployment
+   * (`platform/helm/templates/obot-mcp-gateway-deployment.yaml`), which Obot
+   * serves at `/api/healthz` — NOT `/healthz`. A mismatch here would make every
+   * poll report the gateway as unhealthy even when it is fine.
    *
    * On success the consecutive-failure counter is reset (and a recovery log line
    * is emitted if the gateway had previously been unhealthy).  On failure the
@@ -93,7 +98,7 @@ export class ObotHealthChecker
    */
   private async _check(): Promise<void>
   {
-    const url = `${this._gatewayUrl}/healthz`;
+    const url = `${this._gatewayUrl}/api/healthz`;
 
     try
     {

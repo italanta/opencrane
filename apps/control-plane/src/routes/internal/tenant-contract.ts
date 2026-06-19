@@ -153,7 +153,7 @@ export function _RegisterInternalTenantContract(prisma: PrismaClient, authApi: k
         ? await prisma.mcpServer.findMany({ where: { id: { in: allowedMcp } }, select: { id: true, name: true, description: true } })
         : [];
       const skillBundles = allowedSkills.length > 0
-        ? await prisma.skillBundle.findMany({ where: { id: { in: allowedSkills } }, select: { id: true, name: true, description: true } })
+        ? await prisma.skillBundle.findMany({ where: { id: { in: allowedSkills } }, select: { id: true, name: true, description: true, digest: true } })
         : [];
 
       // 6b. Resolve the effective model for each entitled skill by the locked precedence chain
@@ -206,7 +206,14 @@ export function _RegisterInternalTenantContract(prisma: PrismaClient, authApi: k
           },
         },
         skills: {
-          entitled: allowedSkills,
+          // Entitled bundles carry the digest + name the pod needs to PULL each skill
+          // from the skill-registry (`GET /bundles/:digest`) and lay it down on disk as
+          // `<skills-dir>/<name>/SKILL.md` (see apps/tenant/deploy/entrypoint.sh).
+          // Bundles whose row no longer exists are dropped here — they cannot be pulled.
+          entitled: skillBundles.map(function _toEntitledSkill(bundle)
+          {
+            return { id: bundle.id, name: bundle.name, digest: bundle.digest };
+          }),
           // Per-skill resolved model (AIR.2). One entry per entitled skill: `{ skillId, model, auto }`.
           // `model` is null when nothing in the precedence chain resolves, in which case the pod
           // falls back to its own configured default. `auto` flags an auto-routing posture.

@@ -13,8 +13,10 @@ Pod starts
            └── not found → npm install openclaw@$OPENCLAW_VERSION into GCS bucket
            └── found     → reuse existing install (fast restart)
         4. Copy /config/openclaw.json to state dir if not already present
-        5. Symlink /shared-skills/{org,team} into state dir only when the resolved MCP policy allows the `skills` server
-        6. exec openclaw gateway run --bind lan --port 18789
+        5. Symlink /shared-skills/{org,team} into state dir, when that volume is present, if the resolved MCP policy allows the `skills` server
+        6. Pull entitled skill bundles by digest from the skill-registry → $STATE_DIR/agents/main/skills/<name>/SKILL.md
+        7. Start `openclaw gateway run --bind lan --port 18789` in the background, plus a contract re-pull loop:
+           every 30s it polls the control-plane; on a change it re-renders TOOLS.md, re-pulls entitled skills, then SIGHUPs OpenClaw
 ```
 
 ## Storage layout (inside the pod)
@@ -69,13 +71,14 @@ This is the baseline hardening layer only. It still needs end-to-end runtime val
 
 ## Managed runtime policy behavior
 
-The tenant entrypoint now reads `opencrane-managed-runtime.json` before startup and applies the resolved MCP policy to shared-skill linking.
+The tenant entrypoint reads `opencrane-managed-runtime.json` before startup, applies the resolved MCP policy to shared-skill linking, and pulls entitled skill bundles from the skill-registry.
 
 Today this means:
 - when the `skills` MCP server is denied, org and team shared skills are not linked into the tenant runtime
 - when the `skills` MCP server is allowed or no MCP policy is enforced, existing shared-skill linking behavior is preserved
+- entitled skill bundles named in the contract's `skills.entitled` (each `{ id, name, digest }`) are pulled from `OPENCRANE_SKILL_REGISTRY_URL` using the `skill-registry`-audience projected token and written to `<state>/agents/main/skills/<name>/SKILL.md`, at boot and on every contract change. The registry enforces entitlement (a non-entitled or unknown digest returns 404); `Tenant.spec.skillAllowlist` (`OPENCRANE_ALLOWED_SKILLS`) narrows further. Delivery is additive — a de-entitled skill stops being advertised in TOOLS.md and 404s at the registry, but its on-disk copy is not yet pruned.
 
-This is only the first enforcement slice. Broader MCP tool blocking and deny/audit events are still deferred.
+This is an early enforcement slice. Broader MCP tool blocking, deny/audit events, and pruning of de-entitled skills are still deferred.
 
 ## Files
 
