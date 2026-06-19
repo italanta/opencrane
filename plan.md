@@ -522,6 +522,14 @@ With one agent per lane, wall-clock ≈ 4 sequential slices instead of 7.
   per `3-deployment.ts:81`) — needs an **OpenClaw image change** (configurable translator backend) to point it
   at LiteLLM. **(C)** deleting the orphaned `ProviderApiKey` table + `/providers/keys` route needs WeOwnAI
   confirmed off the legacy endpoint first. Both deferred to a coordinated cutover.
+- [x] **AIR.1b Model-registry seeding (opt-in). — LANDED 2026-06-19.** Declarative seed of global
+  `ModelDefinition`s registered idempotently on control-plane startup (`core/model-routing/seed-models.ts`,
+  best-effort/non-fatal, skips existing slugs, `isDefault` upserts the Global `ModelRoutingDefault`). Helm
+  `controlPlane.modelRegistry.seed` (empty default; commented recommended tiered block — Anthropic
+  Opus/Sonnet[default]/Haiku, OpenAI gpt-5/mini, Gemini pro/flash, + an OSS template) → `MODEL_REGISTRY_SEED`
+  env (JSON). Each entry supports a custom `apiBase` + `apiKeyEnvRef` (`api_key: os.environ/<ref>`) so operators
+  define their own models/endpoints. Seeded models route only once the matching key env reaches LiteLLM +
+  `storeModelInDb` is on. Model ids are unverified (verify-against-catalog note in values).
 - [x] **AIR.1 Model registry (BYOM) — control-plane + LiteLLM. — LANDED 2026-06-18.** Prisma
   `ModelDefinition` + `ProviderCredential` (scope `global|clusterTenant`, **stores `secretRef` — never a raw
   key**) + enum `ModelRoutingScope` + migration `0017_model_routing`; contract types in `libs/contracts`;
