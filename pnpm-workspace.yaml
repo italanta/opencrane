@@ -1,6 +1,7 @@
 packages:
   - libs/contracts
   - libs/awareness
+  - libs/observability
   - apps/operator
   - apps/control-plane
   - apps/harvesting-agent

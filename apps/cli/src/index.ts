@@ -18,7 +18,13 @@
  *   Example: oc tenants list --output json | jq '.[].name'
  */
 
+// OpenTelemetry must initialise before the HTTP client is imported. No-op
+// unless OTEL_EXPORTER_OTLP_ENDPOINT is set, so laptop use is unaffected.
+import "./instrument.js";
+
 import { Command } from "commander";
+
+import { ___ShutdownTelemetry } from "@opencrane/observability";
 
 import { type CliConfig, _ResolveConfig } from "./config.js";
 import { _RegisterAudit } from "./commands/audit.js";
@@ -88,8 +94,16 @@ _RegisterAwareness(program, _getConfig);
 _RegisterSessions(program, _getConfig);
 _RegisterAuth(program, _getConfig);
 
-program.parseAsync(process.argv).catch(function _onError(err: unknown)
-{
-  console.error(err instanceof Error ? err.message : String(err));
-  process.exit(1);
-});
+program.parseAsync(process.argv)
+  .then(async function _onDone()
+  {
+    // Flush any spans (only created when a collector endpoint is configured)
+    // before the process exits naturally.
+    await ___ShutdownTelemetry();
+  })
+  .catch(async function _onError(err: unknown)
+  {
+    console.error(err instanceof Error ? err.message : String(err));
+    await ___ShutdownTelemetry();
+    process.exit(1);
+  });

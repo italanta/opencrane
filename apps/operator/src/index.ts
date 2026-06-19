@@ -1,5 +1,9 @@
+// OpenTelemetry must initialise before any instrumented module is imported.
+import "./instrument.js";
+
 import * as k8s from "@kubernetes/client-node";
-import pino from "pino";
+
+import { ___BindConsole, ___CreateLogger, ___ShutdownTelemetry, ___WithOperation } from "@opencrane/observability";
 
 import { _LoadOperatorConfig } from "./config.js";
 import { ObotHealthChecker } from "./mcp-gateway/obot-health-checker.js";
@@ -8,8 +12,11 @@ import { _CreateTenantOperator, IdleChecker } from "./tenants/index.js";
 import { PolicyOperator } from "./policies/operator.js";
 import { _ReadTenantRolloutConfig, TenantUpdateWithCanaryStrategyController } from "./tenant-rollout/tenant-update-with-canary-strategy.controller.js";
 
-/** Root logger for the opencrane-operator process. */
-const log = pino({ name: "opencrane-operator" });
+/** Root logger for the opencrane-operator process — structured JSON, trace-correlated. */
+const log = ___CreateLogger("operator");
+
+// Route any stray console.* output through the structured logger.
+const _unbindConsole = ___BindConsole(log);
 
 /** Reference to the idle checker, set during startup for shutdown access. */
 let _idleCheckerRef: IdleChecker | null = null;
@@ -53,21 +60,26 @@ async function main(): Promise<void>
       "tenant rollout canary controller enabled",
     );
 
-    // Poll npm registry for new releases; the controller handles rollout internally
-    setInterval(async function _pollRelease()
+    // Poll npm registry for new releases; the controller handles rollout internally.
+    // Each tick is a traced `tenant.rollout.poll` operation so a slow/failing
+    // registry probe is attributable in the trace timeline.
+    setInterval(function _pollRelease()
     {
-      try
+      void ___WithOperation("tenant.rollout.poll", { releaseTag: tenantRolloutConfig.releaseTag }, async function _poll()
       {
-        const latest = await tenantRolloutController.getLatestRelease();
-        if (latest !== null)
+        try
         {
-          log.debug({ latest }, "tenant rollout release poll");
+          const latest = await tenantRolloutController.getLatestRelease();
+          if (latest !== null)
+          {
+            log.debug({ latest }, "tenant rollout release poll");
+          }
         }
-      }
-      catch (err)
-      {
-        log.warn({ err }, "tenant rollout release poll failed; will retry next interval");
-      }
+        catch (err)
+        {
+          log.warn({ err }, "tenant rollout release poll failed; will retry next interval");
+        }
+      });
     }, 15 * 60 * 1000); // every 15 minutes
   }
   else
@@ -100,18 +112,32 @@ async function main(): Promise<void>
 }
 
 /**
- * Perform a graceful shutdown by logging the signal and exiting.
+ * Perform a graceful shutdown: stop the timers, flush buffered spans to the
+ * collector, restore console, then exit. A hard-exit timer guards a stuck flush.
+ * @param signal - The signal that triggered shutdown.
  */
-function _shutdown(signal: string): void
+async function _shutdown(signal: string): Promise<void>
 {
   log.info({ signal }, "shutting down");
   _idleCheckerRef?.stop();
   _driftRepairerRef?.stop();
-  process.exit(0);
+
+  const hardExit = setTimeout(function _force() { process.exit(1); }, 10_000);
+  hardExit.unref();
+
+  try
+  {
+    await ___ShutdownTelemetry();
+  }
+  finally
+  {
+    _unbindConsole();
+    process.exit(0);
+  }
 }
 
-process.on("SIGTERM", function _onSigterm() { _shutdown("SIGTERM"); });
-process.on("SIGINT", function _onSigint() { _shutdown("SIGINT"); });
+process.on("SIGTERM", function _onSigterm() { void _shutdown("SIGTERM"); });
+process.on("SIGINT", function _onSigint() { void _shutdown("SIGINT"); });
 
 main().catch(function (err)
 {

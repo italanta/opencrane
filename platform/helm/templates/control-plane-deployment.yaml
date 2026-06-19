@@ -52,6 +52,7 @@ spec:
                   fieldPath: metadata.namespace
             - name: PORT
               value: {{ .Values.controlPlane.service.port | quote }}
+            {{- include "opencrane.observabilityEnv" (dict "ctx" $ "component" "control-plane") | nindent 12 }}
             - name: INGRESS_DOMAIN
               value: {{ .Values.ingress.domain | quote }}
             {{- if .Values.certManager.enabled }}

@@ -520,6 +520,41 @@ observability:
   cloudLogging: false
   # -- Enable Cloud Error Reporting integration
   cloudErrorReporting: false
+  # -- OpenTelemetry: every OpenCrane service emits structured JSON logs (trace-correlated)
+  #    and execution traces. An in-cluster OTEL Collector receives the traces over OTLP and
+  #    scrapes pod-stdout logs, then exports both to GCP Cloud Logging + Cloud Trace (or any
+  #    OTLP backend). Disabled by default — apps log to stdout regardless; turning this on
+  #    wires them to the collector and deploys it.
+  otel:
+    enabled: false
+    # -- Per-app pino level (debug|info|warn|error). Consumed via LOG_LEVEL.
+    logLevel: info
+    # -- NODE_ENV for the app containers (production = JSON logs, no pretty transport).
+    nodeEnv: production
+    collector:
+      # -- Topology: "daemonset" scrapes each node's pod stdout via the filelog receiver
+      #    (needed for the log pipeline); "deployment" runs a single collector for traces
+      #    only (use on GKE Autopilot, where hostPath DaemonSets are restricted — rely on
+      #    the platform's native stdout→Cloud Logging and set logs.collector=platform).
+      mode: daemonset
+      # -- Collector image (contrib distro carries the googlecloud + filelog components).
+      image: otel/opentelemetry-collector-contrib:0.115.0
+      # -- OTLP/HTTP port apps export traces to.
+      otlpPort: 4318
+      # -- Collector container resource requests/limits.
+      resources: {}
+    exporter:
+      # -- Export backend: "googlecloud" (Cloud Logging + Cloud Trace) or "otlp" (forward to
+      #    an external OTLP endpoint such as Tempo/Loki/another collector).
+      backend: googlecloud
+      otlp:
+        # -- Downstream OTLP endpoint when exporter.backend=otlp.
+        endpoint: ""
+    logs:
+      # -- Log pipeline: "filelog" (collector scrapes pod stdout — requires collector.mode=daemonset)
+      #    or "platform" (rely on the cloud's native stdout collection, e.g. GKE Autopilot →
+      #    Cloud Logging; the collector then handles traces only).
+      collector: filelog
 
 # -- ClusterTenant provisioner (Track CT). The native `shared` and `dedicatedNodes`
 #    isolation tiers need NO configuration here — the operator enforces them inline.

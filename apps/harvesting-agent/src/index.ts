@@ -1,13 +1,20 @@
+// OpenTelemetry must initialise before any instrumented module is imported.
+import "./instrument.js";
+
 import { PrismaClient } from "@prisma/client";
-import pino from "pino";
+
+import { ___BindConsole, ___CreateLogger, ___ShutdownTelemetry, ___WithOperation } from "@opencrane/observability";
 
 import { SlackConnector } from "./connectors/slack.connector.js";
 import type { SlackConnectorConfig } from "./domain/harvesting-agents/harvesting-agent.types.js";
 import { _IngestDocuments, _LoadCursor, _SaveCursor } from "./ingestion.js";
 import { _RecordSyncMetrics, _StartMetricsServer } from "./metrics.js";
 
-/** Application logger for the harvesting agent. */
-const log = pino({ name: "harvesting-agent" });
+/** Application logger for the harvesting agent — structured JSON, trace-correlated. */
+const log = ___CreateLogger("harvesting-agent");
+
+// Route any stray console.* output through the structured logger.
+const _unbindConsole = ___BindConsole(log);
 
 /**
  * Read and validate Slack connector configuration from the environment.
@@ -84,34 +91,40 @@ async function _RunSlackSyncCycle(
 ): Promise<void>
 {
   const source = "slack";
-  log.info({ source }, "starting sync cycle");
 
-  // 1. Load the persisted cursor from the last successful sync.
-  const cursor = await _LoadCursor(prisma, source);
-
-  // 2. Fetch new messages from Slack since the cursor timestamp.
-  const { documents, nextCursor, errors } = await connector.sync(cursor);
-
-  log.info({ source, documentCount: documents.length, errors: errors.length }, "sync fetched documents");
-
-  // 3. Push normalized documents directly into Cognee.
-  const { upsertedCount, skippedCount, failedCount } = await _IngestDocuments(
-    cogneeEndpoint,
-    documents,
-    log,
-  );
-
-  // 4. Advance the cursor to the latest message timestamp if progress was made.
-  if (nextCursor)
+  // Trace the whole cycle as a `harvest.cycle` span so each sync (and its
+  // Slack→Cognee child calls) is one attributable unit in the trace timeline.
+  await ___WithOperation("harvest.cycle", { source }, async function _cycle()
   {
-    await _SaveCursor(prisma, source, nextCursor);
-  }
+    log.info({ source }, "starting sync cycle");
 
-  // 5. Record metrics for this cycle so the metrics server can serve them.
-  const hasErrors = errors.length > 0 || failedCount > 0;
-  _RecordSyncMetrics(source, upsertedCount, failedCount, !hasErrors, errors[0]);
+    // 1. Load the persisted cursor from the last successful sync.
+    const cursor = await _LoadCursor(prisma, source);
 
-  log.info({ source, upsertedCount, skippedCount, failedCount, nextCursor }, "sync cycle complete");
+    // 2. Fetch new messages from Slack since the cursor timestamp.
+    const { documents, nextCursor, errors } = await connector.sync(cursor);
+
+    log.info({ source, documentCount: documents.length, errors: errors.length }, "sync fetched documents");
+
+    // 3. Push normalized documents directly into Cognee.
+    const { upsertedCount, skippedCount, failedCount } = await _IngestDocuments(
+      cogneeEndpoint,
+      documents,
+      log,
+    );
+
+    // 4. Advance the cursor to the latest message timestamp if progress was made.
+    if (nextCursor)
+    {
+      await _SaveCursor(prisma, source, nextCursor);
+    }
+
+    // 5. Record metrics for this cycle so the metrics server can serve them.
+    const hasErrors = errors.length > 0 || failedCount > 0;
+    _RecordSyncMetrics(source, upsertedCount, failedCount, !hasErrors, errors[0]);
+
+    log.info({ source, upsertedCount, skippedCount, failedCount, nextCursor }, "sync cycle complete");
+  });
 }
 
 /**
@@ -158,6 +171,29 @@ async function _Main(): Promise<void>
     }
   }, slackConfig.syncIntervalMs);
 }
+
+/**
+ * Flush buffered spans to the collector and restore console before exiting.
+ * @param signal - The signal that triggered shutdown.
+ */
+async function _shutdown(signal: string): Promise<void>
+{
+  log.info({ signal }, "shutting down harvesting agent");
+  const hardExit = setTimeout(function _force() { process.exit(1); }, 10_000);
+  hardExit.unref();
+  try
+  {
+    await ___ShutdownTelemetry();
+  }
+  finally
+  {
+    _unbindConsole();
+    process.exit(0);
+  }
+}
+
+process.on("SIGTERM", function _onSigterm() { void _shutdown("SIGTERM"); });
+process.on("SIGINT", function _onSigint() { void _shutdown("SIGINT"); });
 
 _Main().catch(function _onError(err: unknown)
 {

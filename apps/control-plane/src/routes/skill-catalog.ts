@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { Grant, SkillBundle, SkillPromotion } from "@opencrane/contracts";
 import type { PrismaClient } from "@prisma/client";
 
+import { _log } from "../log.js";
 import { _ScanBundleContent } from "../core/scanning/scan-bundle.js";
 import { _BackfillBundlesToOci } from "../core/oci/oci-backfill.js";
 import type { OciBundleStore } from "../core/oci/oci-bundle-store.js";
@@ -37,7 +38,7 @@ async function _PushPublishedBundle(prisma: PrismaClient, ociStore: OciBundleSto
   {
     // Swallowed during the dual-write window — DB content + delivery fallback cover it —
     // but logged so a persistently-failing push is visible before the destructive cutover.
-    console.warn(`[skill-catalog] OCI dual-write push failed for bundle ${id}:`, err instanceof Error ? err.message : err);
+    _log.warn({ bundleId: id, err }, "OCI dual-write push failed; DB content remains source of truth");
   }
 }
 
