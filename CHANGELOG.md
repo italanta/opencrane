@@ -13,6 +13,8 @@ follows [Keep a Changelog](https://keepachangelog.com/); the project uses
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-06-19
+
 ### Added
 
 - **Register any AI model from any provider and make it routable across the platform.** Operators
