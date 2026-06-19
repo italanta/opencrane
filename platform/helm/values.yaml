@@ -145,6 +145,69 @@ controlPlane:
     backendAccessControl: true
     # -- Permission sync timeout in milliseconds
     permissionsTimeoutMs: 5000
+  # -- Declarative, idempotent model-registry seeding (opt-in). Rendered to the
+  #    control-plane Deployment as the MODEL_REGISTRY_SEED env (a JSON array). On
+  #    startup the control plane registers each entry ONCE at Global scope, reusing
+  #    the normal model-registry path (persist ModelDefinition + best-effort LiteLLM
+  #    `POST /model/new`). Re-runs are no-ops; an entry whose publicModelName already
+  #    exists at Global scope is skipped, so your later edits via the API are never
+  #    clobbered. Everything is best-effort — a bad entry is skipped, malformed input
+  #    no-ops, and seeding NEVER blocks or crashes control-plane startup.
+  #
+  #    Seed entry shape (supports user-defined models + custom endpoints):
+  #      { publicModelName, upstreamModel, apiKeyEnvRef, apiBase?, isDefault? }
+  #      - apiKeyEnvRef  → LiteLLM api_key becomes `os.environ/<apiKeyEnvRef>` (the
+  #                        raw key never transits OpenCrane; LiteLLM reads it from
+  #                        its own env). e.g. ANTHROPIC_API_KEY / OPENAI_API_KEY.
+  #      - apiBase       → optional; passed through to the deployment so you can
+  #                        point at your OWN OSS / self-hosted / proxied endpoint.
+  #      - isDefault     → optional; marks the platform default. Sets the Global
+  #                        ModelRoutingDefault so inherit-posture skills resolve to
+  #                        it. Only one Global default — last isDefault wins.
+  #
+  #    IMPORTANT: a seeded model only ROUTES once (a) the matching key env reaches the
+  #    LiteLLM pod (e.g. via `orgSecrets.envMappings`) AND (b) `litellm.storeModelInDb`
+  #    is true (STORE_MODEL_IN_DB, AIR.0). Seeding the registry alone does not ship keys.
+  #
+  #    Empty default = no seeding. Uncomment the recommended block below and trim to
+  #    the providers you have keys for. Model ids are dated snapshots where the
+  #    provider offers them; otherwise floating aliases.
+  #    # verify ids against the current provider catalog before relying on them.
+  modelRegistry:
+    seed: []
+    # seed:
+    #   # --- Anthropic ---
+    #   - publicModelName: anthropic/claude-opus-4-8           # frontier
+    #     upstreamModel: anthropic/claude-opus-4-8
+    #     apiKeyEnvRef: ANTHROPIC_API_KEY
+    #   - publicModelName: anthropic/claude-sonnet-4-6         # balanced (platform default)
+    #     upstreamModel: anthropic/claude-sonnet-4-6
+    #     apiKeyEnvRef: ANTHROPIC_API_KEY
+    #     isDefault: true
+    #   - publicModelName: anthropic/claude-haiku-4-5-20251001 # cheap (dated snapshot)
+    #     upstreamModel: anthropic/claude-haiku-4-5-20251001
+    #     apiKeyEnvRef: ANTHROPIC_API_KEY
+    #   # --- OpenAI ---
+    #   - publicModelName: openai/gpt-5                        # frontier
+    #     upstreamModel: openai/gpt-5
+    #     apiKeyEnvRef: OPENAI_API_KEY
+    #   - publicModelName: openai/gpt-5-mini                   # cheap
+    #     upstreamModel: openai/gpt-5-mini
+    #     apiKeyEnvRef: OPENAI_API_KEY
+    #   # --- Google Gemini ---
+    #   - publicModelName: gemini/gemini-2.5-pro               # frontier
+    #     upstreamModel: gemini/gemini-2.5-pro
+    #     apiKeyEnvRef: GEMINI_API_KEY
+    #   - publicModelName: gemini/gemini-2.5-flash             # cheap
+    #     upstreamModel: gemini/gemini-2.5-flash
+    #     apiKeyEnvRef: GEMINI_API_KEY
+    #   # --- OSS / self-hosted template ---
+    #   # apiBase lets you point at your OWN endpoint (vLLM, Ollama, TGI, a proxy);
+    #   # upstreamModel uses the openai/ provider prefix for an OpenAI-compatible API.
+    #   - publicModelName: local/llama-3.3-70b
+    #     upstreamModel: openai/llama-3.3-70b
+    #     apiKeyEnvRef: LOCAL_LLM_API_KEY
+    #     apiBase: http://my-vllm.internal:8000/v1
 
 # -- LiteLLM integration settings
 litellm:

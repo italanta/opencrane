@@ -78,6 +78,13 @@ spec:
             - name: SKILL_OCI_REPOSITORY
               value: {{ .Values.skillRegistry.ociStore.repository | quote }}
             {{- end }}
+            {{- with .Values.controlPlane.modelRegistry.seed }}
+            # Opt-in model-registry seeding: a JSON array the control plane registers
+            # ONCE at Global scope on startup (idempotent, best-effort, never blocks boot).
+            # Empty seed → this env is omitted entirely (no seeding).
+            - name: MODEL_REGISTRY_SEED
+              value: {{ toJson . | quote }}
+            {{- end }}
             - name: COGNEE_ENDPOINT
               value: {{ .Values.controlPlane.cognee.endpoint | quote }}
             - name: COGNEE_PERMISSIONS_TIMEOUT_MS

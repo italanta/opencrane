@@ -15,6 +15,7 @@ import { _TransportSecurity } from "./infra/middleware/transport-security.middle
 import { _ErrorHandler } from "./middleware/error-handler.js";
 
 import { _RegisterRoutes } from "./routes.js";
+import { _SeedModels } from "./core/model-routing/seed-models.js";
 
 /** Application logger instance. */
 const log = pino({ name: "ctrl" });
@@ -88,4 +89,12 @@ log.info({ port }, "starting opencrane control plane");
 app.listen(port, function _onListen()
 {
   log.info({ port }, "control plane listening");
+});
+
+// Idempotently seed the global model registry from MODEL_REGISTRY_SEED (opt-in; empty by
+// default). Best-effort and non-fatal — a seed failure must never block the control plane
+// from serving, so we log and continue rather than crash on startup.
+void _SeedModels(prisma, log).catch(function _onSeedError(err: unknown)
+{
+  log.warn({ err }, "model registry seed failed (non-fatal)");
 });
