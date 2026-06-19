@@ -1,10 +1,18 @@
+// OpenTelemetry must be initialised before any instrumented module is imported,
+// so this side-effecting import stays first in the file (and is also preloaded
+// via NODE_OPTIONS=--import in the container).
+import "./instrument.js";
+
+import { randomUUID } from "node:crypto";
+
 import * as k8s from "@kubernetes/client-node";
 
-import pino from "pino";
 import { pinoHttp } from "pino-http";
 import express from "express";
 import type { Express } from "express";
 import type { PrismaClient } from "@prisma/client";
+
+import { ___BindConsole, ___GetContext, ___RequestContext, ___ShutdownTelemetry } from "@opencrane/observability";
 
 import { ___AuthRouter } from "./infra/auth/auth.router.js";
 import { _BuildGatewayAdmin } from "./core/connections/gateway-admin.js";
@@ -14,10 +22,13 @@ import { ___AuthMiddleware } from "./infra/middleware/auth.middleware.js";
 import { _TransportSecurity } from "./infra/middleware/transport-security.middleware.js";
 import { _ErrorHandler } from "./middleware/error-handler.js";
 
+import { _log as log } from "./log.js";
 import { _RegisterRoutes } from "./routes.js";
+import { _SeedModels } from "./core/model-routing/seed-models.js";
 
-/** Application logger instance. */
-const log = pino({ name: "ctrl" });
+// Route any stray console.* call (first-party or third-party) through the
+// structured logger so nothing reaches stdout unstructured / uncorrelated.
+const _unbindConsole = ___BindConsole(log);
 
 /**
  * Creates and configures the Express application with all middleware and routes.
@@ -39,7 +50,12 @@ export function createApp(prisma: PrismaClient, customApi: k8s.CustomObjectsApi,
   // before any body parsing or session handling.
   app.use(_TransportSecurity());
   app.use(express.json());
-  app.use(pinoHttp({ logger: log }));
+  // Seed the per-request correlation context BEFORE pino-http so every request
+  // log (and every downstream service log) shares one requestId.
+  app.use(___RequestContext());
+  // ___RequestContext() (mounted above) always seeds the id; the ?? is only a
+  // type-level fallback so genReqId never returns undefined.
+  app.use(pinoHttp({ logger: log, genReqId: function _genReqId() { return ___GetContext()?.requestId ?? randomUUID(); } }));
   app.use(authService.createSessionMiddleware());
 
   // Auth router is mounted before the auth middleware so its endpoints are
@@ -85,7 +101,53 @@ const app = createApp(prisma, customApi, coreApi, authApi);
 
 log.info({ port }, "starting opencrane control plane");
 
-app.listen(port, function _onListen()
+const server = app.listen(port, function _onListen()
 {
   log.info({ port }, "control plane listening");
+
+  // Opt-in model-registry seeding (MODEL_REGISTRY_SEED): fire-and-forget once the server is up.
+  // _SeedModels never throws, but the extra .catch guards against an unexpected rejection so a
+  // seed failure can only log — it must never crash or block the running control plane.
+  void _SeedModels(prisma, log).catch(function _onSeedError(err: unknown)
+  {
+    log.warn({ err }, "model-registry seed: unexpected failure (non-fatal)");
+  });
 });
+
+/**
+ * Gracefully drain the server, disconnect Prisma, flush telemetry, and restore
+ * console before exiting. A hard-exit timer guards against a stuck close so the
+ * pod terminates within the kubelet grace period.
+ * @param signal - The signal that triggered shutdown.
+ */
+async function _shutdown(signal: string): Promise<void>
+{
+  log.info({ signal }, "shutting down control plane");
+
+  // 1. Force exit if graceful shutdown stalls, so we never exceed the grace period.
+  const hardExit = setTimeout(function _force() { process.exit(1); }, 10_000);
+  hardExit.unref();
+
+  try
+  {
+    // 2. Stop accepting new connections and let in-flight requests finish.
+    await new Promise<void>(function _close(resolve) { server.close(function _done() { resolve(); }); });
+    // 3. Release the DB pool so Postgres connections aren't leaked.
+    await prisma.$disconnect();
+    // 4. Flush any buffered spans to the collector before the process dies.
+    await ___ShutdownTelemetry();
+  }
+  catch (err)
+  {
+    log.error({ err }, "error during graceful shutdown");
+  }
+  finally
+  {
+    // 5. Restore the original console methods last, then exit cleanly.
+    _unbindConsole();
+    process.exit(0);
+  }
+}
+
+process.on("SIGTERM", function _onSigterm() { void _shutdown("SIGTERM"); });
+process.on("SIGINT", function _onSigint() { void _shutdown("SIGINT"); });

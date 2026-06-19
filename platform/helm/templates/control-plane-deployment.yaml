@@ -52,6 +52,7 @@ spec:
                   fieldPath: metadata.namespace
             - name: PORT
               value: {{ .Values.controlPlane.service.port | quote }}
+            {{- include "opencrane.observabilityEnv" (dict "ctx" $ "component" "control-plane") | nindent 12 }}
             - name: INGRESS_DOMAIN
               value: {{ .Values.ingress.domain | quote }}
             {{- if .Values.certManager.enabled }}
@@ -77,6 +78,13 @@ spec:
               value: "http://{{ include "opencrane.fullname" . }}-skill-oci.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.skillRegistry.ociStore.service.port }}"
             - name: SKILL_OCI_REPOSITORY
               value: {{ .Values.skillRegistry.ociStore.repository | quote }}
+            {{- end }}
+            {{- with .Values.controlPlane.modelRegistry.seed }}
+            # Opt-in model-registry seeding: a JSON array the control plane registers
+            # ONCE at Global scope on startup (idempotent, best-effort, never blocks boot).
+            # Empty seed → this env is omitted entirely (no seeding).
+            - name: MODEL_REGISTRY_SEED
+              value: {{ toJson . | quote }}
             {{- end }}
             - name: COGNEE_ENDPOINT
               value: {{ .Values.controlPlane.cognee.endpoint | quote }}
