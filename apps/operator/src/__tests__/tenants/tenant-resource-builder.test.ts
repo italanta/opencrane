@@ -221,7 +221,11 @@ describe("TenantResourceBuilder", () =>
     expect(envVars.OPENCRANE_ALLOWED_SKILLS).toBeUndefined();
     expect(envVars.HOME).toBe("/tmp/opencrane-home");
     expect(envVars.NPM_CONFIG_CACHE).toBe("/tmp/npm-cache");
-    expect(envVars.OPENCLAW_GATEWAY_TOKEN).toBeUndefined();
+    // OC-2: the gateway auth token is projected from the per-tenant Secret via
+    // secretKeyRef (never a literal), so it carries no inline `value`.
+    const gatewayTokenEnv = (container?.env ?? []).find((entry) => entry.name === "OPENCLAW_GATEWAY_TOKEN");
+    expect(gatewayTokenEnv?.valueFrom?.secretKeyRef?.key).toBe("token");
+    expect(gatewayTokenEnv?.valueFrom?.secretKeyRef?.name).toMatch(/-gateway-token$/);
     expect(volumeMounts.some((mount) => mount.name === "tmp" && mount.mountPath === "/tmp")).toBe(true);
     expect(volumeMounts.some((mount) => mount.name === "projected-identity" && mount.mountPath === "/var/run/opencrane/tokens")).toBe(true);
     expect(volumes.some((volume) => volume.name === "tmp" && volume.emptyDir !== undefined)).toBe(true);

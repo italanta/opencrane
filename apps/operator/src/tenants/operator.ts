@@ -14,6 +14,7 @@ import { _BuildClusterTenantLimitRange, _BuildClusterTenantNamespace, _BuildClus
 import { TenantCleanup } from "./destroy/tenant-cleanup.js";
 
 import { TenantEncryptionKeys } from "./internal/tenant-encryption-keys.js";
+import { TenantGatewayTokens } from "./internal/tenant-gateway-token.js";
 import { TenantLiteLlmKeys } from "./internal/tenant-litellm-keys.js";
 import { _ResolveTenantPolicy } from "./internal/policy-resolution.js";
 import { _FetchTenantModels } from "./internal/tenant-models.js";
@@ -67,6 +68,9 @@ export class TenantOperator
   /** Helper for LiteLLM virtual key provisioning and Secret creation. */
   private liteLlmKeys: TenantLiteLlmKeys;
 
+  /** Helper for per-tenant OpenClaw gateway token Secret lifecycle (OC-2). */
+  private gatewayTokens: TenantGatewayTokens;
+
   /**
    * Create a new TenantOperator with pre-wired dependencies.
    * Prefer {@link _CreateTenantOperator} in production entry-points.
@@ -82,7 +86,8 @@ export class TenantOperator
               cleanup: TenantCleanup,
               statusWriter: TenantStatusWriter,
               encryptionKeys: TenantEncryptionKeys,
-              liteLlmKeys: TenantLiteLlmKeys)
+              liteLlmKeys: TenantLiteLlmKeys,
+              gatewayTokens: TenantGatewayTokens)
   {
     this.watch = watch;
     this.customApi = customApi;
@@ -96,6 +101,7 @@ export class TenantOperator
     this.statusWriter = statusWriter;
     this.encryptionKeys = encryptionKeys;
     this.liteLlmKeys = liteLlmKeys;
+    this.gatewayTokens = gatewayTokens;
   }
 
   /**
@@ -243,6 +249,12 @@ export class TenantOperator
       // 3. Encryption key Secret — generates a random 32-byte AES key on first reconcile
       //    and stores it as a K8s Secret. Idempotent: existing secrets are not rotated.
       await this.encryptionKeys.ensureEncryptionKeySecret(name, namespace);
+
+      // 3b. Gateway token Secret — random per-tenant token so the OpenClaw gateway
+      //     can bind (it refuses a LAN bind without auth) and the control-plane can
+      //     broker scoped connection credentials to browsers. Idempotent; never
+      //     auto-rotated, so live broker credentials survive reconciles.
+      await this.gatewayTokens.ensureGatewayTokenSecret(name, namespace);
 
       // 4. LiteLLM key Secret — creates a per-tenant virtual key in LiteLLM and stores
       //    it in a tenant Secret mounted through env var. Skipped when LiteLLM is disabled.
@@ -427,6 +439,7 @@ export function _CreateTenantOperator(kc: k8s.KubeConfig, config: OpenClawTenant
   const statusWriter = new TenantStatusWriter(customApi, log);
   const encryptionKeys = new TenantEncryptionKeys(coreApi, objectApi, log);
   const liteLlmKeys = new TenantLiteLlmKeys(config, coreApi, objectApi, log);
+  const gatewayTokens = new TenantGatewayTokens(coreApi, objectApi, log);
 
-  return new TenantOperator(watch, customApi, coreApi, appsApi, networkingApi, log, config, hosting, cleanup, statusWriter, encryptionKeys, liteLlmKeys);
+  return new TenantOperator(watch, customApi, coreApi, appsApi, networkingApi, log, config, hosting, cleanup, statusWriter, encryptionKeys, liteLlmKeys, gatewayTokens);
 }
