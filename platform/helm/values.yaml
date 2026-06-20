@@ -384,12 +384,15 @@ certManager:
 # key `dsn` containing the PostgreSQL DSN for Obot's own database. The release prefix
 # stops two instances in one cluster colliding on a fixed `opencrane-obot` name (B5).
 # Authentication is disabled; access is controlled by NetworkPolicy (in-cluster only).
-# Obot polls the control-plane /api/internal/obot-registry endpoint to sync the MCP catalog.
+# NOTE: external MCP-catalog sync into Obot is NOT wired up correctly yet (see the deployment
+# template). Obot's catalog mechanism is OBOT_SERVER_DEFAULT_MCPCATALOG_PATH (a git catalog URL),
+# not a dynamic HTTP endpoint — tracked as a follow-up.
 mcpGateway:
   enabled: true
   image:
     repository: ghcr.io/obot-platform/obot
-    tag: latest
+    # Pinned to a verified stable Obot release that exists on ghcr — never `latest`/`main`.
+    tag: v0.23.1
     pullPolicy: IfNotPresent
   replicas: 1
   service:

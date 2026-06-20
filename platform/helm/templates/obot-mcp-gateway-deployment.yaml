@@ -66,12 +66,16 @@ spec:
                 fieldRef:
                   fieldPath: spec.serviceAccountName
             {{- if .Values.mcpGateway.encryptionAtRest.enabled }}
-            # Encryption-at-rest ENABLED (P4D.1).
-            # ⚠️ ASSUMED knob — provider=custom + key-from-Secret are NOT verified
-            # against a live Obot; this whole block is gated behind
-            # mcpGateway.encryptionAtRest.enabled (default OFF). Confirm the valid
-            # provider value and the exact key env var against the pinned Obot
-            # version before enabling anywhere real.
+            # Encryption-at-rest (P4D.1), gated behind mcpGateway.encryptionAtRest.enabled (default OFF).
+            # VERIFIED against obot v0.23.x source: `custom` is a valid OBOT_SERVER_ENCRYPTION_PROVIDER
+            # value (alongside aws/gcp/azure/none) and OBOT_SERVER_DSN is correct.
+            # INCOMPLETE: the obot binary does NOT read OBOT_SERVER_ENCRYPTION_KEY directly — `custom`
+            # requires an apiserver-style EncryptionConfiguration file referenced by
+            # OBOT_SERVER_ENCRYPTION_CONFIG_FILE, which the upstream Obot Helm chart materialises from
+            # the key via an `encryptionsetup` init container (with Obot's exact encrypted-resource
+            # list). That init container is NOT yet replicated here, so the vars below are necessary
+            # but NOT sufficient — do not rely on encryption-at-rest until the init container lands
+            # (follow-up).
             - name: OBOT_SERVER_ENCRYPTION_PROVIDER
               value: "custom"
             - name: OBOT_SERVER_ENCRYPTION_KEY
@@ -84,9 +88,15 @@ spec:
             - name: OBOT_SERVER_ENCRYPTION_PROVIDER
               value: "none"
             {{- end }}
-            # Control-plane registry — Obot polls this endpoint to sync the MCP server catalog
-            # with OpenCrane McpServer rows. The control-plane exposes /api/internal/obot-registry
-            # in Obot's /v0.1/servers format.
+            # MCP-catalog sync — KNOWN-SUSPECT, do not trust as-is (tracked follow-up). This points
+            # Obot at the control-plane /api/internal/obot-registry endpoint, but research against obot
+            # source indicates OBOT_SERVER_PROVIDER_REGISTRIES is for LLM model-provider *filesystem
+            # directories*, NOT MCP server catalogs — the MCP catalog mechanism is
+            # OBOT_SERVER_DEFAULT_MCPCATALOG_PATH (a GIT catalog URL). So this likely does NOT sync the
+            # catalog, and Obot may hold no OpenCrane MCP servers (which would also block routing tenant
+            # MCP through Obot). Left in place (the operator drift-repairer in apps/operator/src/
+            # runtime-planes/drift-repairer.ts also enforces it) pending independent confirmation and a
+            # coordinated fix across the deployment, drift-repairer + test, and this endpoint.
             - name: OBOT_SERVER_PROVIDER_REGISTRIES
               value: "http://{{ include "opencrane.fullname" . }}-control-plane:{{ .Values.controlPlane.service.port }}/api/internal/obot-registry"
           livenessProbe:
