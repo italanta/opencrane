@@ -184,7 +184,7 @@ export class OidcAuthService
 
   /**
    * Resolve the caller's ClusterTenant from their IdP-verified email, reusing the
-   * pod-token broker's fail-closed rule: resolve the tenant by email, then read its
+   * pod-connection broker's fail-closed rule: resolve the tenant by email, then read its
    * `clusterTenantRef`. Returns null when the email is missing, matches no tenant,
    * matches more than one (ambiguous), the tenant has no parent, or the lookup
    * fails — never an arbitrary pick, and never taken from request input.

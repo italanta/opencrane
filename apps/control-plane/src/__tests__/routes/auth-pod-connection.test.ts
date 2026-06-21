@@ -9,7 +9,7 @@ import { ___AuthRouter } from "../../infra/auth/auth.router.js";
 import type { OidcAuthService } from "../../infra/auth/oidc.service.js";
 import { _NoopGatewayAdmin } from "../../core/connections/gateway-admin.js";
 
-/** Session shape the pod-token route reads. */
+/** Session shape the pod-connection route reads. */
 interface TestSession
 {
 	/** Authenticated user, or undefined for an anonymous request. */
@@ -42,7 +42,7 @@ function _buildApp(session: TestSession, prisma: PrismaClient): Express
 	return app;
 }
 
-describe("POST /auth/pod-token (OpenClaw connection broker)", function _suite()
+describe("POST /auth/pod-connection (OpenClaw connection broker)", function _suite()
 {
 	it("returns the gateway connection coordinates for the caller's tenant", async function _ok()
 	{
@@ -53,7 +53,7 @@ describe("POST /auth/pod-token (OpenClaw connection broker)", function _suite()
 		}]);
 		const app = _buildApp({ authUser: { sub: "u1", email: "Alex@acme.com" } }, prisma);
 
-		const res = await request(app).post("/auth/pod-token");
+		const res = await request(app).post("/auth/pod-connection");
 
 		expect(res.status).toBe(200);
 		expect(res.body).toMatchObject({
@@ -70,7 +70,7 @@ describe("POST /auth/pod-token (OpenClaw connection broker)", function _suite()
 		const prisma = _buildPrisma([{ name: "alex.oc", ingressHost: "alex.oc.example.com", configOverrides: null }]);
 		const app = _buildApp({ authUser: { sub: "u1", email: "alex@acme.com" } }, prisma);
 
-		const res = await request(app).post("/auth/pod-token");
+		const res = await request(app).post("/auth/pod-connection");
 
 		expect(res.status).toBe(200);
 		expect(res.body.gatewayUrl).toBe("wss://alex.oc.example.com");
@@ -80,7 +80,7 @@ describe("POST /auth/pod-token (OpenClaw connection broker)", function _suite()
 	it("returns 401 without a session", async function _noSession()
 	{
 		const app = _buildApp({}, _buildPrisma([]));
-		const res = await request(app).post("/auth/pod-token");
+		const res = await request(app).post("/auth/pod-connection");
 		expect(res.status).toBe(401);
 		expect(res.body.code).toBe("UNAUTHORIZED");
 	});
@@ -88,7 +88,7 @@ describe("POST /auth/pod-token (OpenClaw connection broker)", function _suite()
 	it("returns 403 when the session has no email", async function _noEmail()
 	{
 		const app = _buildApp({ authUser: { sub: "u1" } }, _buildPrisma([]));
-		const res = await request(app).post("/auth/pod-token");
+		const res = await request(app).post("/auth/pod-connection");
 		expect(res.status).toBe(403);
 		expect(res.body.code).toBe("FORBIDDEN");
 	});
@@ -96,7 +96,7 @@ describe("POST /auth/pod-token (OpenClaw connection broker)", function _suite()
 	it("returns 403 when no tenant matches the session email", async function _noTenant()
 	{
 		const app = _buildApp({ authUser: { sub: "u1", email: "ghost@acme.com" } }, _buildPrisma([]));
-		const res = await request(app).post("/auth/pod-token");
+		const res = await request(app).post("/auth/pod-connection");
 		expect(res.status).toBe(403);
 		expect(res.body.code).toBe("NO_TENANT");
 	});
@@ -108,7 +108,7 @@ describe("POST /auth/pod-token (OpenClaw connection broker)", function _suite()
 			{ name: "alex2.oc", ingressHost: "b.example.com", configOverrides: null },
 		]);
 		const app = _buildApp({ authUser: { sub: "u1", email: "alex@acme.com" } }, prisma);
-		const res = await request(app).post("/auth/pod-token");
+		const res = await request(app).post("/auth/pod-connection");
 		expect(res.status).toBe(409);
 		expect(res.body.code).toBe("AMBIGUOUS_TENANT");
 	});
@@ -117,7 +117,7 @@ describe("POST /auth/pod-token (OpenClaw connection broker)", function _suite()
 	{
 		const prisma = _buildPrisma([{ name: "alex.oc", ingressHost: null, configOverrides: null }]);
 		const app = _buildApp({ authUser: { sub: "u1", email: "alex@acme.com" } }, prisma);
-		const res = await request(app).post("/auth/pod-token");
+		const res = await request(app).post("/auth/pod-connection");
 		expect(res.status).toBe(409);
 		expect(res.body.code).toBe("POD_NOT_READY");
 	});
