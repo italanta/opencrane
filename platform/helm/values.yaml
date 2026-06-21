@@ -264,6 +264,10 @@ tenant:
       memory: 4Gi
   # -- OpenClaw gateway port inside tenant pods
   gatewayPort: 18789
+  # -- OpenClaw npm package version installed into each tenant pod. Pinned (not `latest`)
+  # so the gateway can't silently roll across breaking changes; bump deliberately. A
+  # Tenant CR's `spec.openclawVersion` overrides this per-tenant.
+  defaultOpenclawVersion: "2026.6.9"
 
 # -- Hosting provider: onprem (default), gcp, azure, aws.
 # Override with values/gcp.yaml etc. for cloud installs.

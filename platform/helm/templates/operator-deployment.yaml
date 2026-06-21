@@ -40,6 +40,8 @@ spec:
               value: {{ .Values.multiInstance.requireWatchNamespace | quote }}
             - name: TENANT_DEFAULT_IMAGE
               value: "{{ .Values.tenant.defaultImage.repository }}:{{ .Values.tenant.defaultImage.tag }}"
+            - name: DEFAULT_OPENCLAW_VERSION
+              value: {{ .Values.tenant.defaultOpenclawVersion | quote }}
             - name: INGRESS_DOMAIN
               value: {{ .Values.ingress.domain | quote }}
             - name: INGRESS_TLS_ENABLED

@@ -15,6 +15,7 @@ export const defaultConfig: OpenClawTenantOperatorConfig = {
   watchNamespace: "default",
   requireWatchNamespace: false,
   tenantDefaultImage: "ghcr.io/opencrane/tenant:latest",
+  defaultOpenclawVersion: "2026.6.9",
   ingressDomain: "opencrane.local",
   ingressTlsEnabled: false,
   ingressTlsSecretName: "opencrane-wildcard-tls",

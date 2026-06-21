@@ -76,11 +76,12 @@ describe("TenantOperator", () =>
     expect(tenant.spec.openclawVersion).toBe("2026.3.15");
   });
 
-  it("defaults openclawVersion to latest when not set", () =>
+  it("defaults openclawVersion to the pinned operator default (not latest) when not set", () =>
   {
     const tenant = _makeTenant("default-version");
-    const version = tenant.spec.openclawVersion ?? "latest";
-    expect(version).toBe("latest");
+    const version = tenant.spec.openclawVersion ?? defaultConfig.defaultOpenclawVersion;
+    expect(version).toBe("2026.6.9");
+    expect(version).not.toBe("latest");
   });
 });
 

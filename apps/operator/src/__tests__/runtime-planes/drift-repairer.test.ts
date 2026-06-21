@@ -13,6 +13,7 @@ function _buildConfig(overrides: Partial<OpenClawTenantOperatorConfig> = {}): Op
     watchNamespace: "opencrane",
     requireWatchNamespace: false,
     tenantDefaultImage: "opencrane/tenant:latest",
+    defaultOpenclawVersion: "2026.6.9",
     ingressDomain: "opencrane.local",
     ingressTlsEnabled: false,
     ingressTlsSecretName: "opencrane-wildcard-tls",

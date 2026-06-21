@@ -22,6 +22,13 @@ export interface OpenClawTenantOperatorConfig
   /** Default container image used for tenant deployments. */
   tenantDefaultImage: string;
 
+  /**
+   * Default OpenClaw npm package version installed into tenant pods when a Tenant
+   * CR does not set `spec.openclawVersion`. Pinned (not `latest`) so the gateway
+   * never silently rolls across a breaking OpenClaw release.
+   */
+  defaultOpenclawVersion: string;
+
   /** Base domain for tenant ingress hostnames. */
   ingressDomain: string;
 
@@ -122,6 +129,7 @@ export function _LoadOperatorConfig(): OpenClawTenantOperatorConfig
     watchNamespace: _readEnvValue<string>("WATCH_NAMESPACE", "string"),
     requireWatchNamespace: _readEnvValue<boolean>("REQUIRE_WATCH_NAMESPACE", "boolean", false, false),
     tenantDefaultImage: _readEnvValue<string>("TENANT_DEFAULT_IMAGE", "string"),
+    defaultOpenclawVersion: _readEnvValue<string>("DEFAULT_OPENCLAW_VERSION", "string", false, "2026.6.9"),
     ingressDomain: _readEnvValue<string>("INGRESS_DOMAIN", "string"),
     ingressTlsEnabled: _readEnvValue<boolean>("INGRESS_TLS_ENABLED", "boolean", false, false),
     ingressTlsSecretName: _readEnvValue<string>("INGRESS_TLS_SECRET_NAME", "string", false, "opencrane-wildcard-tls"),

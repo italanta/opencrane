@@ -12,7 +12,10 @@ RUNTIME_CONTRACT_PATH="${OPENCRANE_RUNTIME_CONTRACT_PATH:-/config/opencrane-mana
 # Writable copy of the contract — the polling loop writes here; entrypoint reads from here.
 RUNTIME_CONTRACT_WRITABLE="${OPENCRANE_RUNTIME_CONTRACT_WRITABLE:-/tmp/opencrane-managed-runtime.json}"
 SKILLS_DIR="$STATE_DIR/agents/main/skills"
-OPENCLAW_VERSION="${OPENCLAW_VERSION:-latest}"
+# Pinned default (not `latest`) so a pod whose operator didn't inject OPENCLAW_VERSION
+# still installs a known-good OpenClaw; the operator normally sets this from
+# tenant.defaultOpenclawVersion (or a Tenant CR's spec.openclawVersion).
+OPENCLAW_VERSION="${OPENCLAW_VERSION:-2026.6.9}"
 # Control-plane re-pull configuration (injected by operator into every tenant Deployment).
 OPENCRANE_CONTROL_PLANE_URL="${OPENCRANE_CONTROL_PLANE_URL:-}"
 OPENCRANE_CONTRACT_TOKEN_PATH="${OPENCRANE_CONTRACT_TOKEN_PATH:-/var/run/opencrane/tokens/control-plane.token}"
