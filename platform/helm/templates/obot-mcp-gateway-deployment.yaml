@@ -109,9 +109,43 @@ spec:
             # Hostname — used by Obot for OAuth callbacks; set to the in-cluster service URL.
             - name: OBOT_SERVER_HOSTNAME
               value: "http://{{ include "opencrane.fullname" . }}-mcp-gateway.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.mcpGateway.service.port }}"
-            # Disable authentication — Obot is in-cluster only; access is controlled by NetworkPolicy.
+            {{- if .Values.mcpGateway.auth.enabled }}
+            # Authentication ENABLED (P0.1) — the prerequisite for per-user credentials +
+            # MCP access policies (Obot can only differentiate users it authenticates).
+            # Federating to OpenCrane's OIDC IdP is a one-time RUNTIME step (Obot has no
+            # env-only OIDC provider): log in with the bootstrap token → configure an OIDC
+            # auth provider → grant admins. See values.yaml `mcpGateway.auth`.
+            - name: OBOT_SERVER_ENABLE_AUTHENTICATION
+              value: "true"
+            # Registry auth ON → /v0.1/servers returns per-user-accessible servers instead
+            # of the default wildcard "everyone" access (the multi-tenant isolation gate).
+            - name: OBOT_SERVER_ENABLE_REGISTRY_AUTH
+              value: "true"
+            {{- with .Values.mcpGateway.auth.adminEmails }}
+            # Org/platform admins → Obot Admin role (tenant end-users stay Basic User).
+            - name: OBOT_SERVER_AUTH_ADMIN_EMAILS
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.mcpGateway.auth.ownerEmails }}
+            - name: OBOT_SERVER_AUTH_OWNER_EMAILS
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.mcpGateway.auth.bootstrapTokenSecret }}
+            # Bootstrap token for the one-time admin login (>=8 chars). Omit the Secret to
+            # let Obot autogenerate one (read it from the pod logs for first bootstrap).
+            - name: OBOT_BOOTSTRAP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mcpGateway.auth.bootstrapTokenSecret }}
+                  key: {{ .Values.mcpGateway.auth.bootstrapTokenSecretKey }}
+            {{- end }}
+            {{- else }}
+            # Authentication DISABLED (default) — Obot is in-cluster only; access is gated by
+            # NetworkPolicy. Shared-credential multi-user servers ONLY: per-user credentials
+            # and per-user access policies are not possible until auth is enabled (P0.1).
             - name: OBOT_SERVER_ENABLE_AUTHENTICATION
               value: "false"
+            {{- end }}
             # MCP runtime backend — run MCP server containers as Kubernetes pods.
             - name: OBOT_SERVER_MCPRUNTIME_BACKEND
               value: "kubernetes"

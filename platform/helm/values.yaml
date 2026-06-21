@@ -398,6 +398,29 @@ mcpGateway:
   replicas: 1
   service:
     port: 8080
+  # -- Authentication & per-user isolation (P0.1). Default OFF preserves the in-cluster-only
+  # posture (NetworkPolicy is the only gate; shared-credential multi-user servers ONLY — NO
+  # per-user credentials or access policies).
+  #
+  # Set enabled=true for the per-user model. Obot can only differentiate users it
+  # authenticates, so after enabling you MUST complete a one-time RUNTIME bootstrap:
+  #   1. Log in with the bootstrap token (set `bootstrapTokenSecret`, or let Obot autogenerate
+  #      one and read it from the pod logs) and configure an OIDC auth provider federated to
+  #      OpenCrane's IdP — Obot has no env-only OIDC provider.
+  #   2. Grant Admin to the platform/org admins (also pre-set here via `adminEmails`).
+  #   3. With registry auth on, the registry returns per-user-accessible servers instead of the
+  #      default wildcard "everyone" access — restrict/remove that default access policy in Obot
+  #      Admin so nothing is open by default.
+  # Tenant end-users map to Obot Basic User (connect only; NEVER Power-User+, which can run code
+  # on the host).
+  auth:
+    enabled: false
+    # Comma-separated emails granted the Obot Admin / Owner role on first login.
+    adminEmails: ""
+    ownerEmails: ""
+    # Optional Secret holding OBOT_BOOTSTRAP_TOKEN (>=8 chars); unset ⇒ Obot autogenerates one.
+    bootstrapTokenSecret: ""
+    bootstrapTokenSecretKey: bootstrap-token
   # -- Default MCP catalogue (P0.2). A LOCAL FILESYSTEM directory of catalogue-entry YAMLs
   # that Obot loads for all users (Obot's `default-mcpcatalog-path`). Empty (default) renders
   # no env var. For GitOps, sync a catalogue git repo into this path (e.g. a git-sync sidecar);
