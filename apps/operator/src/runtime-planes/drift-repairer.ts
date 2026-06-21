@@ -247,14 +247,19 @@ export class RuntimePlaneDriftRepairer
       },
     } as unknown as k8s.V1Deployment;
 
-    await this._appsApi.patchNamespacedDeployment({
-      name: plane.deploymentName,
-      namespace: this._namespace,
-      body: patch,
-      // Must be explicit — without it the client defaults to json-patch+json,
-      // which expects an array; the server rejects our object with a 400.
-      contentType: "application/strategic-merge-patch+json",
-    });
+    // Content-Type must be explicit — without it the client defaults to
+    // json-patch+json, which expects an array; the server rejects our object
+    // with a 400. The @kubernetes/client-node@1.x request object has no
+    // `contentType` field; the strategy is set via the ConfigurationOptions
+    // second argument (same idiom as idle-checker / policies operator).
+    await this._appsApi.patchNamespacedDeployment(
+      {
+        name: plane.deploymentName,
+        namespace: this._namespace,
+        body: patch,
+      },
+      k8s.setHeaderOptions("Content-Type", k8s.PatchStrategy.StrategicMergePatch),
+    );
 
     this._log.info(
       { plane: plane.label, repairedVars: drifted.map(function _name(d) { return d.name; }) },
