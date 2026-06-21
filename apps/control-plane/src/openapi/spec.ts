@@ -2496,7 +2496,7 @@ export const spec = {
       },
     },
 
-    "/auth/pod-token": {
+    "/auth/pod-connection": {
       post: {
         operationId: "getPodConnection",
         summary: "Resolve the caller's OpenClaw pod gateway connection coordinates from their OIDC session",

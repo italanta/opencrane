@@ -14,7 +14,7 @@ import type { OpenClawGatewayAdmin } from "../../core/connections/gateway-admin.
 /**
  * Build the auth router covering:
  *  - Session introspection (GET /me)
- *  - OpenClaw connection broker (POST /pod-token)
+ *  - OpenClaw connection broker (POST /pod-connection)
  *  - OIDC browser flow (GET /login, GET /callback, POST /logout)
  *  - Device authorization grant for CLI (POST /device, GET /device/activate, GET /device/token)
  *
@@ -103,7 +103,7 @@ export function ___AuthRouter(authService: OidcAuthService, prisma: PrismaClient
    * **This route is mounted before `___AuthMiddleware`** (the whole auth router
    * is public), so it enforces the session check inline.
    */
-  router.post("/pod-token", async function _podToken(req, res, next)
+  router.post("/pod-connection", async function _podConnection(req, res, next)
   {
     try
     {
@@ -185,12 +185,12 @@ export function ___AuthRouter(authService: OidcAuthService, prisma: PrismaClient
    * so it revokes the caller's device tokens/pairings at the gateway and marks
    * their registry rows cut **without** deleting the shared per-tenant pod (which
    * would sign out everyone). The target tenant is resolved from the session's
-   * IdP-verified email exactly as `/pod-token` — no request-supplied tenant input.
+   * IdP-verified email exactly as `/pod-connection` — no request-supplied tenant input.
    *
    * **This route is mounted before `___AuthMiddleware`** (the whole auth router is
    * public), so it enforces the session check inline.
    */
-  router.post("/pod-token/cut", async function _podTokenCut(req, res, next)
+  router.post("/pod-connection/cut", async function _podConnectionCut(req, res, next)
   {
     try
     {

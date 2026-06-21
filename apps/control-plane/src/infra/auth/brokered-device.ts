@@ -5,7 +5,7 @@ import type { RecordBrokeredDeviceParams } from "./brokered-device.types.js";
 /**
  * Record (or refresh) a brokered OpenClaw connection in the device registry.
  *
- * Called on every successful `/auth/pod-token` broker so the per-user
+ * Called on every successful `/auth/pod-connection` broker so the per-user
  * kill-switch (`_CutTenant`, CONN.5) has an authoritative list of which
  * (tenant, subject) connections to revoke. Re-brokering an existing
  * (tenant, subject) bumps `lastBrokeredAt` and clears any prior `revokedAt`
