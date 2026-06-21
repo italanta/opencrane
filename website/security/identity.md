@@ -116,6 +116,56 @@ Set these on the control-plane deployment when enabling OIDC.
 | `OIDC_SESSION_MAX_AGE_SECONDS` | No | Defaults to 43200 (12 hours) |
 | `OIDC_ALLOWED_EMAIL_DOMAINS` | No | Comma-separated allowlist of email domains |
 | `OIDC_ALLOWED_EMAILS` | No | Comma-separated allowlist of exact email addresses |
+| `OIDC_GROUPS_CLAIM` | No | Claim carrying the caller's group memberships. Defaults to `groups` |
+| `OIDC_ROLES_CLAIM` | No | Claim carrying the caller's roles; unioned with `groups`. Defaults to `roles` |
+| `OPENCRANE_PLATFORM_OPERATOR_GROUPS` | No | Comma-separated, lowercased group/role names that grant platform-operator. Empty ⇒ nobody (fail-closed) |
+| `OPENCRANE_ORG_ADMIN_GROUPS` | No | Comma-separated, lowercased group/role names that grant org-admin. Empty ⇒ nobody (fail-closed) |
+| `OPENCRANE_PLATFORM_OPERATOR_SEED_EMAIL` | No | **Per-cluster seed** that bootstraps the first platform operator by verified email. Empty ⇒ nobody (fail-closed). See [Platform-operator seed](#platform-operator-seed-bootstrapping-the-first-operator) |
+
+### Trusted issuer — Zitadel, no Entra dependency
+
+OpenCrane trusts **exactly one** OIDC issuer: the one at `OIDC_ISSUER_URL`. In the
+deployed topology that issuer is **Zitadel**, operated as a **Mode-2 broker** — it is
+the single identity provider the control-plane validates tokens against. **There is no
+upstream Entra (Azure AD) dependency**: OpenCrane does not federate to, call, or require
+Microsoft Entra. The login flow is standards-only OIDC discovery + Authorization Code
+with PKCE, so any spec-compliant issuer works, but the trusted, supported issuer is
+Zitadel.
+
+Configure Zitadel to emit the caller's group memberships and roles as claims, then point
+the claim-name env vars at them:
+
+- `OIDC_GROUPS_CLAIM` — the claim Zitadel puts group memberships in (default `groups`).
+- `OIDC_ROLES_CLAIM` — the claim Zitadel puts project/app roles in (default `roles`).
+
+Both claims are read and **unioned**, so a match in either grants the corresponding
+flag. In Zitadel this typically means adding the *Groups* and/or *Roles* claims to the
+ID token / userinfo via an action or the project's role-assertion settings, and mapping
+the OpenCrane operator/org-admin group names into `OPENCRANE_PLATFORM_OPERATOR_GROUPS` /
+`OPENCRANE_ORG_ADMIN_GROUPS` (comma-separated, compared lowercased).
+
+### Platform-operator seed (bootstrapping the first operator)
+
+Before any group/role mapping exists in Zitadel, a fresh cluster has **no** platform
+operator — `OPENCRANE_PLATFORM_OPERATOR_GROUPS` is empty and the derived
+`isPlatformOperator` is `false` for everyone (fail-closed). The **seed** is the
+per-cluster bootstrap for exactly this gap:
+
+- Set `OPENCRANE_PLATFORM_OPERATOR_SEED_EMAIL` to the email of the person who should be
+  the first operator. The caller whose **verified** OIDC email equals the seed (compared
+  case-insensitively and trimmed) is treated as a platform operator.
+- The seed is **additive** to the group check: a caller is a platform operator if their
+  groups match **or** their verified email matches the seed (seed OR group ⇒ operator).
+- It is **fail-closed**: an empty/unset seed grants operator to nobody, and an email the
+  IdP marks **unverified** never matches (login already rejects an unverified email).
+- It is a **per-cluster install parameter** — never hardcoded. Set it at install time
+  (the wizard prompts for it; `./platform/k8s-deploy.sh --platform-operator-seed-email …`
+  or the `OPENCRANE_PLATFORM_OPERATOR_SEED_EMAIL` env accept it; the Helm value is
+  `controlPlane.oidc.platformOperatorSeedEmail`). Once a Zitadel group mapping is in
+  place, **remove the seed** and rely on groups.
+
+Like `isPlatformOperator` itself, the seed is an introspection-only stopgap until a
+first-class role model lands — the API stays the enforcement point.
 
 ### Google Identity example
 

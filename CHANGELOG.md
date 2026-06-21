@@ -13,6 +13,33 @@ follows [Keep a Changelog](https://keepachangelog.com/); the project uses
 
 ## [Unreleased]
 
+### Added
+
+- **Seed the first platform operator of a fresh cluster by email — no IdP group mapping
+  required yet.** Set the per-cluster install parameter
+  `OPENCRANE_PLATFORM_OPERATOR_SEED_EMAIL` (the install wizard prompts for it; or
+  `./platform/k8s-deploy.sh --platform-operator-seed-email …`, or the Helm value
+  `controlPlane.oidc.platformOperatorSeedEmail`) and the person who signs in with that
+  **verified** email is treated as a platform operator. This is additive to the existing
+  group-based check (seed *or* group grants operator) and is meant as a bootstrap: once a
+  group mapping exists in the IdP, remove the seed. It is fail-closed — an empty/unset
+  seed grants operator to nobody, and an email the IdP marks unverified never matches.
+
+### Changed
+
+- **The control-plane Helm chart now wires human-login OIDC end to end.** A new
+  `controlPlane.oidc.*` values block (issuer/client/redirect, client+session secret via an
+  existing Kubernetes Secret or a dev inline fallback, group/role claim names, operator and
+  org-admin groups, and the operator seed) is rendered into the control-plane container env.
+  Previously the deployment injected no OIDC env, so OIDC and the operator/org-admin
+  derivation were unreachable in-cluster. OIDC stays off (no env emitted) unless an issuer
+  URL is set, and the operator seed is emitted only when non-empty — so a default install is
+  unchanged and fail-closed.
+- **Zitadel is documented as OpenCrane's single trusted OIDC issuer (Mode-2 broker), with no
+  Microsoft Entra dependency.** `website/security/identity.md` now states this plainly and
+  documents the expected `groups`/`roles` claim names (`OIDC_GROUPS_CLAIM`/`OIDC_ROLES_CLAIM`)
+  and how the operator-group and seed-email parameters are configured at install.
+
 ## [0.4.0] — 2026-06-19
 
 ### Added

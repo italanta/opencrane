@@ -52,8 +52,23 @@ isolation model).
   (all-optional displayName/baseDomain/isolationTier/compute/resources, name from the path), so the
   generated client types the body properly instead of `Record<string, never>`. **Landed:**
   `openapi/spec.ts`, regenerated `libs/contracts`. _Ties to WeOwnAI LIVE.2._
+- [x] **WOI.5 — Per-cluster platform-operator seed + Zitadel pinning. — LANDED 2026-06-21.**
+  Closed the bootstrap gap left by WOI.1: a fresh cluster had no way to designate its first platform
+  operator before an IdP group mapping existed (`OPENCRANE_PLATFORM_OPERATOR_GROUPS` empty ⇒ nobody,
+  fail-closed). Added `OPENCRANE_PLATFORM_OPERATOR_SEED_EMAIL` (empty default) — a caller whose
+  **verified** email equals the seed (case-insensitive, trimmed) is a platform operator, **OR-ed**
+  with the existing group check (seed OR group ⇒ operator). Empty seed grants operator to nobody; an
+  unverified email never matches. The seed is a **per-cluster INSTALL parameter** — never hardcoded.
+  **Landed:** loader + types (`oidc.config*.ts`), seed match in the pure `_ResolveIdentityClaims`
+  (`infra/auth/oidc.service.ts`), verified-email passthrough in `_buildAuthUser`; Entra/Google comments
+  re-pointed to **Zitadel as the single trusted issuer (Mode-2 broker, no upstream Entra)**. Helm:
+  `controlPlane.oidc.*` values block + the previously-missing OIDC container env (gated on `issuerUrl`;
+  seed rendered only when set). Install: wizard step + `k8s-deploy.sh`/`k3d-local.sh` passthrough
+  (`--platform-operator-seed-email` / env, `--set` only when non-empty). Docs: `website/security/identity.md`
+  (Zitadel/no-Entra + claim names + seed config). Tests: `oidc-identity-claims.test.ts` (empty/match/
+  case+whitespace/non-match/unverified/additive), `oidc-config.test.ts` (empty default + normalisation).
 
-**Track WOI complete (2026-06-16).** WeOwnAI can now re-sync the spec (its LIVE.8) and drop the three stopgaps.
+**Track WOI complete (2026-06-21).** WeOwnAI can re-sync the spec (its LIVE.8) and drop the three stopgaps; a fresh cluster can now seed its first platform operator at install (WOI.5).
 
 ### Track P5 — Close Phase 5 — ✅ COMPLETE · full history: plan-done.md § Completed Tracks (archived 2026-06-15)
 
