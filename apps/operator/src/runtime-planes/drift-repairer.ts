@@ -251,6 +251,9 @@ export class RuntimePlaneDriftRepairer
       name: plane.deploymentName,
       namespace: this._namespace,
       body: patch,
+      // Must be explicit — without it the client defaults to json-patch+json,
+      // which expects an array; the server rejects our object with a 400.
+      contentType: "application/strategic-merge-patch+json",
     });
 
     this._log.info(

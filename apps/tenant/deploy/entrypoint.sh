@@ -427,10 +427,16 @@ function _main()
   # Add runtime bin to PATH
   export PATH="$RUNTIME_DIR/node_modules/.bin:$PATH"
 
-  # Copy base config if not already present (preserves tenant customizations)
-  if [ ! -f "$STATE_DIR/openclaw.json" ] && [ -f "$CONFIG_SOURCE" ]; then
-    cp "$CONFIG_SOURCE" "$STATE_DIR/openclaw.json"
-    echo "[opencrane] Initialized config from base template"
+  # Always apply the operator-managed config on boot — the configmap is the
+  # authoritative source for platform settings (auth, port, bind, MCP servers).
+  # Tenant customisations arrive via spec.configOverrides, which the operator
+  # merges before mounting, so the mounted file is always the fully-merged config.
+  # Skipping this copy was the original design intent (to "preserve customisations")
+  # but it caused operator config updates (e.g. auth-mode changes) to be silently
+  # ignored on pod restart when the state-volume file already existed.
+  if [ -f "$CONFIG_SOURCE" ]; then
+    cp -f "$CONFIG_SOURCE" "$STATE_DIR/openclaw.json"
+    echo "[opencrane] Applied operator config from configmap"
   fi
 
   # L0 workspace files — platform-managed, re-stamped on every boot so operator edits
