@@ -1,11 +1,18 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import type { PrismaClient } from "@prisma/client";
 
 import { McpCredentialValidationError, addMcpServerCredential, createMcpServer, deleteMcpServer, deleteMcpServerCredential, getMcpServer, listMcpServerCredentials, listMcpServers, updateMcpServer } from "../features/mcp-servers/mcp-servers.logic.js";
+import { _RequireOrgAdmin } from "../infra/middleware/require-org-admin.js";
 import type { McpServerCredentialInput, McpServerWriteRequest } from "./mcp-servers.types.js";
 
 /**
  * CRUD router for the MCP server catalog.
+ *
+ * **Authorization (P0.5):** curating the catalogue is an org-admin action, so the
+ * server lifecycle mutations (create / update / delete) are gated by `_RequireOrgAdmin`.
+ * Reads stay open to any authenticated caller, and the per-server credential sub-routes
+ * are intentionally NOT gated here — credential connect is a user action (spec §5.3),
+ * to be designed with the P1 credential flow rather than locked to admins now.
  *
  * @param prisma - Prisma client used for persistence.
  * @returns Configured Express router.
@@ -33,8 +40,8 @@ export function mcpServersRouter(prisma: PrismaClient): Router
     res.json(server);
   });
 
-  /** Create a new MCP server plus generic grant rows for the compiler. */
-  router.post("/", async function _createMcpServer(req, res, next)
+  /** Create a new MCP server plus generic grant rows for the compiler. Org-admin only. */
+  router.post("/", _RequireOrgAdmin(), async function _createMcpServer(req, res, next)
   {
     try
     {
@@ -55,8 +62,8 @@ export function mcpServersRouter(prisma: PrismaClient): Router
     }
   });
 
-  /** Update an MCP server and fully replace grants and credentials. */
-  router.put("/:id", async function _updateMcpServer(req, res, next)
+  /** Update an MCP server and fully replace grants and credentials. Org-admin only. */
+  router.put("/:id", _RequireOrgAdmin(), async function _updateMcpServer(req: Request<{ id: string }>, res, next)
   {
     try
     {
@@ -76,8 +83,8 @@ export function mcpServersRouter(prisma: PrismaClient): Router
     }
   });
 
-  /** Delete an MCP server and its linked grant rows. */
-  router.delete("/:id", async function _deleteMcpServer(req, res)
+  /** Delete an MCP server and its linked grant rows. Org-admin only. */
+  router.delete("/:id", _RequireOrgAdmin(), async function _deleteMcpServer(req: Request<{ id: string }>, res)
   {
     res.json(await deleteMcpServer(prisma, req.params.id));
   });

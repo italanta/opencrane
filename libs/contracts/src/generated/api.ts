@@ -5574,6 +5574,8 @@ export interface operations {
                             groups: string[];
                             /** @description True iff the caller's groups intersect OPENCRANE_PLATFORM_OPERATOR_GROUPS. Empty/unset config ⇒ false (fail-closed). Introspection only — the API stays the enforcement point and the frontend uses this only to hide UI. Superseded once a first-class role model lands. */
                             isPlatformOperator: boolean;
+                            /** @description True iff the caller is an organisation admin (groups intersect OPENCRANE_ORG_ADMIN_GROUPS, or the caller is a platform operator). Gates MCP-catalogue curation/approval (requireOrgAdmin). Empty/unset config ⇒ false (fail-closed). Introspection only — the API stays the enforcement point. */
+                            isOrgAdmin: boolean;
                             /** @description The caller's ClusterTenant (customer) key, resolved server-side from their IdP-verified email → tenant → clusterTenantRef. Null when unresolved or ambiguous. */
                             clusterTenant?: string | null;
                             email?: string;

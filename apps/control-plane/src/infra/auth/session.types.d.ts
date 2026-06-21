@@ -12,6 +12,7 @@ declare module "express-session"
       issuer: string;
       groups: string[];
       isPlatformOperator: boolean;
+      isOrgAdmin: boolean;
       email?: string;
       emailVerified?: boolean;
       name?: string;

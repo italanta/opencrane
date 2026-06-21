@@ -27,6 +27,7 @@ export function ___LoadOidcAuthConfig(): OidcAuthConfig
       groupsClaim: process.env.OIDC_GROUPS_CLAIM?.trim() || "groups",
       rolesClaim: process.env.OIDC_ROLES_CLAIM?.trim() || "roles",
       platformOperatorGroups: _readPlatformOperatorGroups(),
+      orgAdminGroups: _readCsv(process.env.OPENCRANE_ORG_ADMIN_GROUPS),
     };
   }
 
@@ -58,6 +59,7 @@ export function ___LoadOidcAuthConfig(): OidcAuthConfig
     groupsClaim: process.env.OIDC_GROUPS_CLAIM?.trim() || "groups",
     rolesClaim: process.env.OIDC_ROLES_CLAIM?.trim() || "roles",
     platformOperatorGroups: _readPlatformOperatorGroups(),
+    orgAdminGroups: _readCsv(process.env.OPENCRANE_ORG_ADMIN_GROUPS),
   };
 }
 

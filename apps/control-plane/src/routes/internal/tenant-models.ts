@@ -44,8 +44,8 @@ function _resolveDefaultModel(ctDefault: string | null, globalDefault: string | 
  * **This router is NOT behind `___AuthMiddleware`** and does not run a
  * TokenReview. Access is enforced purely at the network layer: only platform
  * pods (the operator among them) can reach the control-plane service under the
- * cluster NetworkPolicy. It mounts alongside `/api/internal/obot-registry` and
- * `/api/internal/bundles`, which share that NetworkPolicy-only posture.
+ * cluster NetworkPolicy. It mounts alongside `/api/internal/bundles`, which
+ * shares that NetworkPolicy-only posture.
  *
  * The endpoint is best-effort: an unknown tenant or a tenant with no
  * ClusterTenant still returns the Global allowlist and Global default rather

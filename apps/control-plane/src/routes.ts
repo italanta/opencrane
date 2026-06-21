@@ -6,7 +6,6 @@ import { accessTokensRouter } from "./routes/access-tokens.js";
 import { aiBudgetRouter } from "./routes/ai-budget.js";
 import { auditRouter } from "./routes/audit.js";
 import { groupsRouter } from "./routes/groups.js";
-import { _RegisterObotRegistry } from "./routes/internal/obot-registry.js";
 import { _RegisterInternalBundles } from "./routes/internal/skill-bundles.js";
 import { _RegisterInternalTenantContract } from "./routes/internal/tenant-contract.js";
 import { _RegisterInternalTenantModels } from "./routes/internal/tenant-models.js";
@@ -91,7 +90,6 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
   // API to gate which isolation tiers a customer may request.
   const clusterTenantRegistry = _BuildClusterTenantProvisionerRegistry();
 
-  app.use("/api/internal/obot-registry", _RegisterObotRegistry(prisma));
   app.use("/api/internal/bundles", _RegisterInternalBundles(prisma, ociBundleStore));
   // NetworkPolicy-only (no auth/TokenReview): the operator fetches a tenant's
   // allowed model set + effective default at reconcile. Best-effort — never 404/500.

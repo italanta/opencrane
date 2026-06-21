@@ -2470,7 +2470,7 @@ export const spec = {
               user: {
                 type: "object",
                 nullable: true,
-                required: ["sub", "issuer", "groups", "isPlatformOperator"],
+                required: ["sub", "issuer", "groups", "isPlatformOperator", "isOrgAdmin"],
                 properties: {
                   sub: { type: "string" },
                   issuer: { type: "string", description: "Identity provider that authenticated the user." },
@@ -2478,6 +2478,10 @@ export const spec = {
                   isPlatformOperator: {
                     type: "boolean",
                     description: "True iff the caller's groups intersect OPENCRANE_PLATFORM_OPERATOR_GROUPS. Empty/unset config ⇒ false (fail-closed). Introspection only — the API stays the enforcement point and the frontend uses this only to hide UI. Superseded once a first-class role model lands.",
+                  },
+                  isOrgAdmin: {
+                    type: "boolean",
+                    description: "True iff the caller is an organisation admin (groups intersect OPENCRANE_ORG_ADMIN_GROUPS, or the caller is a platform operator). Gates MCP-catalogue curation/approval (requireOrgAdmin). Empty/unset config ⇒ false (fail-closed). Introspection only — the API stays the enforcement point.",
                   },
                   clusterTenant: {
                     type: ["string", "null"],

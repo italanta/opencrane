@@ -34,6 +34,15 @@ export interface ControlPlaneAuthUser
    */
   isPlatformOperator: boolean;
 
+  /**
+   * Whether the caller is an organisation admin — the role allowed to curate the MCP
+   * catalogue and approve servers (`requireOrgAdmin`, P0.5). Derived from the caller's
+   * groups intersecting `OPENCRANE_ORG_ADMIN_GROUPS`; platform operators are always org
+   * admins (superset). Empty/unset config ⇒ false for everyone (fail-closed). Enforcement
+   * stays at the API; a federated frontend uses this only to decide what UI to hide.
+   */
+  isOrgAdmin: boolean;
+
   /** Human-readable email address when available. */
   email?: string;
 
@@ -381,6 +390,7 @@ export class OidcAuthService
       issuer: this.config.issuerUrl,
       groups: identity.groups,
       isPlatformOperator: identity.isPlatformOperator,
+      isOrgAdmin: identity.isOrgAdmin,
       ...(email ? { email } : {}),
       ...(emailVerified !== undefined ? { emailVerified } : {}),
       ...(typeof claims.name === "string" ? { name: claims.name } : {}),
@@ -409,19 +419,25 @@ export class OidcAuthService
  */
 export function _ResolveIdentityClaims(
   claims: Record<string, unknown>,
-  config: { groupsClaim: string; rolesClaim: string; platformOperatorGroups: string[] },
-): { groups: string[]; isPlatformOperator: boolean }
+  config: { groupsClaim: string; rolesClaim: string; platformOperatorGroups: string[]; orgAdminGroups: string[] },
+): { groups: string[]; isPlatformOperator: boolean; isOrgAdmin: boolean }
 {
   // 1. Collect the raw values from both the groups and roles claims — Entra emits
   //    security groups under `groups` and app roles under `roles`; either may
   //    grant operator status, so the union is what we authorize against.
   const groups = [..._ReadStringArrayClaim(claims[config.groupsClaim]), ..._ReadStringArrayClaim(claims[config.rolesClaim])];
+  const lowered = groups.map(value => value.toLowerCase());
 
   // 2. An empty operator set means nobody is a platform operator — fail-closed.
   const operatorSet = new Set(config.platformOperatorGroups);
-  const isPlatformOperator = operatorSet.size > 0 && groups.some(value => operatorSet.has(value.toLowerCase()));
+  const isPlatformOperator = operatorSet.size > 0 && lowered.some(value => operatorSet.has(value));
 
-  return { groups, isPlatformOperator };
+  // 3. Org admin iff a group matches the org-admin set (fail-closed when unset).
+  //    Platform operators are always org admins — operator is the broader role.
+  const orgAdminSet = new Set(config.orgAdminGroups);
+  const isOrgAdmin = isPlatformOperator || (orgAdminSet.size > 0 && lowered.some(value => orgAdminSet.has(value)));
+
+  return { groups, isPlatformOperator, isOrgAdmin };
 }
 
 /**

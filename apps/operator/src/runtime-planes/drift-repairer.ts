@@ -42,8 +42,8 @@ interface _PlaneSpec
  * a manual `kubectl edit` of a managed deployment env var is reverted within
  * one check interval (default 60 s) without requiring a pod restart.
  *
- * **What is repaired:** critical env vars that wire the runtime planes to the
- * control-plane (e.g. `OBOT_SERVER_PROVIDER_REGISTRIES`, `CONTROL_PLANE_URL`).
+ * **What is repaired:** critical env vars that keep the runtime planes correctly
+ * wired (e.g. `CONTROL_PLANE_URL`, `OBOT_SERVER_MCPRUNTIME_BACKEND`).
  *
  * **What is NOT repaired:** image tags, replica counts, resource limits, or
  * any field not declared in `_EnvSpec`.  Use Helm for those.
@@ -95,12 +95,11 @@ export class RuntimePlaneDriftRepairer
       {
         label: "obot-mcp-gateway",
         deploymentName: config.obotDeploymentName,
+        // OBOT_SERVER_PROVIDER_REGISTRIES was removed (P0.2): it is an LLM model-provider
+        // knob, not an MCP catalogue, so enforcing it pointed Obot at a no-op endpoint.
+        // Authentication is now a deploy-time Helm choice (mcpGateway.auth.enabled), so it
+        // is not repaired here. Only the runtime backend is a load-bearing invariant.
         envSpecs: [
-          {
-            name: "OBOT_SERVER_PROVIDER_REGISTRIES",
-            expected: `${controlPlaneBaseUrl}/api/internal/obot-registry`,
-          },
-          { name: "OBOT_SERVER_ENABLE_AUTHENTICATION", expected: "false" },
           { name: "OBOT_SERVER_MCPRUNTIME_BACKEND", expected: "kubernetes" },
         ],
       },

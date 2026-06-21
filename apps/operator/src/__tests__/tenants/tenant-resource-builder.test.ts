@@ -216,6 +216,7 @@ describe("TenantResourceBuilder", () =>
     expect(container?.securityContext?.allowPrivilegeEscalation).toBe(false);
     expect(container?.securityContext?.readOnlyRootFilesystem).toBe(true);
     expect(container?.securityContext?.capabilities?.drop).toEqual(["ALL"]);
+    expect(envVars.OPENCLAW_VERSION).toBe(defaultConfig.defaultOpenclawVersion);
     expect(envVars.OPENCRANE_RUNTIME_MODE).toBe("managed");
     expect(envVars.OPENCRANE_RUNTIME_CONTRACT_PATH).toBe("/config/opencrane-managed-runtime.json");
     expect(envVars.OPENCRANE_MCP_GATEWAY_URL).toBe(defaultConfig.mcpGatewayUrl);

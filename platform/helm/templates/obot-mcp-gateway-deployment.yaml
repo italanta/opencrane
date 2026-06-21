@@ -25,12 +25,74 @@ spec:
       automountServiceAccountToken: true
       securityContext:
         {{- toYaml .Values.mcpGateway.podSecurityContext | nindent 8 }}
+      {{- if .Values.mcpGateway.encryptionAtRest.enabled }}
+      # Encryption-at-rest setup (P0.3) — replicates obot v0.23.1's upstream
+      # `encryptionsetup` init container (chart/templates/deployment.yaml). It writes the
+      # apiserver EncryptionConfiguration that provider=custom requires, into a Memory-backed
+      # emptyDir shared with the main container. The encrypted-resource list is copied
+      # VERBATIM from upstream — a partial list would silently leave data unencrypted.
+      initContainers:
+        - name: encryptionsetup
+          image: "{{ .Values.mcpGateway.image.repository }}:{{ .Values.mcpGateway.image.tag }}"
+          imagePullPolicy: {{ .Values.mcpGateway.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.mcpGateway.securityContext | nindent 12 }}
+          env:
+            - name: OBOT_SERVER_ENCRYPTION_PROVIDER
+              value: "custom"
+            - name: OBOT_SERVER_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mcpGateway.encryptionAtRest.secretName }}
+                  key: {{ .Values.mcpGateway.encryptionAtRest.secretKey }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              provider="$(printf '%s' "${OBOT_SERVER_ENCRYPTION_PROVIDER}" | tr '[:upper:]' '[:lower:]')"
+              if [ "${provider}" != "custom" ]; then
+                exit 0
+              fi
+              if [ -z "${OBOT_SERVER_ENCRYPTION_KEY}" ]; then
+                echo "OBOT_SERVER_ENCRYPTION_KEY must be set when OBOT_SERVER_ENCRYPTION_PROVIDER=custom" >&2
+                exit 1
+              fi
+              cat > /config/encryption.yaml <<EOF
+              kind: EncryptionConfiguration
+              apiVersion: apiserver.config.k8s.io/v1
+              resources:
+                - resources:
+                    - credentials.obot.obot.ai
+                    - users.obot.obot.ai
+                    - identities.obot.obot.ai
+                    - mcpoauthtokens.obot.obot.ai
+                    - mcpauditlogs.obot.obot.ai
+                    - mcpoauthpendingstates.obot.obot.ai
+                    - policyviolations.obot.obot.ai
+                    - properties.obot.obot.ai
+                  providers:
+                    - aesgcm:
+                        keys:
+                          - name: key0
+                            secret: "${OBOT_SERVER_ENCRYPTION_KEY}"
+                    - identity: {}
+              EOF
+          volumeMounts:
+            - name: obot-config
+              mountPath: /config
+      {{- end }}
       containers:
         - name: mcp-gateway
           image: "{{ .Values.mcpGateway.image.repository }}:{{ .Values.mcpGateway.image.tag }}"
           imagePullPolicy: {{ .Values.mcpGateway.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.mcpGateway.securityContext | nindent 12 }}
+          {{- if .Values.mcpGateway.encryptionAtRest.enabled }}
+          # Read the EncryptionConfiguration written by the init container (P0.3).
+          volumeMounts:
+            - name: obot-config
+              mountPath: /config
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.mcpGateway.service.port }}
@@ -47,9 +109,43 @@ spec:
             # Hostname — used by Obot for OAuth callbacks; set to the in-cluster service URL.
             - name: OBOT_SERVER_HOSTNAME
               value: "http://{{ include "opencrane.fullname" . }}-mcp-gateway.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.mcpGateway.service.port }}"
-            # Disable authentication — Obot is in-cluster only; access is controlled by NetworkPolicy.
+            {{- if .Values.mcpGateway.auth.enabled }}
+            # Authentication ENABLED (P0.1) — the prerequisite for per-user credentials +
+            # MCP access policies (Obot can only differentiate users it authenticates).
+            # Federating to OpenCrane's OIDC IdP is a one-time RUNTIME step (Obot has no
+            # env-only OIDC provider): log in with the bootstrap token → configure an OIDC
+            # auth provider → grant admins. See values.yaml `mcpGateway.auth`.
+            - name: OBOT_SERVER_ENABLE_AUTHENTICATION
+              value: "true"
+            # Registry auth ON → /v0.1/servers returns per-user-accessible servers instead
+            # of the default wildcard "everyone" access (the multi-tenant isolation gate).
+            - name: OBOT_SERVER_ENABLE_REGISTRY_AUTH
+              value: "true"
+            {{- with .Values.mcpGateway.auth.adminEmails }}
+            # Org/platform admins → Obot Admin role (tenant end-users stay Basic User).
+            - name: OBOT_SERVER_AUTH_ADMIN_EMAILS
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.mcpGateway.auth.ownerEmails }}
+            - name: OBOT_SERVER_AUTH_OWNER_EMAILS
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.mcpGateway.auth.bootstrapTokenSecret }}
+            # Bootstrap token for the one-time admin login (>=8 chars). Omit the Secret to
+            # let Obot autogenerate one (read it from the pod logs for first bootstrap).
+            - name: OBOT_BOOTSTRAP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mcpGateway.auth.bootstrapTokenSecret }}
+                  key: {{ .Values.mcpGateway.auth.bootstrapTokenSecretKey }}
+            {{- end }}
+            {{- else }}
+            # Authentication DISABLED (default) — Obot is in-cluster only; access is gated by
+            # NetworkPolicy. Shared-credential multi-user servers ONLY: per-user credentials
+            # and per-user access policies are not possible until auth is enabled (P0.1).
             - name: OBOT_SERVER_ENABLE_AUTHENTICATION
               value: "false"
+            {{- end }}
             # MCP runtime backend — run MCP server containers as Kubernetes pods.
             - name: OBOT_SERVER_MCPRUNTIME_BACKEND
               value: "kubernetes"
@@ -66,12 +162,13 @@ spec:
                 fieldRef:
                   fieldPath: spec.serviceAccountName
             {{- if .Values.mcpGateway.encryptionAtRest.enabled }}
-            # Encryption-at-rest ENABLED (P4D.1).
-            # ⚠️ ASSUMED knob — provider=custom + key-from-Secret are NOT verified
-            # against a live Obot; this whole block is gated behind
-            # mcpGateway.encryptionAtRest.enabled (default OFF). Confirm the valid
-            # provider value and the exact key env var against the pinned Obot
-            # version before enabling anywhere real.
+            # Encryption-at-rest ENABLED (P0.3). Confirmed against obot v0.23.1:
+            # provider=custom makes the binary read an apiserver EncryptionConfiguration
+            # FILE — it never consumes the bare key — so the `encryptionsetup` init
+            # container below materialises /config/encryption.yaml from this key and we
+            # point OBOT_SERVER_ENCRYPTION_CONFIG_FILE at it. Without both, the key is
+            # necessary-but-insufficient and data is left unencrypted. Gated behind
+            # mcpGateway.encryptionAtRest.enabled (default OFF).
             - name: OBOT_SERVER_ENCRYPTION_PROVIDER
               value: "custom"
             - name: OBOT_SERVER_ENCRYPTION_KEY
@@ -79,16 +176,26 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.mcpGateway.encryptionAtRest.secretName }}
                   key: {{ .Values.mcpGateway.encryptionAtRest.secretKey }}
+            - name: OBOT_SERVER_ENCRYPTION_CONFIG_FILE
+              value: "/config/encryption.yaml"
             {{- else }}
-            # No credential encryption at rest (baseline; P4D.1 default OFF).
+            # No credential encryption at rest (baseline; P0.3 default OFF).
             - name: OBOT_SERVER_ENCRYPTION_PROVIDER
               value: "none"
             {{- end }}
-            # Control-plane registry — Obot polls this endpoint to sync the MCP server catalog
-            # with OpenCrane McpServer rows. The control-plane exposes /api/internal/obot-registry
-            # in Obot's /v0.1/servers format.
-            - name: OBOT_SERVER_PROVIDER_REGISTRIES
-              value: "http://{{ include "opencrane.fullname" . }}-control-plane:{{ .Values.controlPlane.service.port }}/api/internal/obot-registry"
+            {{- if .Values.mcpGateway.catalog.path }}
+            # Default MCP catalogue (P0.2) — a LOCAL FILESYSTEM directory of catalogue-entry
+            # YAMLs that Obot loads for all users. This is Obot's real catalogue knob
+            # (`default-mcpcatalog-path`), confirmed against obot v0.23.1 pkg/services/config.go.
+            # GitOps: sync a catalogue git repo into this path (e.g. a git-sync sidecar), or —
+            # once authentication is enabled — add Git Source URLs at runtime via Obot Admin.
+            #
+            # OBOT_SERVER_PROVIDER_REGISTRIES was REMOVED here: upstream confirms it configures
+            # LLM model-provider *filesystem directories*, NOT MCP catalogues, so pointing it at
+            # the control-plane was a silent no-op (Obot held none of OpenCrane's MCP servers).
+            - name: OBOT_SERVER_DEFAULT_MCPCATALOG_PATH
+              value: {{ .Values.mcpGateway.catalog.path | quote }}
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /api/healthz
@@ -104,4 +211,13 @@ spec:
             periodSeconds: 10
           resources:
             {{- toYaml .Values.mcpGateway.resources | nindent 12 }}
+      {{- if .Values.mcpGateway.encryptionAtRest.enabled }}
+      # Shared in-memory volume carrying the EncryptionConfiguration from the init
+      # container to the main container (P0.3). Memory-backed so the rendered key
+      # material never lands on disk.
+      volumes:
+        - name: obot-config
+          emptyDir:
+            medium: Memory
+      {{- end }}
 {{- end }}

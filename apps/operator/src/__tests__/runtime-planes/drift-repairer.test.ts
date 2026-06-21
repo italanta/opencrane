@@ -13,6 +13,7 @@ function _buildConfig(overrides: Partial<OpenClawTenantOperatorConfig> = {}): Op
     watchNamespace: "opencrane",
     requireWatchNamespace: false,
     tenantDefaultImage: "opencrane/tenant:latest",
+    defaultOpenclawVersion: "2026.6.9",
     ingressDomain: "opencrane.local",
     ingressTlsEnabled: false,
     ingressTlsSecretName: "opencrane-wildcard-tls",
@@ -66,8 +67,6 @@ describe("RuntimePlaneDriftRepairer", () =>
   {
     const appsApi = _buildAppsApi({
       "opencrane-mcp-gateway": [
-        { name: "OBOT_SERVER_PROVIDER_REGISTRIES", value: "http://control-plane:3000/api/internal/obot-registry" },
-        { name: "OBOT_SERVER_ENABLE_AUTHENTICATION", value: "false" },
         { name: "OBOT_SERVER_MCPRUNTIME_BACKEND", value: "kubernetes" },
       ],
       "opencrane-skill-registry": [
@@ -82,13 +81,11 @@ describe("RuntimePlaneDriftRepairer", () =>
     expect(appsApi.patchNamespacedDeployment).not.toHaveBeenCalled();
   });
 
-  it("patches when OBOT_SERVER_PROVIDER_REGISTRIES has drifted", async () =>
+  it("patches when OBOT_SERVER_MCPRUNTIME_BACKEND has drifted", async () =>
   {
     const appsApi = _buildAppsApi({
       "opencrane-mcp-gateway": [
-        { name: "OBOT_SERVER_PROVIDER_REGISTRIES", value: "http://wrong-host:9000/api/internal/obot-registry" },
-        { name: "OBOT_SERVER_ENABLE_AUTHENTICATION", value: "false" },
-        { name: "OBOT_SERVER_MCPRUNTIME_BACKEND", value: "kubernetes" },
+        { name: "OBOT_SERVER_MCPRUNTIME_BACKEND", value: "docker" },
       ],
       "opencrane-skill-registry": [
         { name: "CONTROL_PLANE_URL", value: "http://control-plane:3000" },
@@ -101,8 +98,28 @@ describe("RuntimePlaneDriftRepairer", () =>
     expect(appsApi.patchNamespacedDeployment).toHaveBeenCalled();
     const patchCall = (appsApi.patchNamespacedDeployment as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
     const repairedEnv: k8s.V1EnvVar[] = patchCall?.body?.spec?.template?.spec?.containers?.[0]?.env ?? [];
-    const registriesVar = repairedEnv.find(function _find(e) { return e.name === "OBOT_SERVER_PROVIDER_REGISTRIES"; });
-    expect(registriesVar?.value).toBe("http://control-plane:3000/api/internal/obot-registry");
+    const backendVar = repairedEnv.find(function _find(e) { return e.name === "OBOT_SERVER_MCPRUNTIME_BACKEND"; });
+    expect(backendVar?.value).toBe("kubernetes");
+  });
+
+  it("no longer enforces the removed OBOT_SERVER_PROVIDER_REGISTRIES knob (P0.2)", async () =>
+  {
+    // PROVIDER_REGISTRIES is an LLM model-provider directory knob, not an MCP catalogue,
+    // so an arbitrary value for it must NOT trigger a repair.
+    const appsApi = _buildAppsApi({
+      "opencrane-mcp-gateway": [
+        { name: "OBOT_SERVER_PROVIDER_REGISTRIES", value: "http://anything:9000" },
+        { name: "OBOT_SERVER_MCPRUNTIME_BACKEND", value: "kubernetes" },
+      ],
+      "opencrane-skill-registry": [
+        { name: "CONTROL_PLANE_URL", value: "http://control-plane:3000" },
+      ],
+    });
+    const repairer = new RuntimePlaneDriftRepairer(appsApi, _buildConfig(), _log);
+
+    await (repairer as unknown as { _checkAndRepairAll(): Promise<void> })._checkAndRepairAll();
+
+    expect(appsApi.patchNamespacedDeployment).not.toHaveBeenCalled();
   });
 
   it("does not throw when deployment is missing (cluster bootstrap)", async () =>

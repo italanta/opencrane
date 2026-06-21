@@ -31,7 +31,7 @@ export function _BuildDeployment(config: OpenClawTenantOperatorConfig, stateVolu
   const name = tenant.metadata!.name!;
   const image = tenant.spec.openclawImage ?? config.tenantDefaultImage;
   const resources = tenant.spec.resources;
-  const openclawVersion = tenant.spec.openclawVersion ?? "latest";
+  const openclawVersion = tenant.spec.openclawVersion ?? config.defaultOpenclawVersion;
 
   // 0. Scheduling — derive nodeSelector/tolerations from the parent ClusterTenant's
   //    compute mode. Empty for shared/ref-less openclaws, so the pod spec below is
