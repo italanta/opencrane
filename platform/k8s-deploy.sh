@@ -13,7 +13,17 @@
 # Usage:
 #   ./platform/k8s-deploy.sh [--domain DOMAIN] [--namespace NS] [--release NAME]
 #                            [--image-tag TAG] [--storage-class SC]
+#                            [--control-plane-tag TAG] [--operator-tag TAG]
+#                            [--tenant-tag TAG]
 #                            [--values FILE] [--set k=v ...]
+#
+# --image-tag pins all three platform images (control-plane, operator, tenant)
+# to the same tag. To roll a SINGLE component to a different build, pass the
+# matching per-component flag (e.g. --control-plane-tag sha-abc123); it overrides
+# --image-tag for that component only. ALWAYS bump component images this way —
+# never `kubectl set image` / `kubectl patch` a managed deployment. An imperative
+# patch creates a `kubectl-*` field manager that owns the image field on the live
+# object and makes every later `helm upgrade` fail with a field-ownership conflict.
 #
 # Prereqs: kubectl (pointed at the target cluster) and helm.
 # =============================================================================
@@ -25,6 +35,9 @@ CHART_DIR="$SCRIPT_DIR/helm"
 NAMESPACE="opencrane-system"
 RELEASE="opencrane"
 IMAGE_TAG="latest"
+CONTROL_PLANE_TAG=""    # empty → falls back to IMAGE_TAG
+OPERATOR_TAG=""         # empty → falls back to IMAGE_TAG
+TENANT_TAG=""           # empty → falls back to IMAGE_TAG
 DOMAIN=""
 STORAGE_CLASS=""        # empty → cluster default StorageClass
 VALUES_FILE=""
@@ -45,7 +58,10 @@ while [[ $# -gt 0 ]]; do
     --domain)        DOMAIN="$2"; shift 2 ;;
     --namespace)     NAMESPACE="$2"; shift 2 ;;
     --release)       RELEASE="$2"; shift 2 ;;
-    --image-tag)     IMAGE_TAG="$2"; shift 2 ;;
+    --image-tag)        IMAGE_TAG="$2"; shift 2 ;;
+    --control-plane-tag) CONTROL_PLANE_TAG="$2"; shift 2 ;;
+    --operator-tag)     OPERATOR_TAG="$2"; shift 2 ;;
+    --tenant-tag)       TENANT_TAG="$2"; shift 2 ;;
     --storage-class) STORAGE_CLASS="$2"; shift 2 ;;
     --values)        VALUES_FILE="$2"; shift 2 ;;
     --set)           EXTRA_SET+=(--set "$2"); shift 2 ;;
@@ -125,7 +141,15 @@ helm_args=(upgrade --install "$RELEASE" "$CHART_DIR" --namespace "$NAMESPACE" --
   --set "controlPlane.database.existingSecret=$DB_SECRET"
   --set "litellm.existingDatabaseSecret=opencrane-litellm-db"
   --set "litellm.existingSecret=opencrane-litellm")
-[[ -n "$IMAGE_TAG" ]] && helm_args+=(--set "controlPlane.image.tag=$IMAGE_TAG" --set "operator.image.tag=$IMAGE_TAG" --set "tenant.image.tag=$IMAGE_TAG")
+# Per-component tags override the unified --image-tag so a single component can be
+# rolled through Helm (which keeps Helm the sole owner of the image field). Each
+# falls back to IMAGE_TAG when its flag is unset, preserving the all-same default.
+CP_TAG="${CONTROL_PLANE_TAG:-$IMAGE_TAG}"
+OP_TAG="${OPERATOR_TAG:-$IMAGE_TAG}"
+TN_TAG="${TENANT_TAG:-$IMAGE_TAG}"
+[[ -n "$CP_TAG" ]] && helm_args+=(--set "controlPlane.image.tag=$CP_TAG")
+[[ -n "$OP_TAG" ]] && helm_args+=(--set "operator.image.tag=$OP_TAG")
+[[ -n "$TN_TAG" ]] && helm_args+=(--set "tenant.image.tag=$TN_TAG")
 [[ -n "$DOMAIN" ]]    && helm_args+=(--set "ingress.domain=$DOMAIN")
 [[ -n "$VALUES_FILE" ]] && helm_args+=(--values "$VALUES_FILE")
 helm_args+=("${EXTRA_SET[@]}")
