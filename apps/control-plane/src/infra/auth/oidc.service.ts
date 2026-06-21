@@ -356,7 +356,9 @@ export class OidcAuthService
       throw new Error("OIDC login succeeded without a usable subject claim");
     }
 
-    const email = typeof claims.email === "string" ? claims.email.toLowerCase() : undefined;
+    // Normalise once (trim + lowercase) so every consumer — the seed match, the
+    // email→tenant resolution, and the persisted session — sees the same canonical form.
+    const email = typeof claims.email === "string" ? claims.email.trim().toLowerCase() : undefined;
     const emailVerified = typeof claims.email_verified === "boolean" ? claims.email_verified : undefined;
 
     if ((this.config.allowedEmailDomains.length || this.config.allowedEmails.length) && !email)

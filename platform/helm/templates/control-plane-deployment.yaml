@@ -113,8 +113,10 @@ spec:
             - name: OIDC_CLIENT_SECRET
               value: {{ .clientSecret | quote }}
             {{- end }}
+            {{- if .sessionSecret }}
             - name: OIDC_SESSION_SECRET
               value: {{ .sessionSecret | quote }}
+            {{- end }}
             {{- end }}
             {{- if .groupsClaim }}
             - name: OIDC_GROUPS_CLAIM
