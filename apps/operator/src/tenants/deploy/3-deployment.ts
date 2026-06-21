@@ -154,6 +154,11 @@ export function _BuildDeployment(config: OpenClawTenantOperatorConfig, stateVolu
     },
     spec: {
       replicas: 1,
+      // Recreate is required because the state PVC is ReadWriteOnce — only one
+      // pod can mount it at a time. RollingUpdate (the default) would deadlock:
+      // new pod can't attach the disk until old pod releases it, but old pod
+      // isn't terminated until new pod is Ready.
+      strategy: { type: "Recreate" },
       selector: {
         matchLabels: { "opencrane.io/tenant": name },
       },
