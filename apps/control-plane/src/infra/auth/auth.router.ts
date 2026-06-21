@@ -48,6 +48,37 @@ export function ___AuthRouter(authService: OidcAuthService, prisma: PrismaClient
     }
   });
 
+  /**
+   * Reverse-proxy auth check for a tenant's OpenClaw gateway (trusted-proxy mode,
+   * OC-2 / CONN.4). The pod's ingress runs this as an nginx `auth_request` on the
+   * WebSocket upgrade: a valid OIDC session returns 204 with the caller's verified
+   * email in `X-Forwarded-User`; the ingress injects that header (overwriting any
+   * client-supplied value) so the gateway — configured `gateway.auth.mode =
+   * trusted-proxy`, trusting only the ingress source — authenticates the socket as
+   * that user, with no credential ever held by the browser.
+   *
+   * This makes the control-plane the connection **broker**: every gateway socket
+   * is authorised here against the live session. **Central cut** falls out for
+   * free — revoking the session makes this return 401, so the ingress refuses new
+   * upgrades (live sockets are still severed by the pod-delete kill-switch).
+   *
+   * Public (mounted before `___AuthMiddleware`); enforces the session inline.
+   */
+  router.get("/gateway-verify", function _gatewayVerify(req, res)
+  {
+    const authUser = req.session?.authUser;
+    const email = typeof authUser?.email === "string" ? authUser.email.trim().toLowerCase() : "";
+    if (!authUser || email.length === 0)
+    {
+      res.status(401).json({ error: "Authentication required", code: "UNAUTHORIZED" });
+      return;
+    }
+    // Identity the ingress copies into the upstream `X-Forwarded-User` header
+    // (and strips any client-supplied one) for the gateway to trust.
+    res.setHeader("X-Forwarded-User", email);
+    res.status(204).end();
+  });
+
   // --------------------------------------------------------------------------
   // OpenClaw pairing broker (single sign-on across control plane + pod)
   // --------------------------------------------------------------------------
