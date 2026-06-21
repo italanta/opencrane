@@ -1,175 +1,136 @@
 # Spec: MCP Catalogue, Credentials & Per-User Activation
 
 > **Status:** Draft spec for review · **Date:** 20 June 2026 · **Owner:** Jente Rosseel
-> **Decision context:** Keep Obot as the catalogue + gateway + credential broker (MIT; fixed — see P0).
-> OpenCrane does NOT rebuild catalogue/approval — it **drives Obot's native mechanism** and adds the thin
-> glue: identity mapping + Claw activation. See [[reference_runtime_plane_config]].
+> **Decision:** Keep Obot as the MCP catalogue + gateway + credential broker + server host (MIT; fixed —
+> see P0). OpenCrane does **not** rebuild catalogue/approval/credentials — it **drives Obot's native
+> model**, maps identities, and activates each user's OpenClaw. Grounded in Obot docs (obot-platform/obot
+> `/docs`, v0.23.x) + the MCP security best-practices doc. See [[reference_runtime_plane_config]].
 
 ## 1. Goal
 
-An organisation curates which MCP tools its people may use; individuals install approved tools and connect
-their own credentials **without the secret ever passing through the agent/LLM**; each person's OpenClaw
-("Claw") becomes aware of the tool automatically.
+An org curates which MCP tools its people may use; individuals install approved tools and connect their own
+credentials **without the secret passing through the agent/LLM**; each person's OpenClaw ("Claw") becomes
+aware of the tool automatically.
 
-- **Org admin** reviews the MCP catalogue and **approves/publishes** which MCP servers the org may use.
-- **User** browses the *published* catalogue, **installs** a tool into their Claw, and **connects** a credential.
-- **Platform** activates the tool in that user's Claw and brokers the credential server-side, so the
-  secret never touches the pod or the LLM.
+## 2. Design principle — Obot already does almost all of this
 
-## 2. Design principle — use Obot's native model, don't rebuild it
+Reading Obot's docs: it natively provides the **catalogue, admin publish/approval, per-user & per-group
+access control, per-user/shared credential collection + injection, server hosting, an RBAC model, and a
+discovery API.** So OpenCrane builds only the thin glue:
 
-Obot already provides catalogue + admin-publish + per-user access + per-user credentials natively. We were
-about to invent an `McpServerApproval` model in the control plane — **don't.** Instead, OpenCrane drives
-Obot's native features and owns only what Obot can't: mapping our OIDC identities to Obot, and getting the
-tool into the OpenClaw runtime.
+1. **Identity federation** — OpenCrane OIDC identity → Obot user + role (so Obot can apply access policies + pick per-user credentials).
+2. **Frontend surface** — present Obot's catalogue/connect in WeOwnAI (we do not expose Obot's own admin UI to tenants).
+3. **Claw activation** — write Obot's per-user connection URL into the user's `openclaw.json` `mcp.servers`.
 
-**What Obot provides natively** (from Obot docs/marketing; ⚠️ exact entity/API names to confirm against a
-live Obot v0.23.x during P0):
-- **Catalogue:** admins add MCP servers to a catalogue (via UI **or a Git repo**) and control which are
-  available + how configured, then **publish** the catalogue to employees.
-- **Registries (access control):** map catalogue servers to specific **users/groups** — "only authorized
-  users can discover and connect to approved services." This *is* the approve/entitle mechanism.
-- **Per-user credentials:** when a user enables a server, Obot collects the required config params (API
-  keys / auth tokens) and passes them as env to the server process — Obot holds the secret; the tenant
-  pod never sees it.
-- **Per-user connection URL:** when a user selects an MCP, Obot generates a unique connection URL for AI
-  clients. **This URL is the activation primitive** OpenCrane writes into the Claw (§6).
+**Licence note (reassuring for "keep Obot"):** Obot Enterprise adds *only* extra auth providers (Okta/Entra)
+and extra model providers (Azure/Bedrock) — neither of which we need from Obot (we have our own OIDC +
+LiteLLM). Every feature below is in the **MIT open core**. Residual risk is future open-core relicensing
+(VC-backed); mitigate by pinning (v0.23.1, PR #37) + mirroring + CI licence-gate + keeping the seam thin.
 
-**What OpenCrane builds (the thin glue):**
-1. Surface Obot's catalogue/approve/install/connect in the **WeOwnAI frontend** (we do NOT expose Obot's
-   own admin UI to tenants).
-2. **Identity mapping:** OpenCrane OIDC org-admin → Obot admin; OpenCrane user/tenant → Obot user/group.
-3. **Claw activation:** operator writes Obot's per-user connection URL into `openclaw.json` `mcp.servers`.
+## 3. Obot server types (this is how "individual vs shared credentials" is modelled)
 
-## 3. Roles & governance (the core requirement)
+| Obot type | Credential model | Hosting | Use for |
+|---|---|---|---|
+| **Single-user** | **Per-user** — each user supplies their own key (`env` params, `sensitive`) | Obot deploys a per-user instance | Personal accounts (individual GitHub token) |
+| **Multi-user** | **Shared** org key, or self-auth OAuth | Obot deploys one shared instance | Org service accounts; simple onboarding |
+| **Multi-user catalog entry** (`serverUserType: multiUser`) | Shared deploy-level + per-user headers | Admin/Power-User+ **publishes**; shared deploy + per-user instances | **The "admin approves → users install" pattern** |
+| **Remote** | Custom headers / config to the endpoint | **Not hosted** — a 3rd-party HTTPS endpoint | Vendor/SaaS or CI/CD-deployed MCP servers |
+| **Composite** | Inherited from components | Virtual server over components | Aggregate + **per-tool RBAC**, curated tool names |
 
-**Only organisation admins may review the catalogue and approve/publish MCP servers. Non-admin users may
-only install servers an admin has published.** Realised via Obot's catalogue + registries; *gated* in
-OpenCrane by role.
+Hosting facts: non-remote types are **deployed + run by the Obot Gateway** (k8s pod per the runtime backend);
+Obot **blocks localhost/private-IP/link-local by default** (`OBOT_SERVER_DISALLOW_*`) — the SSRF mitigation
+from the MCP security doc, already handled. Credentials are declared per server as config params
+(name/description/env-var key/`required`/`sensitive`) and injected as env into the Obot-hosted server.
 
-| Capability | Org admin | User |
+## 4. Roles & governance (map to Obot's native RBAC)
+
+Obot roles: **Owner · Admin · Power User+ · Power User · Basic User · Auditor.** Publishing/deploying
+servers (npx/uvx/containerized) **runs code on the hosting backend** → Power User/Power User+ are
+**privileged**. Mapping:
+
+| OpenCrane actor | Obot role | Why |
 |---|---|---|
-| View full catalogue (all servers + sources, incl. unpublished) | ✅ | ❌ |
-| Approve/publish a server (add to catalogue + publish) | ✅ | ❌ |
-| Map a server to users/groups (registry / access policy) | ✅ | ❌ |
-| View **published** catalogue | ✅ | ✅ |
-| Install (enable) a published server into own Claw | ✅ | ✅ |
-| Connect own (Personal) credential | ✅ | ✅ |
-| Set an Org-shared credential | ✅ | ❌ |
+| Platform / org admin | **Admin** (or Owner) | Full MCP Management: publish catalogue entries, manage access policies, user management. Pre-set via `OBOT_SERVER_AUTH_ADMIN_EMAILS`. |
+| Tenant end-user | **Basic User** | Connect to entitled servers only. **Must NOT be Power User+** — that can deploy arbitrary code on the host. |
+| (optional) trusted curator | Power User+ | Can create registries + share servers, if you want delegated curation. |
 
-> ⚠️ **Dependency:** OpenCrane's `auth.middleware.ts` enforces **no per-route roles** today (public/OIDC/
-> token fallback chain). An org-admin role model + `requireOrgAdmin` guard is a prerequisite (P0).
-
-## 4. How approval works (replacing the invented model)
-
-There is **no `McpServerApproval` model.** "Approved/published" = the server is **in Obot's published
-catalogue and mapped (via an Obot registry) to the user/group.** Admin curation is best done **as code via
-Obot's GitOps catalogue** (`OBOT_SERVER_DEFAULT_MCPCATALOG_PATH`, a git repo) — which is *also* the fix for
-the broken catalogue-sync (see P0; the two converge). OpenCrane's existing `McpServer` rows become, at most,
-a thin read-model/mirror for the frontend — not a parallel approval authority.
+**Only org admins review the catalogue and approve MCPs; users install approved ones** — realised by:
+- **Approve/publish** = an Admin/Power-User+ publishes a (multi-user) catalogue entry, and/or adds the server to an **MCP Access Policy**.
+- **MCP Access Policies** map servers → users/groups ("which servers are available to which users"). ⚠️ Obot ships a default **"everyone" group** granting all users all policy-covered servers — **remove/restrict it** for multi-tenant isolation (keep admins broad).
+- **Install** = a Basic User connects an entitled server (and supplies any per-user credential).
 
 ## 5. Flows
 
-### 5.1 Admin — review & publish (drives Obot's catalogue)
-1. Admin opens the catalogue in WeOwnAI (frontend → control-plane → Obot). Sees all servers + sources, capabilities, provenance, health.
-2. Admin approves/publishes → the server is added to Obot's published catalogue (UI action or a commit to the GitOps catalogue) and mapped to the org's users/groups via an Obot registry. **Admin-only** (`requireOrgAdmin`).
+### 5.1 Admin — publish & set access (drives Obot)
+Admin (Obot Admin role) adds/publishes a server (UI or **GitOps catalogue**, see P0) and assigns it to users/groups via an **MCP Access Policy**. Surfaced in WeOwnAI; gated by `requireOrgAdmin` on our side.
 
-### 5.2 User — browse & install (enable in Obot)
-1. User sees only **published** servers mapped to them.
-2. Install = enable the server in Obot for that user → Obot prepares a per-user connection (and prompts for any required credential, §5.3).
-3. Uninstall = disable; reconcile removes it from the Claw (§6).
+### 5.2 User — browse & install
+User (Basic User) sees only servers an access policy grants them (via Obot's **registry API** `/v0.1/servers`, Auth mode → per-user). Install = connect/enable; Obot prepares a per-user connection (+ prompts for credentials, §5.3).
 
 ### 5.3 User — connect a credential (secure, out-of-band — never through the LLM)
-The credential-entry channel is **human → (WeOwnAI/control-plane) → Obot**, OIDC-authenticated, structurally
-separate from the agent's chat/LLM/MCP channel.
-1. User opens the connect form for an installed server (their own OIDC session).
-2. **Static token:** user pastes the API key → stored by **Obot** (its credential store); injected by Obot into the server at call time. Value is write-only; audit the event, not the value. Scope = Personal (any user) or Org-shared (admin).
-3. **OAuth (PerUserObo):** user clicks "Connect" → browser OAuth → Obot does RFC-8693 OBO exchange. No paste.
-4. The token never enters the pod, `openclaw.json`, the LLM context, or the MCP transport — the agent only ever gets the **connection URL**.
+Entry channel is **human → (WeOwnAI/control-plane) → Obot**, OIDC-authenticated, separate from the agent's chat/LLM/MCP channel.
+- **Single-user (per-user key):** user enters the server's `sensitive` `env` params in Obot when enabling → Obot stores + injects them as env into that user's server instance. Write-only; audit the event, not the value.
+- **Multi-user (shared key):** admin pre-configures one key for all users.
+- **Remote / self-auth (OAuth):** browser OAuth per the MCP spec; Obot does the exchange.
+- The token never enters the pod, `openclaw.json`, the LLM context, or the MCP transport — the agent only gets the **connection URL**.
 
 ### 5.4 Activation — make the Claw aware (§6).
 
-### 5.5 Credential-required handoff (agent asks, never receives the secret)
-1. Agent calls an installed-but-unconnected server → broker returns structured `credential_required`.
-2. Agent surfaces a **non-secret** "Connect <server>" deep link to the connect form (§5.3) — it does NOT ask for the token in chat.
-3. User completes §5.3 out-of-band → broker resolves the credential → agent retries.
-4. **Never use MCP `elicitation` for secrets** (it routes input through the agent/transport). Elicitation is for non-secret input only.
+### 5.5 Credential-required handoff
+Broker returns `credential_required` → agent surfaces a **non-secret** "Connect <server>" deep link to the §5.3 form → user completes out-of-band → retry. **Never use MCP `elicitation` for secrets** (routes through the agent); elicitation is for non-secret input only.
 
-## 6. Activation in the Claw (`openclaw.json` reconcile)
+## 6. Activation in the Claw + the identity prerequisite
 
-OpenCrane already generates each tenant's `openclaw.json`. Activation = the operator writing each installed,
-published server into `mcp.servers`, using **Obot's per-user connection URL** + the projected token:
+OpenCrane already generates `openclaw.json`. Activation = the operator writing each entitled server into
+`mcp.servers` using **Obot's per-user connection URL** + the projected token:
 
 ```json
-{ "mcp": { "servers": {
-  "<server-name>": {
-    "url": "<obot per-user connection URL>",
-    "transport": "streamable-http",
-    "headers": { "Authorization": "Bearer ${OBOT_MCP_TOKEN}" },
-    "toolFilter": { "include": ["<allowed tools>"] },
-    "enabled": true
-  }
-}}}
+{ "mcp": { "servers": { "<name>": {
+  "url": "<obot per-user connection URL>",
+  "transport": "streamable-http",
+  "headers": { "Authorization": "Bearer ${OBOT_MCP_TOKEN}" },
+  "toolFilter": { "include": ["<allowed tools>"] }, "enabled": true
+}}}}
 ```
 
-- **Entitlement**: only the user's published+installed servers are written (defence-in-depth on top of Obot's registry mapping).
-- **Token**: projected SA token (`aud=obot-gateway`) surfaced as `${OBOT_MCP_TOKEN}` (OpenClaw interpolates env, not files; rotates ~600s → refresh on rotation).
-- **Reload**: OpenClaw hot-applies `mcp.*` via **file-watch on `openclaw.json`**, **NOT SIGHUP**. The current entrypoint SIGHUP path is likely ineffective — reconcile must rewrite the file in place or call `openclaw mcp reload` (**P0 fix**).
-- **Broker hop**: Obot validates the token, resolves the per-(tenant,user) credential, forwards upstream. Secret never returns to the pod (no token passthrough).
+- **⚠️ CRITICAL PREREQUISITE — Obot must know the user.** Per-user credentials + access policies require
+  Obot to authenticate the caller. Our current deployment sets **`OBOT_SERVER_ENABLE_AUTHENTICATION=false`**
+  — which makes per-user differentiation **impossible**. To use the per-user model we must
+  **enable Obot auth and federate it to OpenCrane's OIDC** (so the pod's identity maps to an Obot user with
+  the right access policies + credentials). This is a P0 decision: enable+federate (full per-user) vs stay
+  unauthenticated (shared-credential multi-user servers only, no per-user isolation).
+- **Reload**: OpenClaw hot-applies `mcp.*` via **file-watch on `openclaw.json`**, NOT SIGHUP (P0 fix).
+- **Token rotation**: projected SA token rotates (~600s); `${OBOT_MCP_TOKEN}` interpolates at load → refresh on rotation.
+- **Broker hop**: Obot validates the user, resolves the per-(user) credential, forwards upstream. No token passthrough; secret never returns to the pod.
 
-## 7. Security requirements (MCP best practices + our model)
-
-- **No secret through the LLM/chat/MCP transport** — credential entry is the human→Obot channel only (§5.3); agent gets the connection URL.
-- **No token passthrough** — Obot injects the per-server/per-user credential; never forwards the pod token upstream.
-- **Identity from the verified projected token / OIDC session**, never request input.
-- **Entitlement** mapped in Obot registries AND narrowed at the Claw by OpenCrane (defence-in-depth).
-- **Custody** — Obot holds credentials encrypted at rest (P0: complete the `EncryptionConfiguration` init container so this actually works).
-- **Admin-only approval** via `requireOrgAdmin` (P0).
-- **Audit** every approve/publish/install/credential/brokered call; never the secret value.
-- **Existence-hiding** — non-published/non-entitled servers return 404.
+## 7. Security requirements (MCP best practices + Obot)
+- **No secret through the LLM/chat/MCP transport** — credential entry is the human→Obot channel; agent gets only the connection URL.
+- **No token passthrough** — Obot injects per-server/per-user creds.
+- **Identity from verified OIDC/projected token**, never request input.
+- **SSRF** — Obot blocks localhost/private/link-local by default (keep on).
+- **Least privilege** — tenants are Basic User (cannot deploy code); composite servers give per-tool RBAC.
+- **Encryption at rest** — P0: complete the `EncryptionConfiguration` init container.
+- **Admin-only approval** — `requireOrgAdmin` (P0; no per-route RBAC today) + Obot Admin role mapping.
+- **Audit** every publish/access-change/install/credential/brokered call; never the secret value.
+- **Remove the default "everyone" access** so nothing is open by default.
 
 ## 8. API / CLI surface (API/CLI-first; frontend is just another client)
-
-The "Obot frontend features" are surfaced as **OpenCrane API clients** that drive Obot (we do NOT expose
-Obot's admin UI to tenants). ⚠️ Whether OpenCrane drives Obot via **Obot's REST API** or via the **GitOps
-catalogue + identity mapping** is the key implementation choice — **confirm Obot's external API surface
-during P0.**
-
-| Action | OpenCrane API | `oc` CLI |
-|---|---|---|
-| List catalogue (all / published) | `GET /api/v1/mcp/catalog[?view=all]` | `oc mcp catalog [--all]` |
-| Approve/publish (admin) | `POST /api/v1/mcp/servers/:id/publish` | `oc mcp publish <id>` |
-| Map to users/groups (admin) | `POST /api/v1/mcp/servers/:id/access` | `oc mcp grant <id> --to <subj>` |
-| Install / uninstall | `POST /DELETE /api/v1/mcp/installs[/:id]` | `oc mcp install <id>` / `uninstall` |
-| Connect / remove credential | `POST /DELETE /api/v1/mcp/servers/:id/credentials` | `oc mcp credentials add <id>` / `rm` |
-| OAuth connect (Phase 4) | `GET /api/v1/mcp/servers/:id/connect` → redirect | (browser only) |
-
-Frontend views: **Catalogue** (browse + admin publish), **My Tools** (install + connection status), **Connect** (set token / OAuth).
+- **Discovery** is documented: Obot **MCP Registry API** `/v0.1/servers` (Auth mode → per-user). The Claw / frontend can list entitled servers here.
+- **Management** (publish, access policies, credentials) is via Obot's admin UI + its broader API (see the repo `apiclient/` + the GitOps catalogue). ⚠️ Confirm the management API surface during P0 — drive it from OpenCrane, OR manage the catalogue as code via the **GitOps catalogue** (`OBOT_SERVER_DEFAULT_MCPCATALOG_PATH`, git) + access policies.
+- OpenCrane wraps these as `oc mcp …` + `/api/v1/mcp/…`; WeOwnAI views: **Catalogue** (browse + admin publish), **My Tools** (install + status), **Connect** (set token / OAuth).
 
 ## 9. Dependencies & phasing
-
-- **P0 — Keep-Obot-and-fix (SEPARATE SESSION / handoff):** (a) wire Obot's **GitOps catalogue**
-  (`OBOT_SERVER_DEFAULT_MCPCATALOG_PATH`) correctly, replacing the mis-wired `OBOT_SERVER_PROVIDER_REGISTRIES`
-  across the deployment + `drift-repairer.ts` + its test + the `/api/internal/obot-registry` endpoint —
-  this is *also* the catalogue mechanism for this spec; (b) the `openclaw.json` **file-watch reload** fix
-  (SIGHUP is ineffective); (c) the encryption-at-rest **init container**; (d) a **role model +
-  `requireOrgAdmin`** guard; (e) **confirm Obot's REST API / registry / connection-URL surface** against a
-  live Obot v0.23.1. *This spec depends on P0.*
-- **P1 — Catalogue + access (admin):** surface Obot's catalogue + publish + registry mapping in the frontend; admin guard.
-- **P2 — Install + identity mapping:** user install/enable → OpenCrane↔Obot identity map.
-- **P3 — Credential connect (StaticFallback) + the `credential_required` handoff.**
-- **P4 — Claw activation** (`openclaw.json` reconcile with Obot connection URL) + **PerUserObo/OAuth** connect.
+- **P0 — Keep-Obot-and-fix (separate session/handoff):** (a) wire Obot's **GitOps catalogue** (replaces the mis-wired `PROVIDER_REGISTRIES` across deployment + drift-repairer + test + endpoint) — also the catalogue mechanism here; (b) **enable + federate Obot auth to OpenCrane OIDC** (prerequisite for per-user; currently `ENABLE_AUTHENTICATION=false`); (c) `openclaw.json` **file-watch reload** fix; (d) encryption-at-rest **init container**; (e) `requireOrgAdmin` role guard; (f) confirm Obot's management API + connection-URL + identity-mapping against a live Obot v0.23.1.
+- **P1** catalogue + access (admin) · **P2** install + identity mapping · **P3** credential connect + `credential_required` handoff · **P4** Claw activation + OAuth.
 
 ## 10. Open questions / risks
-
-- **Obot external API surface** — can our frontend drive Obot's catalogue/registry/credentials via a stable REST API, or must we use GitOps catalogue + identity mapping? (Confirm in P0; the docs site wasn't machine-readable here.)
-- **Entitlement authority** — Obot registries vs OpenCrane grant compiler. This spec leans **Obot-native mechanism, OpenCrane-driven intent**, with Claw-level narrowing as defence-in-depth. Reconcile with IAM-first before P1.
-- **Role enforcement gap** — no per-route RBAC today (P0).
-- **OpenClaw reload** is file-watch not SIGHUP — verify on the pinned version.
-- **Token rotation** — projected SA token rotates; reconcile must refresh.
-- **Obot long-term licence** — MIT today, VC-backed open-core ($35M seed); pin/mirror/CI-license-gate, keep the seam thin so Obot stays swappable.
+- **Obot auth federation** — must enable Obot auth + map our OIDC → Obot users for per-user creds/policies; design the mapping (per-tenant → Obot user/group) in P0.
+- **Management API** — registry API is discovery only; confirm how to drive publish/access-policy/credentials programmatically (Obot API vs GitOps + UI).
+- **Entitlement authority** — Obot access policies *can* enforce per-tenant natively; lean Obot-native, OpenCrane drives intent + identity, with Claw-level narrowing as defence-in-depth. Reconcile with IAM-first.
+- **Role enforcement gap** — no per-route RBAC in OpenCrane today (P0).
+- **OpenClaw reload** is file-watch not SIGHUP; **token rotation** needs reconcile refresh.
+- **Obot long-term licence** — MIT today (needed features all in core), VC-backed open-core; pin/mirror/CI-gate, keep seam thin.
 
 ## Sources
-- Obot docs: [MCP Server Catalogs](https://docs.obot.ai/concepts/admin/mcp-server-catalogs/), [MCP Registries](https://docs.obot.ai/functionality/mcp-registries/), [MCP Server GitOps](https://docs.obot.ai/configuration/mcp-server-gitops/)
-- [Obot — Central MCP Repository](https://obot.ai/central-mcp-repository/), [MCP Management Platform](https://obot.ai/mcp-management-platform/)
-- [MCP Security Best Practices](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices)
+- Obot docs (obot-platform/obot `/docs`, v0.23.x): `functionality/mcp-servers.md`, `functionality/mcp-access-policies.md`, `functionality/mcp-registry-api.md`, `concepts/mcp-registry.md`, `configuration/user-roles.md`, `enterprise/overview.md`, `configuration/mcp-server-gitops.md`.
+- [MCP Security Best Practices](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices); [MCP Registry spec](https://github.com/modelcontextprotocol/registry).
