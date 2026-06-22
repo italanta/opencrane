@@ -3,7 +3,7 @@ import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
 import type { PrismaClient } from "@prisma/client";
 
-import { _ApplyClusterTenantCr } from "../routes/internal/cluster-tenant-cr-bridge.js";
+import { _ApplyClusterTenantCr } from "../core/cluster-tenants/cr-bridge.js";
 import { _ToContract, _ToPrismaTier } from "../routes/cluster-tenants.service.js";
 import type { ClusterTenantSeedConfig } from "./cluster-tenant-seed.types.js";
 
