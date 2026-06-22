@@ -44,14 +44,17 @@ spec:
               value: {{ .Values.tenant.defaultOpenclawVersion | quote }}
             - name: INGRESS_DOMAIN
               value: {{ .Values.ingress.domain | quote }}
-            # -- Per-org domain provisioning (fixed-wildcard topology). The operator's
-            #    ClusterTenant reconciler applies a per-org `*.<org>.<domain>` Certificate
-            #    (cert-manager) and, when externalIp is set, declares a per-org DNSEndpoint
-            #    CR (reconciled by external-dns) for the `*.<org>.<domain>` A records. Both
-            #    optional: an unset externalIp / absent CRD makes the operator skip the
-            #    affected side effect at runtime rather than fail.
-            - name: INGRESS_IP
-              value: {{ .Values.ingress.externalIp | quote }}
+            # -- Namespace the identity-routing gateway proxy runs in. The per-pod gateway
+            #    NetworkPolicy admits the gateway port only from the proxy pods here (the
+            #    proxy is the sole client now that per-user Ingresses are gone). Defaults to
+            #    the release namespace (the proxy is a platform singleton in this install).
+            - name: GATEWAY_PROXY_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            # -- Per-org domain provisioning (single-per-org-host topology). The canonical
+            #    org host `<org>.<domain>` is covered by the platform `*.<domain>` cert +
+            #    record (no per-org DNS, no wildcard). The operator's ClusterTenant reconciler
+            #    only issues a per-org Certificate for a customer-vanity domain (cert-manager
+            #    HTTP-01); absent cert-manager makes it skip at runtime rather than fail.
             - name: CERT_MANAGER_ISSUER_NAME
               value: {{ .Values.certManager.issuerName | quote }}
             # -- Namespaced Issuer in multi-instance cert mode (MI.4), else the shared

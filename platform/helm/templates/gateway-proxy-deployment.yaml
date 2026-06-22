@@ -45,9 +45,17 @@ spec:
             # The OpenClaw gateway port inside tenant pods (matches tenant.gatewayPort).
             - name: GATEWAY_PORT
               value: {{ .Values.tenant.gatewayPort | quote }}
-            # CSWSH allowlist — empty renders an empty string => fail closed (refuse all).
+            # Trusted-proxy user header the proxy injects on the upstream (must match the
+            # operator's GATEWAY_TRUSTED_PROXY_USER_HEADER so the pod trusts it).
+            - name: GATEWAY_USER_HEADER
+              value: {{ .Values.gatewayProxy.userHeader | default "X-Forwarded-User" | quote }}
+            # CSWSH allowlist: exact vanity origins + the every-org base domain. Defaults the
+            # base to the platform wildcard base (ingress.domain) so every `<org>.<base>` host
+            # is allowed without enumeration. Empty BOTH => fail closed (refuse all).
             - name: ALLOWED_ORIGINS
               value: {{ join "," .Values.gatewayProxy.allowedOrigins | quote }}
+            - name: ALLOWED_ORIGIN_BASE_DOMAINS
+              value: {{ default (list .Values.ingress.domain) .Values.gatewayProxy.allowedOriginBaseDomains | join "," | quote }}
             - name: RATE_LIMIT_PER_MINUTE
               value: {{ .Values.gatewayProxy.rateLimitPerMinute | quote }}
           livenessProbe:

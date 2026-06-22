@@ -360,19 +360,13 @@ ingress:
   #    (e.g. `platform.weownai.eu`) in production.
   controlPlaneHost: ""
   annotations: {}
-  # -- Cluster ingress external IP the per-org wildcard A records point at. Leave empty
-  #    on-prem or until the LoadBalancer IP is assigned; the operator then skips the
-  #    per-org DNS side effect (the Certificate is still applied). Wired to the operator
-  #    as INGRESS_IP.
-  externalIp: ""
   tls:
     enabled: false
-    # -- Secret name for the platform wildcard TLS cert (`*.<domain>`, covering every
-    #    org apex `<org>.<domain>`) that per-UserTenant Ingresses reference by default.
-    #    NOTE: this wildcard does NOT cover the per-user level `<user>.<org>.<domain>`
-    #    (DNS wildcards match one label) — each org gets its own `*.<org>.<domain>`
-    #    cert at provision time. See docs/agents/cluster-architecture.md → "Multi-level
-    #    wildcard TLS".
+    # -- Secret name for the platform wildcard TLS cert (`*.<domain>`). This single
+    #    wildcard covers every org host `<org>.<domain>` (one label) AND the wildcard
+    #    Ingress that fronts the gateway proxy — there are no per-user subdomains and no
+    #    per-org wildcard certs. A customer-vanity host gets its own per-org cert. See
+    #    website/security/connection-security.md → §0.1.
     secretName: opencrane-wildcard-tls
 
 # -- Documentation site (optional). When enabled, serves the VitePress docs build
@@ -420,17 +414,6 @@ monitoring:
   warnSeverity: warning
   # -- Base URL prefix for runbook links embedded in alert annotations.
   runbookBaseUrl: https://github.com/opencrane/opencrane/blob/main/docs/runbooks
-
-# -- external-dns integration (DOMAIN.T1). When enabled, the operator is granted RBAC to
-# create namespaced `DNSEndpoint` CRs (externaldns.k8s.io/v1alpha1); its ClusterTenant
-# reconciler declares the per-org `*.<org>.<domain>` + apex A records as a DNSEndpoint and
-# the external-dns controller reconciles them into whatever DNS provider the platform runs
-# (Cloud DNS, Route53, Cloudflare, RFC2136, …) — so the operator talks to no cloud DNS API.
-# external-dns itself is a PREREQUISITE (like cert-manager): install it with `--source=crd`
-# and access to the platform's DNS zone. When disabled (or its CRD is absent) the operator
-# skips the per-org DNS side effect at runtime; the Certificate is still applied.
-externalDns:
-  enabled: false
 
 certManager:
   enabled: false
@@ -611,7 +594,10 @@ skillRegistry:
 # it is the per-org-host cutover (see website/security/connection-security.md); until
 # then the operator keeps minting per-user Ingresses.
 gatewayProxy:
-  enabled: false
+  # -- ON by default: it is the gateway data path. Per-user Ingresses are retired, so
+  #    every user reaches their pod through the org host via this proxy. Disabling it
+  #    leaves no gateway connectivity.
+  enabled: true
   image:
     repository: ghcr.io/italanta/opencrane-gateway-proxy
     tag: latest
@@ -619,11 +605,17 @@ gatewayProxy:
   replicas: 1
   service:
     port: 8090
-  # -- Exact `Origin` values allowed on a gateway WS upgrade (scheme://host[:port]).
-  #    EMPTY = fail closed (every browser upgrade refused). Set to the org host(s)
-  #    this proxy fronts, e.g. ["https://acme.opencrane.ai"]. CORS does not cover
-  #    WebSockets, so this allowlist is the only Origin defence.
+  # -- Header the proxy injects the verified identity into on the upstream (must match
+  #    the pod's trusted-proxy user header). Default matches the operator default.
+  userHeader: X-Forwarded-User
+  # -- Exact `Origin` values allowed on a gateway WS upgrade (scheme://host), for
+  #    customer-vanity hosts e.g. ["https://ai.client-co.com"]. CORS does not cover
+  #    WebSockets, so this allowlist + allowedOriginBaseDomains are the only Origin defence.
   allowedOrigins: []
+  # -- Platform base domains; any `https://<org>.<base>` host is allowed without
+  #    enumerating every org. Defaults to [ingress.domain] when empty. Empty AND no exact
+  #    allowedOrigins = fail closed (every browser upgrade refused).
+  allowedOriginBaseDomains: []
   # -- Max gateway sockets one identity may open per minute (per replica abuse backstop).
   rateLimitPerMinute: 60
   podSecurityContext:
