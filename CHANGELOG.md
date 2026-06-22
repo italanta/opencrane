@@ -13,6 +13,18 @@ follows [Keep a Changelog](https://keepachangelog.com/); the project uses
 
 ## [Unreleased]
 
+### Changed
+
+- **Tenant gateways now refuse to trust an unconfigured proxy instead of trusting everything.** The
+  trusted-proxy allowlist that decides which source the OpenClaw gateway will believe the
+  `X-Forwarded-User` identity header from is now fail-closed: an operator with no
+  `tenant.gateway.trustedProxies` configured renders a **trust-nothing** gateway — no connection
+  authenticates — rather than an ambiguous empty list a runtime might read as trust-all. A typo'd
+  CIDR/IP now crashes the operator at startup with the offending entry named, so a misconfiguration
+  can never silently widen or narrow the trust boundary. The allowlist is Helm-values-driven
+  (`tenant.gateway.trustedProxies`); the dev GKE overlay ships the cluster's ingress-nginx pod source
+  range as its default so trusted-proxy auth works out of the box there.
+
 ## [0.4.0] — 2026-06-19
 
 ### Added

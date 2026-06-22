@@ -1,5 +1,6 @@
 import { HostingProvider } from "./hosting/hosting-adapter.types.js";
 import type { GcpHostingConfig } from "./hosting/hosting-adapter.types.js";
+import { _ParseTrustedProxies } from "./trusted-proxies.js";
 
 export type { GcpHostingConfig };
 export { HostingProvider };
@@ -47,8 +48,20 @@ export interface OpenClawTenantOperatorConfig
    * {@link gatewayTrustedProxyUserHeader} only when the TCP source is one of these.
    * Set to the ingress source range; a NetworkPolicy additionally restricts the
    * gateway port to the ingress so this range can't be abused by other pods.
+   *
+   * Validated and fail-closed at load (see {@link _ParseTrustedProxies}): an empty
+   * allowlist means **trust nothing** (never trust-all) and is paired with
+   * {@link gatewayTrustNothing}; a malformed entry crashes the operator at startup.
    */
   gatewayTrustedProxies: string[];
+
+  /**
+   * Fail-closed trust flag derived from {@link gatewayTrustedProxies}: `true` when
+   * no proxy source was configured, so the gateway is rendered to trust no source
+   * and the trusted-proxy header is ignored. Disambiguates the empty allowlist so
+   * an unconfigured operator can never silently trust every connection.
+   */
+  gatewayTrustNothing: boolean;
 
   /** Header the trusted proxy injects with the authenticated user identity. */
   gatewayTrustedProxyUserHeader: string;
@@ -135,6 +148,12 @@ export function _LoadOperatorConfig(): OpenClawTenantOperatorConfig
   //    like `opencrane-system`, which would be a latent cross-instance footgun (B5).
   const ownNamespace = _readOwnNamespace();
 
+  // 2b. Parse the trusted-proxy allowlist fail-closed (OC-2 / CONN.4). An empty
+  //     value resolves to trust-nothing (never trust-all); a malformed CIDR throws
+  //     here so a typo crashes the operator at startup rather than silently
+  //     widening or narrowing the gateway's trust boundary.
+  const trustedProxies = _ParseTrustedProxies(_readEnvValue<string>("GATEWAY_TRUSTED_PROXIES", "string", false, ""));
+
   // 3. Build the typed config from env, applying namespace-derived fallbacks for the
   //    runtime-plane URLs so no value silently points at another instance.
   const config: OpenClawTenantOperatorConfig = {
@@ -146,8 +165,8 @@ export function _LoadOperatorConfig(): OpenClawTenantOperatorConfig
     ingressTlsEnabled: _readEnvValue<boolean>("INGRESS_TLS_ENABLED", "boolean", false, false),
     ingressTlsSecretName: _readEnvValue<string>("INGRESS_TLS_SECRET_NAME", "string", false, "opencrane-wildcard-tls"),
     gatewayPort: _readEnvValue<number>("GATEWAY_PORT", "number"),
-    gatewayTrustedProxies: _readEnvValue<string>("GATEWAY_TRUSTED_PROXIES", "string", false, "")
-      .split(",").map((entry) => entry.trim()).filter((entry) => entry.length > 0),
+    gatewayTrustedProxies: trustedProxies.cidrs,
+    gatewayTrustNothing: trustedProxies.trustNothing,
     gatewayTrustedProxyUserHeader: _readEnvValue<string>("GATEWAY_TRUSTED_PROXY_USER_HEADER", "string", false, "X-Forwarded-User"),
     hostingProvider,
     gcp: hostingProvider === HostingProvider.Gcp
