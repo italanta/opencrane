@@ -1,31 +1,45 @@
 import { _BuildOrgDomain, _BuildOrgWildcard } from "@opencrane/contracts";
 
-import type { OrgDomainProvisioner, OrgDomainProvisionRequest, OrgDomainProvisionResult, OrgDomainProvisionerConfig, CertManagerOperations, CloudDnsOperations } from "./org-domain-provisioner.types.js";
+import type { OrgDomainProvisioner, OrgDomainProvisionRequest, OrgDomainProvisionResult, OrgDomainProvisionerConfig, CertManagerOperations, DnsEndpointOperations } from "./org-domain-provisioner.types.js";
 
 /** TTL (seconds) for the per-org A records — matches the terraform DNS module. */
 const _RECORD_TTL = 300;
 
 /**
+ * Stable name of the per-org DNSEndpoint CR (one per org, in its bound namespace).
+ * Used by both provision and deprovision so teardown targets the same object.
+ *
+ * @param orgName - The org (ClusterTenant) name.
+ * @returns The DNSEndpoint resource name.
+ */
+function _DnsEndpointName(orgName: string): string
+{
+  return `org-dns-${orgName}`;
+}
+
+/**
  * Concrete {@link OrgDomainProvisioner} for the fixed-wildcard topology, owned by the
  * operator (the reconciler/executor). Given an org, it materialises the two cluster-
- * side side effects the topology requires:
+ * side side effects the topology requires — BOTH as namespaced custom resources, so the
+ * operator talks to no cloud DNS API and carries no cloud SDK:
  *
  *   1. A per-org wildcard TLS Certificate `*.<org>.<base>` (+ the `<org>.<base>` apex
  *      SAN, and the vanity domain when present) via cert-manager DNS-01, into the org's
  *      bound namespace — because the platform `*.<base>` cert does NOT cover the extra
  *      label `<user>.<org>.<base>`.
  *   2. A per-org serving DNS record `*.<org>.<base>` (and the `<org>.<base>` apex) →
- *      the cluster ingress IP, via the terraform-managed Cloud DNS zone — so every
+ *      the cluster ingress IP, declared as an external-dns `DNSEndpoint` CR that the
+ *      external-dns controller reconciles into the configured DNS provider — so every
  *      UserTenant gateway host under the org resolves with no per-user record.
  *
  * Both side effects are idempotent (re-apply is a no-op) so the reconciler can call
  * `provisionOrgDomain` on every reconcile. It is RUNTIME-GATED by real capability
- * detection, NOT a hardcoded always-skip: the Certificate manifest is genuinely built
- * and the apply IS issued; only an absent Certificate CRD short-circuits the TLS side
- * (fail-closed), and the DNS side runs only when a Cloud DNS client + ingress IP are
- * present. When NEITHER side could act (cert-manager absent AND no DNS target), it
- * returns `{ ready:false, skipped:true }` so the reconciler records the skip and the
- * org still reaches `ready` — it never throws.
+ * detection, NOT a hardcoded always-skip: each manifest is genuinely built and the apply
+ * IS issued; an absent Certificate CRD short-circuits the TLS side (fail-closed) and an
+ * absent DNSEndpoint CRD short-circuits the DNS side (fail-closed). When NEITHER side
+ * could act (cert-manager absent AND external-dns absent / no ingress IP), it returns
+ * `{ ready:false, skipped:true }` so the reconciler records the skip and the org still
+ * reaches `ready` — it never throws.
  *
  * PRECONDITION: the org's bound namespace (`req.boundNamespace`) must already
  * exist — the reconciler fences it BEFORE calling this. A missing namespace is a
@@ -38,21 +52,21 @@ export class DefaultOrgDomainProvisioner implements OrgDomainProvisioner
   private readonly certs: CertManagerOperations;
 
   /**
-   * Cloud DNS record operations, or null when no managed zone is configured. Null
-   * means the install is not on a Cloud DNS substrate, so the DNS side effect is
-   * skipped (the Certificate is still applied).
+   * external-dns DNSEndpoint operations (injected; fake in tests). Always wired —
+   * external-dns absence is a runtime signal (the CRD is not served), not a wiring
+   * decision, so the DNS side is real even on a cluster without external-dns.
    */
-  private readonly dns: CloudDnsOperations | null;
+  private readonly dns: DnsEndpointOperations;
 
-  /** Static issuer + namespace config from the chart values. */
+  /** Static issuer config from the chart values. */
   private readonly config: OrgDomainProvisionerConfig;
 
   /**
    * @param certs  - cert-manager Certificate operations.
-   * @param dns    - Cloud DNS record operations, or null when no zone is configured.
+   * @param dns    - external-dns DNSEndpoint operations.
    * @param config - Issuer name/kind from the chart values.
    */
-  public constructor(certs: CertManagerOperations, dns: CloudDnsOperations | null, config: OrgDomainProvisionerConfig)
+  public constructor(certs: CertManagerOperations, dns: DnsEndpointOperations, config: OrgDomainProvisionerConfig)
   {
     this.certs = certs;
     this.dns = dns;
@@ -67,11 +81,11 @@ export class DefaultOrgDomainProvisioner implements OrgDomainProvisioner
     const namespace = req.boundNamespace;
     const tlsSecretName = `org-wildcard-tls-${req.orgName}`;
 
-    // 1. DNS first — the wildcard A record `*.<org>.<base>` and the org apex, both →
-    //    the ingress IP. Runs only when a Cloud DNS client AND an ingress IP target are
-    //    present; otherwise the install is not on a DNS substrate and the step is
-    //    skipped. Idempotent. dnsApplied records whether the DNS side actually acted.
-    const dnsApplied = await this._ensureDnsRecords(req, orgDomain, wildcardDnsName);
+    // 1. DNS first — declare the wildcard A record `*.<org>.<base>` and the org apex,
+    //    both → the ingress IP, as a DNSEndpoint CR. Runs only when an ingress IP target
+    //    is set; external-dns then reconciles the records. Idempotent. dnsApplied records
+    //    whether the DNS side actually acted (false when no ingress IP or no external-dns).
+    const dnsApplied = await this._ensureDnsEndpoint(req, orgDomain, wildcardDnsName, namespace);
 
     // 2. The per-org wildcard Certificate. The manifest is genuinely built and the
     //    apply IS issued; the client returns certManagerInstalled:false (fail-closed,
@@ -91,7 +105,7 @@ export class DefaultOrgDomainProvisioner implements OrgDomainProvisioner
         tlsSecretName,
         ready: false,
         skipped: true,
-        message: readiness.reason ?? "cert-manager and Cloud DNS are both unavailable; per-org wildcard cert + DNS record not provisioned",
+        message: readiness.reason ?? "cert-manager and external-dns are both unavailable; per-org wildcard cert + DNS record not provisioned",
       };
     }
 
@@ -116,36 +130,71 @@ export class DefaultOrgDomainProvisioner implements OrgDomainProvisioner
     // 1. Delete the Certificate first — missing Certificate / CRD are no-ops.
     await this.certs.deleteCertificate(namespace, tlsSecretName);
 
-    // 2. Delete the serving DNS records when a zone is configured — absence is a no-op.
-    if (this.dns)
-    {
-      await this.dns.deleteARecord(wildcardDnsName);
-      await this.dns.deleteARecord(orgDomain);
-    }
+    // 2. Delete the DNSEndpoint — a missing CR / absent CRD are no-ops. external-dns
+    //    then reaps the records it owns. (orgDomain/wildcardDnsName are derived above for
+    //    symmetry with provision; the DNSEndpoint name is the org-stable handle.)
+    void orgDomain;
+    void wildcardDnsName;
+    await this.dns.deleteDnsEndpoint(namespace, _DnsEndpointName(orgName));
   }
 
   /**
-   * Ensure the per-org wildcard AND apex A records point at the ingress IP, when a
-   * Cloud DNS client and an ingress IP are both available. Returns whether the DNS
-   * side effect actually ran, so the caller can distinguish a real no-backend skip
-   * from a partially-served reconcile.
+   * Declare the per-org wildcard AND apex A records (→ the ingress IP) as a DNSEndpoint
+   * CR, when an ingress IP target is set. Returns whether the DNS side actually acted, so
+   * the caller can distinguish a real no-backend skip from a partially-served reconcile.
    *
    * @param req             - The provision request (carries the optional ingress IP).
    * @param orgDomain       - The org apex `<org>.<base>`.
    * @param wildcardDnsName - The per-org wildcard `*.<org>.<base>`.
-   * @returns True when both A records were ensured; false when DNS was skipped.
+   * @param namespace       - The org's bound namespace the DNSEndpoint is created in.
+   * @returns True when the DNSEndpoint was applied; false when DNS was skipped.
    */
-  private async _ensureDnsRecords(req: OrgDomainProvisionRequest, orgDomain: string, wildcardDnsName: string): Promise<boolean>
+  private async _ensureDnsEndpoint(req: OrgDomainProvisionRequest, orgDomain: string, wildcardDnsName: string, namespace: string): Promise<boolean>
   {
     const ingressIp = req.ingressIp?.trim();
-    if (!this.dns || !ingressIp)
+    if (!ingressIp)
     {
-      return false;
+      return false; // No target → nothing to point a record at.
     }
 
-    await this.dns.ensureARecord(wildcardDnsName, [ingressIp], _RECORD_TTL);
-    await this.dns.ensureARecord(orgDomain, [ingressIp], _RECORD_TTL);
-    return true;
+    const manifest = this._buildDnsEndpoint(req, orgDomain, wildcardDnsName, namespace, ingressIp);
+    const readiness = await this.dns.applyDnsEndpoint(namespace, manifest);
+    return readiness.applied;
+  }
+
+  /**
+   * Build the per-org DNSEndpoint CR declaring the wildcard `*.<org>.<base>` and the
+   * `<org>.<base>` apex as A records pointing at the cluster ingress IP. external-dns
+   * reconciles these into the configured DNS provider.
+   *
+   * @param req             - The provision request.
+   * @param orgDomain       - The org apex `<org>.<base>`.
+   * @param wildcardDnsName - The per-org wildcard `*.<org>.<base>`.
+   * @param namespace       - The org's bound namespace the DNSEndpoint is created in.
+   * @param ingressIp       - The cluster ingress IP the A records target.
+   * @returns The DNSEndpoint custom-resource manifest.
+   */
+  private _buildDnsEndpoint(req: OrgDomainProvisionRequest, orgDomain: string, wildcardDnsName: string, namespace: string, ingressIp: string): Record<string, unknown>
+  {
+    return {
+      apiVersion: "externaldns.k8s.io/v1alpha1",
+      kind: "DNSEndpoint",
+      metadata: {
+        name: _DnsEndpointName(req.orgName),
+        namespace,
+        labels: {
+          "app.kubernetes.io/part-of": "opencrane",
+          "app.kubernetes.io/component": "org-dns",
+          "opencrane.io/cluster-tenant": req.orgName,
+        },
+      },
+      spec: {
+        endpoints: [
+          { dnsName: wildcardDnsName, recordType: "A", recordTTL: _RECORD_TTL, targets: [ingressIp] },
+          { dnsName: orgDomain, recordType: "A", recordTTL: _RECORD_TTL, targets: [ingressIp] },
+        ],
+      },
+    };
   }
 
   /**

@@ -3,9 +3,12 @@
  *
  * When an org (ClusterTenant) is reconciled it becomes addressable at its derived
  * apex `<name>.<base>` and its users at `<user>.<name>.<base>`. Two cluster-side side
- * effects must follow:
- *   1. DNS — a per-org wildcard record `*.<name>.<base>` → the cluster ingress IP, so
- *      every UserTenant gateway host under the org resolves with no per-user record.
+ * effects must follow, both declared as namespaced custom resources the operator owns —
+ * NO cloud SDK, NO direct DNS-provider calls:
+ *   1. DNS — a per-org wildcard record `*.<name>.<base>` → the cluster ingress IP,
+ *      declared as an external-dns `DNSEndpoint` CR and reconciled into whatever DNS
+ *      provider the platform runs (Cloud DNS, Route53, …), so every UserTenant gateway
+ *      host under the org resolves with no per-user record.
  *   2. TLS — a per-org wildcard Certificate `*.<name>.<base>` (cert-manager DNS-01),
  *      because the platform `*.<base>` cert does NOT cover the extra label
  *      `<user>.<name>.<base>` (DNS wildcards match exactly one label).
@@ -13,11 +16,12 @@
  * The operator owns this seam: it is the reconciler/executor that materialises the
  * cluster state. The concrete implementation is `DefaultOrgDomainProvisioner`
  * (org-domain.provisioner.js), wired by `_BuildOrgDomainProvisioner` from operator
- * config. It is RUNTIME-GATED by real capability detection — when cert-manager is
- * absent (the Certificate CRD is not served) and no Cloud DNS zone is configured, it
- * returns `{ ready:false, skipped:true }` rather than throwing; the reconciler then
- * records a `DomainProvisioningSkipped` condition and the org still reaches `ready`,
- * because the namespace boundary (not the cert) is the openclaw-attachment gate.
+ * config. It is RUNTIME-GATED by real capability detection — when cert-manager is absent
+ * (the Certificate CRD is not served) AND external-dns is absent (the DNSEndpoint CRD is
+ * not served), it returns `{ ready:false, skipped:true }` rather than throwing; the
+ * reconciler then records a `DomainProvisioningSkipped` condition and the org still
+ * reaches `ready`, because the namespace boundary (not the cert) is the openclaw-
+ * attachment gate.
  */
 
 /** Inputs the reconciler passes when provisioning an org's domain + TLS. */
@@ -137,30 +141,42 @@ export interface CertManagerOperations
   deleteCertificate(namespace: string, name: string): Promise<void>;
 }
 
+/** Whether an external-dns DNSEndpoint was declared (so the record will be reconciled). */
+export interface DnsEndpointReadiness
+{
+  /** True when the DNSEndpoint was applied; false when external-dns's CRD is absent. */
+  applied: boolean;
+  /** Human-readable reason when not applied (CRD-absent note). */
+  reason?: string;
+}
+
 /**
- * Minimal interface over the Cloud DNS record operations the OrgDomainProvisioner
- * needs. Injected so unit tests can substitute a fake without importing the SDK.
+ * Minimal interface over the external-dns `DNSEndpoint` operations the
+ * OrgDomainProvisioner needs. The operator declares the desired records as a namespaced
+ * custom resource and external-dns reconciles them into the configured DNS provider — so
+ * the operator carries no cloud SDK. Injected so unit tests can substitute a fake.
  */
-export interface CloudDnsOperations
+export interface DnsEndpointOperations
 {
   /**
-   * Ensure an A record exists for `name` pointing at `rrdatas`, idempotently. A
-   * re-apply with the same data is a no-op; an existing record with different data is
-   * replaced. `name` is the fully-qualified record name WITHOUT a trailing dot (e.g.
-   * `*.acme.weownai.eu`); implementations append the dot Cloud DNS requires.
+   * Apply (create-or-replace) a DNSEndpoint CR, idempotently. A re-apply carries the
+   * live resourceVersion so it never conflicts. Surfaces `applied: false` (fail-closed,
+   * never throws) when external-dns's DNSEndpoint CRD is absent.
    *
-   * @param name    - FQDN of the record (no trailing dot).
-   * @param rrdatas - Record data (the ingress IP for an A record).
-   * @param ttl     - Record TTL in seconds.
+   * @param namespace - Namespace the DNSEndpoint lives in (the org's bound namespace).
+   * @param manifest  - The DNSEndpoint manifest to apply.
+   * @returns Whether the DNSEndpoint was applied (false when external-dns is absent).
    */
-  ensureARecord(name: string, rrdatas: string[], ttl: number): Promise<void>;
+  applyDnsEndpoint(namespace: string, manifest: Record<string, unknown>): Promise<DnsEndpointReadiness>;
 
   /**
-   * Delete the A record `name` if present; absence is a no-op (idempotent teardown).
+   * Delete the named DNSEndpoint if present; absence (404) and a missing CRD are both
+   * no-ops (idempotent teardown).
    *
-   * @param name - FQDN of the record (no trailing dot).
+   * @param namespace - Namespace the DNSEndpoint lives in.
+   * @param name      - DNSEndpoint name.
    */
-  deleteARecord(name: string): Promise<void>;
+  deleteDnsEndpoint(namespace: string, name: string): Promise<void>;
 }
 
 /**

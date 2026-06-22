@@ -18,7 +18,6 @@ export const defaultConfig: OpenClawTenantOperatorConfig = {
   defaultOpenclawVersion: "2026.6.9",
   ingressDomain: "opencrane.local",
   ingressIp: "",
-  dnsManagedZone: "",
   certManagerIssuerName: "opencrane-issuer",
   certManagerIssuerKind: "ClusterIssuer",
   ingressTlsEnabled: false,

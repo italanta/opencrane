@@ -46,13 +46,12 @@ spec:
               value: {{ .Values.ingress.domain | quote }}
             # -- Per-org domain provisioning (fixed-wildcard topology). The operator's
             #    ClusterTenant reconciler applies a per-org `*.<org>.<domain>` Certificate
-            #    (cert-manager) and, when externalIp + dnsManagedZone are set, the per-org
-            #    A records. All optional: unset values make the operator skip the affected
-            #    side effect at runtime rather than fail.
+            #    (cert-manager) and, when externalIp is set, declares a per-org DNSEndpoint
+            #    CR (reconciled by external-dns) for the `*.<org>.<domain>` A records. Both
+            #    optional: an unset externalIp / absent CRD makes the operator skip the
+            #    affected side effect at runtime rather than fail.
             - name: INGRESS_IP
               value: {{ .Values.ingress.externalIp | quote }}
-            - name: DNS_MANAGED_ZONE
-              value: {{ .Values.ingress.dnsManagedZone | quote }}
             - name: CERT_MANAGER_ISSUER_NAME
               value: {{ .Values.certManager.issuerName | quote }}
             # -- Namespaced Issuer in multi-instance cert mode (MI.4), else the shared

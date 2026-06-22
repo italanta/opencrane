@@ -16,7 +16,6 @@ function _buildConfig(overrides: Partial<OpenClawTenantOperatorConfig> = {}): Op
     defaultOpenclawVersion: "2026.6.9",
     ingressDomain: "opencrane.local",
     ingressIp: "",
-    dnsManagedZone: "",
     certManagerIssuerName: "opencrane-issuer",
     certManagerIssuerKind: "ClusterIssuer",
     ingressTlsEnabled: false,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { DefaultOrgDomainProvisioner } from "../../cluster-tenants/internal/org-domain.provisioner.js";
-import type { OrgDomainProvisionerConfig, CertManagerOperations, CertificateReadiness, CloudDnsOperations } from "../../cluster-tenants/internal/org-domain-provisioner.types.js";
+import type { OrgDomainProvisionerConfig, CertManagerOperations, CertificateReadiness, DnsEndpointOperations } from "../../cluster-tenants/internal/org-domain-provisioner.types.js";
 
 /**
  * Records a cert-manager apply for assertion; returns a scripted readiness.
@@ -27,22 +27,24 @@ function _fakeCerts(readiness: CertificateReadiness): CertManagerOperations & { 
 }
 
 /**
- * Records DNS ensures/deletes for assertion.
+ * Records DNSEndpoint applies/deletes for assertion; reports a scripted applied flag.
  *
- * @returns A CloudDnsOperations fake that captures ensured + deleted records.
+ * @param applied - Whether applyDnsEndpoint reports the CR was applied (false ⇒ external-dns absent).
+ * @returns A DnsEndpointOperations fake that captures applied + deleted DNSEndpoints.
  */
-function _fakeDns(): CloudDnsOperations & { ensured: Array<{ name: string; rrdatas: string[]; ttl: number }>; deleted: string[] }
+function _fakeDnsEndpoints(applied = true): DnsEndpointOperations & { applied: Array<{ namespace: string; manifest: Record<string, unknown> }>; deleted: Array<{ namespace: string; name: string }> }
 {
   return {
-    ensured: [],
+    applied: [],
     deleted: [],
-    async ensureARecord(name, rrdatas, ttl)
+    async applyDnsEndpoint(namespace, manifest)
     {
-      this.ensured.push({ name, rrdatas, ttl });
+      this.applied.push({ namespace, manifest });
+      return { applied };
     },
-    async deleteARecord(name)
+    async deleteDnsEndpoint(namespace, name)
     {
-      this.deleted.push(name);
+      this.deleted.push({ namespace, name });
     },
   };
 }
@@ -53,13 +55,12 @@ const _CONFIG: OrgDomainProvisionerConfig = { issuerName: "opencrane-issuer", is
 /** A baseline provision request carrying an ingress IP (the DNS-served path). */
 const _REQ = { orgName: "acme", boundNamespace: "opencrane-acme", platformBaseDomain: "weownai.eu", ingressIp: "203.0.113.10" };
 
-describe("DefaultOrgDomainProvisioner — per-org wildcard cert + Cloud DNS", function _suite()
+describe("DefaultOrgDomainProvisioner — per-org wildcard cert + DNSEndpoint", function _suite()
 {
   it("applies a Certificate CR with the *.<org>.<base> SAN, apex SAN, issuer ref, and per-org secret", async function _certShape()
   {
     const certs = _fakeCerts({ ready: true, certManagerInstalled: true });
-    const dns = _fakeDns();
-    const provisioner = new DefaultOrgDomainProvisioner(certs, dns, _CONFIG);
+    const provisioner = new DefaultOrgDomainProvisioner(certs, _fakeDnsEndpoints(), _CONFIG);
 
     const result = await provisioner.provisionOrgDomain(_REQ);
 
@@ -85,25 +86,32 @@ describe("DefaultOrgDomainProvisioner — per-org wildcard cert + Cloud DNS", fu
     });
   });
 
-  it("ensures the per-org wildcard AND apex A records point at the ingress IP", async function _dnsShape()
+  it("declares a DNSEndpoint CR with the wildcard + apex A records pointing at the ingress IP", async function _dnsShape()
   {
     const certs = _fakeCerts({ ready: true, certManagerInstalled: true });
-    const dns = _fakeDns();
+    const dns = _fakeDnsEndpoints();
     const provisioner = new DefaultOrgDomainProvisioner(certs, dns, _CONFIG);
 
     await provisioner.provisionOrgDomain(_REQ);
 
-    expect(dns.ensured).toEqual([
-      { name: "*.acme.weownai.eu", rrdatas: ["203.0.113.10"], ttl: 300 },
-      { name: "acme.weownai.eu", rrdatas: ["203.0.113.10"], ttl: 300 },
+    expect(dns.applied).toHaveLength(1);
+    const { namespace, manifest } = dns.applied[0];
+    expect(namespace).toBe("opencrane-acme");
+    expect(manifest.apiVersion).toBe("externaldns.k8s.io/v1alpha1");
+    expect(manifest.kind).toBe("DNSEndpoint");
+    expect((manifest.metadata as Record<string, unknown>).name).toBe("org-dns-acme");
+    expect((manifest.metadata as Record<string, unknown>).namespace).toBe("opencrane-acme");
+    const spec = manifest.spec as { endpoints: Array<{ dnsName: string; recordType: string; recordTTL: number; targets: string[] }> };
+    expect(spec.endpoints).toEqual([
+      { dnsName: "*.acme.weownai.eu", recordType: "A", recordTTL: 300, targets: ["203.0.113.10"] },
+      { dnsName: "acme.weownai.eu", recordType: "A", recordTTL: 300, targets: ["203.0.113.10"] },
     ]);
   });
 
   it("appends the vanity domain (and its wildcard) to the cert SANs when set", async function _vanity()
   {
     const certs = _fakeCerts({ ready: true, certManagerInstalled: true });
-    const dns = _fakeDns();
-    const provisioner = new DefaultOrgDomainProvisioner(certs, dns, _CONFIG);
+    const provisioner = new DefaultOrgDomainProvisioner(certs, _fakeDnsEndpoints(), _CONFIG);
 
     await provisioner.provisionOrgDomain({ ..._REQ, vanityDomain: "acme.com" });
 
@@ -111,26 +119,27 @@ describe("DefaultOrgDomainProvisioner — per-org wildcard cert + Cloud DNS", fu
     expect(spec.dnsNames).toEqual(["*.acme.weownai.eu", "acme.weownai.eu", "*.acme.com", "acme.com"]);
   });
 
-  it("is idempotent — a re-apply issues the SAME cert + DNS requests (clients absorb the no-op)", async function _idempotent()
+  it("is idempotent — a re-apply issues the SAME cert + DNSEndpoint manifests", async function _idempotent()
   {
     const certs = _fakeCerts({ ready: true, certManagerInstalled: true });
-    const dns = _fakeDns();
+    const dns = _fakeDnsEndpoints();
     const provisioner = new DefaultOrgDomainProvisioner(certs, dns, _CONFIG);
 
     const first = await provisioner.provisionOrgDomain(_REQ);
     const second = await provisioner.provisionOrgDomain(_REQ);
 
     expect(second).toEqual(first);
-    // Same request shape both times — idempotency is the client's job (create-or-replace
-    // / same-data no-op), and the provisioner emits a stable, repeatable request.
+    // Same manifests both times — idempotency is the client's job (create-or-replace), and
+    // the provisioner emits a stable, repeatable manifest.
     expect(certs.applied[0].manifest).toEqual(certs.applied[1].manifest);
-    expect(dns.ensured.slice(0, 2)).toEqual(dns.ensured.slice(2, 4));
+    expect(dns.applied[0].manifest).toEqual(dns.applied[1].manifest);
   });
 
-  it("skips (skipped:true) when cert-manager is absent AND no DNS zone is configured", async function _gatedNoBackend()
+  it("skips (skipped:true) when cert-manager is absent AND external-dns is absent", async function _gatedNoBackend()
   {
     const certs = _fakeCerts({ ready: false, certManagerInstalled: false, reason: "cert-manager is not installed" });
-    const provisioner = new DefaultOrgDomainProvisioner(certs, null, _CONFIG);
+    // external-dns absent → applyDnsEndpoint reports applied:false (fail-closed, no throw).
+    const provisioner = new DefaultOrgDomainProvisioner(certs, _fakeDnsEndpoints(false), _CONFIG);
 
     const result = await provisioner.provisionOrgDomain(_REQ);
 
@@ -142,10 +151,10 @@ describe("DefaultOrgDomainProvisioner — per-org wildcard cert + Cloud DNS", fu
     expect(certs.applied).toHaveLength(1);
   });
 
-  it("does NOT skip when DNS lands even though cert-manager is absent (DNS still serves)", async function _dnsOnly()
+  it("does NOT skip when the DNSEndpoint lands even though cert-manager is absent", async function _dnsOnly()
   {
     const certs = _fakeCerts({ ready: false, certManagerInstalled: false, reason: "cert-manager is not installed" });
-    const dns = _fakeDns();
+    const dns = _fakeDnsEndpoints(true);
     const provisioner = new DefaultOrgDomainProvisioner(certs, dns, _CONFIG);
 
     const result = await provisioner.provisionOrgDomain(_REQ);
@@ -153,40 +162,39 @@ describe("DefaultOrgDomainProvisioner — per-org wildcard cert + Cloud DNS", fu
     // DNS acted, so the org resolves; only browser-trusted TLS waits — not a full skip.
     expect(result.skipped).toBe(false);
     expect(result.ready).toBe(false);
-    expect(dns.ensured.map(e => e.name)).toEqual(["*.acme.weownai.eu", "acme.weownai.eu"]);
+    expect(dns.applied).toHaveLength(1);
   });
 
-  it("skips the DNS side when no Cloud DNS zone is configured (null client), cert still applied", async function _noDnsZone()
+  it("is NOT skipped when cert-manager is present even if external-dns is absent", async function _certOnly()
   {
     const certs = _fakeCerts({ ready: true, certManagerInstalled: true });
-    const provisioner = new DefaultOrgDomainProvisioner(certs, null, _CONFIG);
+    // external-dns absent (applied:false) but cert-manager present → ready, not skipped.
+    const provisioner = new DefaultOrgDomainProvisioner(certs, _fakeDnsEndpoints(false), _CONFIG);
 
     const result = await provisioner.provisionOrgDomain(_REQ);
 
-    // cert-manager present → ready and NOT skipped, but DNS never ran (null client).
     expect(result.ready).toBe(true);
     expect(result.skipped).toBe(false);
     expect(certs.applied).toHaveLength(1);
   });
 
-  it("skips the DNS side when no ingress IP is supplied, even with a zone configured", async function _noIngressIp()
+  it("skips the DNS side when no ingress IP is supplied (no DNSEndpoint declared)", async function _noIngressIp()
   {
     const certs = _fakeCerts({ ready: true, certManagerInstalled: true });
-    const dns = _fakeDns();
+    const dns = _fakeDnsEndpoints();
     const provisioner = new DefaultOrgDomainProvisioner(certs, dns, _CONFIG);
 
     await provisioner.provisionOrgDomain({ orgName: "acme", boundNamespace: "opencrane-acme", platformBaseDomain: "weownai.eu" });
 
-    // No ingress IP target → DNS side effect is skipped; the cert is still applied.
-    expect(dns.ensured).toHaveLength(0);
+    // No ingress IP target → no DNSEndpoint applied; the cert is still applied.
+    expect(dns.applied).toHaveLength(0);
     expect(certs.applied).toHaveLength(1);
   });
 
   it("reports ready:false (not skipped) while DNS-01 issuance is still in flight", async function _inFlight()
   {
     const certs = _fakeCerts({ ready: false, certManagerInstalled: true, reason: "issuance in flight" });
-    const dns = _fakeDns();
-    const provisioner = new DefaultOrgDomainProvisioner(certs, dns, _CONFIG);
+    const provisioner = new DefaultOrgDomainProvisioner(certs, _fakeDnsEndpoints(), _CONFIG);
 
     const result = await provisioner.provisionOrgDomain(_REQ);
 
@@ -208,30 +216,20 @@ describe("DefaultOrgDomainProvisioner — per-org wildcard cert + Cloud DNS", fu
       },
       async deleteCertificate() {},
     };
-    const provisioner = new DefaultOrgDomainProvisioner(certs, null, _CONFIG);
+    const provisioner = new DefaultOrgDomainProvisioner(certs, _fakeDnsEndpoints(), _CONFIG);
 
     await expect(provisioner.provisionOrgDomain(_REQ)).rejects.toThrow(/not found/);
   });
 
-  it("deprovisions by deleting the Certificate and both A records (idempotent teardown)", async function _deprovision()
+  it("deprovisions by deleting the Certificate and the DNSEndpoint (idempotent teardown)", async function _deprovision()
   {
     const certs = _fakeCerts({ ready: true, certManagerInstalled: true });
-    const dns = _fakeDns();
+    const dns = _fakeDnsEndpoints();
     const provisioner = new DefaultOrgDomainProvisioner(certs, dns, _CONFIG);
 
     await provisioner.deprovisionOrgDomain("acme", "weownai.eu", "opencrane-acme");
 
     expect(certs.deleted).toEqual([{ namespace: "opencrane-acme", name: "org-wildcard-tls-acme" }]);
-    expect(dns.deleted).toEqual(["*.acme.weownai.eu", "acme.weownai.eu"]);
-  });
-
-  it("deprovisions the Certificate only when no DNS zone is configured (null client)", async function _deprovisionNoDns()
-  {
-    const certs = _fakeCerts({ ready: true, certManagerInstalled: true });
-    const provisioner = new DefaultOrgDomainProvisioner(certs, null, _CONFIG);
-
-    await provisioner.deprovisionOrgDomain("acme", "weownai.eu", "opencrane-acme");
-
-    expect(certs.deleted).toEqual([{ namespace: "opencrane-acme", name: "org-wildcard-tls-acme" }]);
+    expect(dns.deleted).toEqual([{ namespace: "opencrane-acme", name: "org-dns-acme" }]);
   });
 });

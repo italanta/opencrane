@@ -350,10 +350,6 @@ ingress:
   #    per-org DNS side effect (the Certificate is still applied). Wired to the operator
   #    as INGRESS_IP.
   externalIp: ""
-  # -- Cloud DNS managed-zone resource name (terraform `<zone>-zone`) the per-org A
-  #    records are written into. Empty when the install is not on a Cloud DNS substrate;
-  #    the operator then skips the per-org DNS side effect. Wired as DNS_MANAGED_ZONE.
-  dnsManagedZone: ""
   tls:
     enabled: false
     # -- Secret name for the platform wildcard TLS cert (`*.<domain>`, covering every
@@ -409,6 +405,17 @@ monitoring:
   warnSeverity: warning
   # -- Base URL prefix for runbook links embedded in alert annotations.
   runbookBaseUrl: https://github.com/opencrane/opencrane/blob/main/docs/runbooks
+
+# -- external-dns integration (DOMAIN.T1). When enabled, the operator is granted RBAC to
+# create namespaced `DNSEndpoint` CRs (externaldns.k8s.io/v1alpha1); its ClusterTenant
+# reconciler declares the per-org `*.<org>.<domain>` + apex A records as a DNSEndpoint and
+# the external-dns controller reconciles them into whatever DNS provider the platform runs
+# (Cloud DNS, Route53, Cloudflare, RFC2136, …) — so the operator talks to no cloud DNS API.
+# external-dns itself is a PREREQUISITE (like cert-manager): install it with `--source=crd`
+# and access to the platform's DNS zone. When disabled (or its CRD is absent) the operator
+# skips the per-org DNS side effect at runtime; the Certificate is still applied.
+externalDns:
+  enabled: false
 
 certManager:
   enabled: false

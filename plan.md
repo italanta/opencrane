@@ -137,18 +137,22 @@ Stacked on `feat/org-admin-billing`.
 - Validation: `helm template` (operator + RBAC) green; operator (132; +21 provisioner/cert/DNS/gating unit
   tests), control-plane (408) suites green; touched-package build + lint clean.
 
-#### Follow-ups (open)
-- **DOMAIN.T1 — k8s-native DNS instead of the direct GCP binding.** `_BuildOrgDomainProvisioner` wires a
-  `CloudDnsClient` that talks to `@google-cloud/dns` directly (Application Default Credentials / Workload
-  Identity). The cert side is already k8s-native (cert-manager `Certificate` CRs); the A-record side is the
-  remaining cloud-specific coupling. Evaluate replacing it with **external-dns** (watches Ingress/Service and
-  reconciles records via a provider) so per-org A records become a declarative k8s concern and the operator
-  carries no cloud SDK. Keeps the seam (`CloudDnsOperations`) but swaps the implementation; on-prem/other-cloud
-  installs then need no GCP dep. Decide: external-dns vs. keep the thin SDK wrapper per substrate.
+#### Follow-ups
+- **DOMAIN.T1 — k8s-native DNS instead of the direct GCP binding — DONE.** Replaced the imperative
+  `CloudDnsClient` (`@google-cloud/dns`) with a declarative `DnsEndpointClient`: the operator's ClusterTenant
+  reconciler now declares the per-org `*.<org>.<base>` + apex A records as an external-dns `DNSEndpoint` CR
+  (`externaldns.k8s.io/v1alpha1`) in the org's bound namespace, and the external-dns controller reconciles them
+  into whatever provider the platform runs. The operator carries NO cloud SDK (the `@google-cloud/dns` optional
+  dep is removed). Same fail-closed posture as cert-manager: an absent DNSEndpoint CRD → `applied:false` skip,
+  never a crash. Helm: `externalDns.enabled` gates the operator's `dnsendpoints` RBAC; `DNS_MANAGED_ZONE` env +
+  `ingress.dnsManagedZone` value removed. external-dns is a prerequisite (install with `--source=crd`), like
+  cert-manager. The k8s-error classification (`_IsCrdAbsent`/`_IsConflict`/`_IsNotFound`) was extracted to a
+  shared `k8s-api-errors.ts` used by both the cert-manager and DNSEndpoint clients.
 - **DOMAIN.T2 — wire org-domain teardown on ClusterTenant delete.** The reconciler's `Deleted` case is a no-op,
-  so `OrgDomainProvisioner.deprovisionOrgDomain(...)` (cert + Cloud DNS A-record deletion) is implemented but
-  never invoked. Namespace GC reclaims the namespaced `Certificate`, but the **external Cloud DNS A records
-  leak**. Wire deprovision into the delete handler (idempotent; pass the bound namespace).
+  so `OrgDomainProvisioner.deprovisionOrgDomain(...)` (deletes the per-org `Certificate` + `DNSEndpoint`) is
+  implemented but never invoked. Namespace GC reclaims both namespaced CRs, and external-dns reaps the records
+  it owns once the DNSEndpoint is gone — BUT only if the DNSEndpoint is actually deleted, so wire deprovision
+  into the delete handler (idempotent; pass the bound namespace) rather than relying solely on namespace GC.
 - **DOMAIN.T3 — collapse the now-vestigial control-plane provisioner runtime paths.** The operator owns
   provisioning; the control-plane `SharedClusterProvisioner`/`ExternalWebhookProvisioner` `provision()` /
   `getStatus()` / `deprovision()` methods are dead at runtime — only `registry.isTierAvailable(...)` (tier

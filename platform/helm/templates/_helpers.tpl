@@ -85,6 +85,14 @@ All resources here are namespaced, so the same rule list is valid in a Role.
   resources: ["certificates"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 {{- end }}
+{{- if .Values.externalDns.enabled }}
+# Per-org DNSEndpoint CRs the ClusterTenant reconciler declares into each org's bound
+# namespace; external-dns reconciles them into the configured DNS provider. Granted only
+# when external-dns is enabled; without it the operator skips the DNS side at runtime.
+- apiGroups: ["externaldns.k8s.io"]
+  resources: ["dnsendpoints"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+{{- end }}
 # Events for audit trail
 - apiGroups: [""]
   resources: ["events"]
