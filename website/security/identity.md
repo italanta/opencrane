@@ -5,8 +5,8 @@ access to **both** the control-plane API and the user's own OpenClaw pod.
 
 > **Terminology:** the per-user OpenClaw agent gateway is a **UserTenant** (the openclaw /
 > `Tenant` CRD); "UserTenant" is the canonical doc name while the CRD kind is still `Tenant`
-> in code. It is exposed at `<user>.<ClusterTenant-domain>`. The **ClusterTenant** is the
-> customer that owns that base domain. See the authoritative
+> in code. It is reached through its org's single host `<org>.<base>` via the identity-routing
+> gateway proxy (no per-user subdomain). The **ClusterTenant** is the org. See the authoritative
 > [Tenancy Model](https://github.com/italanta/opencrane/blob/main/docs/agents/cluster-architecture.md#tenancy-model--clustertenant-vs-usertenant).
 > Below, "tenant pod" / "tenant gateway" means a UserTenant.
 
@@ -25,7 +25,7 @@ OpenCrane has two backends a user touches, and they must not require two logins:
 | Plane | What it serves | How it is reached |
 |-------|----------------|-------------------|
 | **Control plane** | management + metadata: tenants, policies, groups, budgets, skills, audit, auth | the versioned control-plane API (OIDC session) |
-| **UserTenant pod (OpenClaw)** | the live agent session: chat, Cognee retrieval, canvas | the UserTenant's own `gatewayUrl` (`wss://<ingressHost>`, i.e. `<user>.<ClusterTenant-domain>`), via the OpenClaw Gateway v4 protocol |
+| **UserTenant pod (OpenClaw)** | the live agent session: chat, Cognee retrieval, canvas | the org host `wss://<org>.<base>` → identity-routing proxy → the user's pod, via the OpenClaw Gateway v4 protocol |
 
 The principle is **one identity, brokered access**: the human signs in once via
 OIDC; the control plane then **brokers** the connection to the user's own pod by

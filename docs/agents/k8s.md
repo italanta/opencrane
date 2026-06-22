@@ -30,19 +30,19 @@ How the operator actually shapes the cluster (verified June 2026):
 
 ### Ingress hosts & DNS hierarchy
 
-The cluster routes **three independent domains** — the platform and each customer bring their own (full
-model in [`cluster-architecture.md` → Tenancy Model](./cluster-architecture.md#tenancy-model--clustertenant-vs-usertenant)):
+The cluster routes under **one platform base domain** with a single wildcard (full model in
+[`cluster-architecture.md` → Tenancy Model](./cluster-architecture.md#tenancy-model--clustertenant-vs-usertenant)):
 
 ```
-example.com                  → control plane (platform management API)   [platform's own domain]
-ai.client-company.com        → ClusterTenant "client-company" base domain [per-customer, customer-owned]
-  mike.ai.client-company.com → UserTenant "mike" gateway (wildcard *.ai.client-company.com)  [per-user]
+platform.weownai.eu          → control plane (platform management API)        [fixed super-operator host]
+*.weownai.eu                 → every org host (one wildcard: DNS + TLS, set once)
+  acme.weownai.eu            → ClusterTenant "acme" host → identity-routing proxy → each user's pod
+  ai.client-company.com      → OPTIONAL customer-vanity domain, CNAMEd onto acme.weownai.eu
 ```
 
-- The operator builds **one `Ingress` per UserTenant** at `<name>.<ingress.domain>` (`apps/operator/.../5-ingress.ts`). `ingress.domain` is per-instance and **is** the ClusterTenant base domain (set it to the customer's domain).
-- cert-manager issues `*.<ingress.domain>` + that base domain's own apex (`cluster-issuer.yaml`). The wildcard `*.<domain>` maps to **UserTenant** gateways — **not** the ClusterTenant. The ClusterTenant *owns* the domain; its UserTenants get the hosts.
-- The **control plane's own domain is not wired by an Ingress in the chart** today: its cert/SAN may be covered, but routing the platform domain to the control-plane Service is an installer/out-of-chart step.
-- Auth-less-by-host routing (a UserTenant gateway reachable at its host without an OIDC session) applies to the per-user gateway hosts under the customer wildcard, not the platform domain.
+- A **single wildcard `Ingress`** (`*.<ingress.domain>`, `gateway-ingress.yaml`) fronts every org host and path-routes `/api`→control-plane and the gateway WebSocket→the **gateway-proxy** (`apps/gateway-proxy/`). The operator builds **no** per-UserTenant Ingress; `status.ingressHost` is the org host `<org>.<base>`.
+- cert-manager issues one `*.<ingress.domain>` + apex + control-plane host cert (`cluster-issuer.yaml`) via DNS-01. That single wildcard covers every org host `<org>.<base>` (one label). A customer-vanity host gets a small per-org HTTP-01 cert.
+- The gateway-proxy authenticates each WS upgrade against the control plane (`/auth/gateway-resolve`) and injects the verified identity; the pod also self-enforces its owner (`allowUsers`, CONN.10). No host is reachable without an OIDC session.
 
 ## Defaults
 

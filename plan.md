@@ -139,16 +139,12 @@ Stacked on `feat/org-admin-billing`.
   tests), control-plane (407) suites green; touched-package build + lint clean.
 
 #### Follow-ups
-- **DOMAIN.T1 — k8s-native DNS instead of the direct GCP binding — DONE.** Replaced the imperative
-  `CloudDnsClient` (`@google-cloud/dns`) with a declarative `DnsEndpointClient`: the operator's ClusterTenant
-  reconciler now declares the per-org `*.<org>.<base>` + apex A records as an external-dns `DNSEndpoint` CR
-  (`externaldns.k8s.io/v1alpha1`) in the org's bound namespace, and the external-dns controller reconciles them
-  into whatever provider the platform runs. The operator carries NO cloud SDK (the `@google-cloud/dns` optional
-  dep is removed). Same fail-closed posture as cert-manager: an absent DNSEndpoint CRD → `applied:false` skip,
-  never a crash. Helm: `externalDns.enabled` gates the operator's `dnsendpoints` RBAC; `DNS_MANAGED_ZONE` env +
-  `ingress.dnsManagedZone` value removed. external-dns is a prerequisite (install with `--source=crd`), like
-  cert-manager. The k8s-error classification (`_IsCrdAbsent`/`_IsConflict`/`_IsNotFound`) was extracted to a
-  shared `k8s-api-errors.ts` used by both the cert-manager and DNSEndpoint clients.
+- **DOMAIN.T1 — k8s-native DNS instead of the direct GCP binding — DONE, then SUPERSEDED by T4.** Originally
+  replaced the imperative `CloudDnsClient` (`@google-cloud/dns`) with a declarative external-dns `DnsEndpointClient`.
+  The T4 cutover then made per-org DNS unnecessary entirely (the org host `<org>.<base>` is one label under the
+  platform base, covered by the platform `*.<base>` record), so the `DnsEndpointClient` + external-dns wiring +
+  `externalDns.enabled` RBAC gating + `ingress.externalIp` were all REMOVED. The operator carries no cloud SDK and
+  declares no DNS records; the only DNS the platform manages is the single `*.<base>` wildcard (at install).
 - **DOMAIN.T2 — wire org-domain teardown on ClusterTenant delete — DONE.** The reconciler's `Deleted` case now
   invokes `OrgDomainProvisioner.deprovisionOrgDomain(...)` (deletes the per-org `Certificate` + external-dns
   `DNSEndpoint` so external-dns reaps the records it owns). The bound namespace is re-derived deterministically
@@ -161,42 +157,31 @@ Stacked on `feat/org-admin-billing`.
   carrying `{ id, tiers }` entries — `isTierAvailable` + `capabilities` only (the live callers). `dedicatedCluster`
   gating + the HTTPS-only webhook-config validation are preserved (`_ReadExternalWebhookConfig`). Contracts lib
   unchanged (its `ClusterTenantProvisionerRegistry` was already minimal). `provisioner.test.ts` → `registry.test.ts`.
-- **DOMAIN.T4 — collapse per-user subdomains to a single per-org host with an identity-routing proxy —
-  PARTIALLY LANDED (service + endpoint built & gated; ingress cutover remains).** Landed this slice: the new
-  `@opencrane/gateway-proxy` app (thin, logic-free WS reverse proxy: Origin/CSWSH allowlist → delegated auth →
-  per-identity rate limit → forward to `openclaw-<user>.<ns>.svc`), the control-plane
-  `GET /api/v1/auth/gateway-resolve` routing authority (fail-closed email→tenant; 403 on no/ambiguous), Helm
-  deployment+service gated behind `gatewayProxy.enabled` (off; `automountServiceAccountToken:false`, no RBAC —
-  it never touches the k8s API), the CI image build, and §0.1 of connection-security.md. 19 proxy tests + 7
-  gateway-resolve tests. **STILL TO DO (the cutover, its own slice):** one per-org Ingress that path-routes
-  `/api`/UI/gateway-WS; retire the operator's per-user Ingress + per-user DNS/cert minting; confirm the OIDC
-  redirect-URI allowlist accepts per-org hosts; flip `gatewayProxy.enabled` per install. Until then routing
-  stays per-user-subdomain and the proxy is dormant.
-  **Decisions LOCKED (2026-06):** (a) **per-org host** `company.opencrane.ai` (preserves cross-org origin
-  isolation + vanity CNAMEs; one DNS record + one **HTTP-01** cert per org → no wildcard, no DNS-01, no
-  cert-manager zone access — supersedes the wildcard parts of T1); (b) **same-origin** — the app UI, `/api/*`,
-  and the gateway WS are ALL served under that one host, so the browser is same-origin (no CORS) and the OIDC
-  session cookie is **host-scoped** to it (no parent-domain cross-org leak). The only external CNAME a customer
-  needs is `company.opencrane.ai` (or vanity → it).
-  - **Prerequisite (DONE):** CONN.10 per-pod owner pinning (`allowUsers`), so the pod self-enforces its owner
-    regardless of routing — without it, identity-routing would be the *only* cross-tenant guard.
-  - **New component — identity-routing WS proxy (DONE)** on the per-org host. On a gateway WS upgrade it calls a new
-    control-plane endpoint `GET /auth/gateway-resolve` (verify session → return `{ user, tenant, podService }`,
-    reusing the existing fail-closed email→tenant resolution; **403** if no/ambiguous tenant), validates the
-    `Origin` header against the same-origin host (CSWSH guard — CORS does NOT cover WS), then reverse-proxies
-    to `openclaw-<user>.<ns>.svc`. The proxy holds NO session logic — the control-plane stays the auth
-    authority (delegate-auth pattern, like today's nginx `auth_request`). This avoids sharing the express
-    session store across services.
-  - **Ingress (REMAINS):** one per-org Ingress for `company.opencrane.ai` — path-route `/api/*`→control-plane, UI→
-    frontend, gateway WS→the proxy. The operator STOPS minting per-user Ingresses + per-user DNS/cert.
-  - **OIDC (REMAINS):** login/callback/session now happen on the per-org host (host-scoped cookie). Confirm the OIDC
-    redirect-URI handling supports per-org hosts (multi-host redirect allowlist) before cutover.
-  - **Security controls (DONE):** Origin allowlist on the WS upgrade (CSWSH, fail-closed); proxy is a thin,
-    logic-free, heavily-logged choke point; per-identity rate limits live in the proxy. Cross-tenant safety rests
-    on CONN.10 (pod-level) + the proxy's `gateway-resolve` (routing-level) — defence in depth. (Host-scoped cookie
-    lands with the ingress/OIDC cutover above.)
-  - **Docs (DONE):** `website/security/connection-security.md` §0.1 documents the proxy + Origin controls +
-    delegated-auth flow + cutover status.
+- **DOMAIN.T4 — collapse per-user subdomains to a single per-org host with an identity-routing proxy — DONE
+  (full cutover landed).** Every user in an org is now served at the org's single host `<org>.<base>` via the
+  `@opencrane/gateway-proxy` service; per-user subdomains, per-user Ingresses, the per-org `*.<org>.<base>`
+  wildcard cert/DNS, external-dns, and `/auth/gateway-verify` are all REMOVED. What landed:
+  - **Proxy (LIVE, on by default):** thin, logic-free WS reverse proxy. Per gateway WS upgrade: Origin allowlist
+    (CSWSH, fail-closed; exact vanity origins + base-domain match so `https://<org>.<base>` is allowed without
+    enumeration) → delegated auth via `GET /api/v1/auth/gateway-resolve` (cookie replay only) → per-identity rate
+    limit → **inject the verified `X-Forwarded-User`** (stripping any client value) → forward to
+    `openclaw-<user>.<ns>.svc`. Holds no session state/secrets.
+  - **Routing authority:** control-plane `GET /api/v1/auth/gateway-resolve` resolves `{ user, tenant, podService }`
+    from the IdP-verified email (fail-closed; 403 on no/ambiguous). `/auth/gateway-verify` deleted.
+  - **Operator:** stopped minting per-user Ingresses (`5-ingress.ts`/`ingress-host.ts` + the `buildIngressBinding`
+    adapter surface deleted); the per-pod gateway NetworkPolicy now admits the gateway port only from the
+    gateway-proxy pods (`GATEWAY_PROXY_NAMESPACE`); `status.ingressHost` is the org serving domain; the org-domain
+    provisioner is **vanity-only** (a per-org HTTP-01 cert for a vanity SAN; canonical host rides the platform
+    `*.<base>` cert).
+  - **OIDC:** `buildLoginUrl` derives `redirect_uri` from the request host so per-org-host login works and the
+    session cookie stays host-scoped to `<org>.<base>`. **External dependency:** the IdP must allow the per-org
+    redirect hosts (a wildcard redirect URI, e.g. `https://*.<base>/api/v1/auth/callback`).
+  - **Helm:** one wildcard Ingress `*.<base>` path-routes `/api`→control-plane and the gateway WS→proxy (same
+    origin, platform `*.<base>` TLS); `gatewayProxy.enabled` defaults ON; origins default to `[ingress.domain]`.
+  - **Defence in depth:** cross-tenant safety rests on CONN.10 per-pod owner pinning (`allowUsers`, pod level) +
+    `gateway-resolve` (routing level) — either alone suffices.
+  - Tests: 24 proxy + 7 gateway-resolve + updated operator suites. Docs rewritten (connection-security §0/§0.1,
+    dns-config, cluster-architecture).
 
 ### Track P5 — Close Phase 5 — ✅ COMPLETE · full history: plan-done.md § Completed Tracks (archived 2026-06-15)
 

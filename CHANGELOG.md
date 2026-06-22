@@ -15,27 +15,40 @@ follows [Keep a Changelog](https://keepachangelog.com/); the project uses
 
 ### Added
 
-- **Identity-routing gateway proxy: serve a whole org's users from one host, with auth and
-  anti-CSWSH controls.** A new `gateway-proxy` service (off by default; enable with
-  `gatewayProxy.enabled` once an org is cut over) lets every user in an org reach their own
-  OpenClaw gateway through the org's **single host** instead of a per-user subdomain. On each
-  gateway WebSocket upgrade the proxy (1) checks the browser `Origin` against an exact allowlist
-  and refuses anything else — the only server-side defence against Cross-Site WebSocket Hijacking,
-  which CORS does not cover, and it fails closed (empty allowlist refuses all); (2) asks the
+- **One host per organisation, served by an identity-routing gateway proxy — no per-user
+  subdomains.** Every user in an org now reaches their own OpenClaw gateway through the org's
+  **single host** `<org>.<base>` (e.g. `acme.weownai.eu`). A new `gateway-proxy` service (on by
+  default) fronts the gateway WebSocket: on each upgrade it (1) checks the browser `Origin` against
+  an allowlist — exact entries for vanity hosts plus the platform base domain so every
+  `https://<org>.<base>` is allowed without enumeration — failing closed, the only server-side
+  defence against Cross-Site WebSocket Hijacking (CORS does not cover WebSockets); (2) asks the
   control plane *who* the socket belongs to and *where* it goes via the new
-  `GET /api/v1/auth/gateway-resolve` endpoint, which resolves the target from the IdP-verified
-  email with the same fail-closed rule as `/pod-token` (no/ambiguous tenant → 403); (3) rate-limits
-  per identity; then (4) forwards to that user's pod. The proxy holds no session state or secrets —
-  the control plane stays the sole auth authority. Combined with per-pod owner pinning (CONN.10),
-  cross-tenant safety now has two independent layers (routing + pod), either of which is sufficient.
+  `GET /api/v1/auth/gateway-resolve` endpoint (resolved from the IdP-verified email, fail-closed:
+  no/ambiguous tenant → 403); (3) rate-limits per identity; (4) injects the verified user identity
+  and forwards to that user's pod. The proxy holds no session state or secrets — the control plane
+  stays the sole auth authority. Combined with per-pod owner pinning (CONN.10), cross-tenant safety
+  has two independent layers (routing + pod), either of which is sufficient. The app UI, `/api/*`,
+  and the gateway WS are served same-origin under the org host, so the OIDC session cookie is
+  host-scoped to it. **Operators:** the identity provider must allow per-org redirect hosts (a
+  wildcard redirect URI, e.g. `https://*.<base>/api/v1/auth/callback`).
 
 ### Changed
 
-- **Deleting an organisation now tears down its per-org domain.** When a ClusterTenant is deleted
-  the operator deprovisions the org's wildcard TLS `Certificate` and external-dns `DNSEndpoint`, so
-  external-dns reaps the org's DNS records instead of leaving them dangling on namespace
-  garbage-collection ordering. Idempotent and fail-soft — a teardown error is logged, never wedges
-  the operator, with namespace GC as the backstop.
+- **Per-org DNS and certificates collapse to one platform wildcard.** Because an org host
+  `<org>.<base>` is one label under the platform base, it is already covered by the single platform
+  `*.<base>` DNS record + TLS certificate (set up once at install). So OpenCrane no longer creates a
+  per-org `*.<org>.<base>` wildcard record or certificate, and the external-dns integration is gone.
+  A customer-vanity domain is the only per-org certificate: the customer CNAMEs it onto their org
+  host and OpenCrane issues a certificate (HTTP-01) for it. Deleting an organisation tears that
+  vanity certificate down (idempotent, fail-soft).
+
+### Removed
+
+- **Per-user subdomains, per-user Ingresses, and the `/auth/gateway-verify` endpoint.** The old
+  model (a DNS hostname and Ingress per user, authorised by an nginx `auth_request` to
+  `/auth/gateway-verify`) is fully retired in favour of the single-per-org-host proxy above. The
+  external-dns `DNSEndpoint` integration and the `externalDns` / `ingress.externalIp` settings are
+  removed with it.
 
 - **Cluster-tenant provisioner registry slimmed to a pure tier-availability gate.** Now the operator
   owns all org provisioning, the control plane's dead provisioner lifecycle code (the
