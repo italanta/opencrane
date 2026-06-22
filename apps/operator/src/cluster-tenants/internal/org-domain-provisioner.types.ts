@@ -1,27 +1,25 @@
 /**
- * Per-org domain provisioning seam (fixed-wildcard topology), operator side.
+ * Per-org domain provisioning seam (single-per-org-host topology), operator side.
  *
- * When an org (ClusterTenant) is reconciled it becomes addressable at its derived
- * apex `<name>.<base>` and its users at `<user>.<name>.<base>`. Two cluster-side side
- * effects must follow, both declared as namespaced custom resources the operator owns —
- * NO cloud SDK, NO direct DNS-provider calls:
- *   1. DNS — a per-org wildcard record `*.<name>.<base>` → the cluster ingress IP,
- *      declared as an external-dns `DNSEndpoint` CR and reconciled into whatever DNS
- *      provider the platform runs (Cloud DNS, Route53, …), so every UserTenant gateway
- *      host under the org resolves with no per-user record.
- *   2. TLS — a per-org wildcard Certificate `*.<name>.<base>` (cert-manager DNS-01),
- *      because the platform `*.<base>` cert does NOT cover the extra label
- *      `<user>.<name>.<base>` (DNS wildcards match exactly one label).
+ * Every user in an org is served at the org's SINGLE host `<name>.<base>` (the
+ * identity-routing gateway proxy routes by session identity, not by hostname), so
+ * there are NO per-user subdomains. That collapses the per-org domain work to almost
+ * nothing:
+ *   - **DNS** — `<name>.<base>` is one label under the platform base, already covered
+ *     by the platform wildcard `*.<base>` record created once at install. So there is
+ *     NO per-org DNS record and NO external-dns DNSEndpoint.
+ *   - **TLS** — `<name>.<base>` is likewise covered by the platform `*.<base>`
+ *     certificate. A per-org certificate is needed ONLY for a customer-vanity domain
+ *     (`ai.client-co.com`), which sits under no platform base; the customer CNAMEs it
+ *     onto `<name>.<base>` so an HTTP-01 challenge on that host succeeds.
  *
- * The operator owns this seam: it is the reconciler/executor that materialises the
- * cluster state. The concrete implementation is `DefaultOrgDomainProvisioner`
- * (org-domain.provisioner.js), wired by `_BuildOrgDomainProvisioner` from operator
- * config. It is RUNTIME-GATED by real capability detection — when cert-manager is absent
- * (the Certificate CRD is not served) AND external-dns is absent (the DNSEndpoint CRD is
- * not served), it returns `{ ready:false, skipped:true }` rather than throwing; the
- * reconciler then records a `DomainProvisioningSkipped` condition and the org still
- * reaches `ready`, because the namespace boundary (not the cert) is the openclaw-
- * attachment gate.
+ * The operator owns this seam. The concrete implementation is
+ * `DefaultOrgDomainProvisioner`, wired by `_BuildOrgDomainProvisioner`. It is
+ * RUNTIME-GATED: when there is no vanity domain there is simply nothing to do, and when
+ * a vanity cert is requested but cert-manager is absent it returns
+ * `{ ready:false, skipped:true }` rather than throwing — the reconciler records the
+ * skip and the org still reaches `ready` (the namespace boundary, not the cert, is the
+ * openclaw-attachment gate).
  */
 
 /** Inputs the reconciler passes when provisioning an org's domain + TLS. */
@@ -36,64 +34,58 @@ export interface OrgDomainProvisionRequest
   orgName: string;
   /**
    * The org's bound namespace (the reconciler derives it once via the shared-cluster
-   * provisioner and passes it here), where the per-org `Certificate` is created. Passed
+   * provisioner and passes it here), where any per-org `Certificate` is created. Passed
    * in rather than re-derived so namespace derivation lives in exactly one place.
    */
   boundNamespace: string;
   /** Platform wildcard base the org hangs off, e.g. `weownai.eu`. */
   platformBaseDomain: string;
   /**
-   * Optional customer-vanity domain CNAMEd onto the org apex (`<name>.<base>`). When
-   * present, the implementation adds it (and its wildcard) to the issued certificate's
-   * SANs so the org is browser-trusted under the vanity name too. DNS for the vanity
-   * name itself is the customer's CNAME at their own provider — never created here.
+   * Optional customer-vanity domain CNAMEd onto the org host (`<name>.<base>`). When
+   * present, the implementation issues a per-org certificate whose SAN is the vanity
+   * name so the org is browser-trusted under it. DNS for the vanity name itself is the
+   * customer's CNAME at their own provider — never created here. When ABSENT there is
+   * no per-org work: `<name>.<base>` is covered by the platform `*.<base>` cert/record.
    */
   vanityDomain?: string;
-  /**
-   * Cluster ingress external IP the per-org wildcard A record must point at. Optional:
-   * when unset, the DNS side effect is skipped (no zone target) and only the
-   * Certificate is applied — the reconciler still surfaces the skip.
-   */
-  ingressIp?: string;
 }
 
 /** Result reported back to the reconciler so it can stamp the org's status. */
 export interface OrgDomainProvisionResult
 {
-  /** Canonical org apex the record + cert were provisioned for (`<name>.<base>`). */
+  /** Canonical org host (`<name>.<base>`) the org is served at. */
   orgDomain: string;
-  /** The per-org wildcard DNS name (`*.<name>.<base>`). */
-  wildcardDnsName: string;
-  /** Name of the cert-manager-managed TLS Secret holding the issued wildcard cert. */
+  /** Name of the cert-manager-managed TLS Secret, when a vanity cert was issued. */
   tlsSecretName?: string;
-  /** Whether issuance completed. False while DNS-01 is in flight OR when skipped. */
+  /** Whether per-org TLS is ready. True when there is no vanity work (platform cert covers it). */
   ready: boolean;
   /**
-   * True when the backend (cert-manager / DNS) was unavailable and the step was
-   * skipped gracefully. The reconciler surfaces this as a status condition; the org
-   * still reaches `ready` because the namespace boundary is the attachment gate.
+   * True when a vanity cert was requested but the backend (cert-manager) was
+   * unavailable and the step was skipped gracefully. The reconciler surfaces this as a
+   * status condition; the org still reaches `ready` because the namespace boundary is
+   * the attachment gate.
    */
   skipped: boolean;
   /** Human-readable detail, set when skipped or while issuance is in flight. */
   message?: string;
 }
 
-/** Backend that materialises an org's DNS record + wildcard TLS certificate. */
+/** Backend that materialises an org's (vanity) TLS certificate. */
 export interface OrgDomainProvisioner
 {
   /**
-   * Provision (idempotently) the per-org wildcard DNS record and TLS certificate.
-   * Called by the ClusterTenant reconciler on every reconcile; safe to re-invoke.
-   * MUST NOT throw on backend-unavailable — return `{ ready: false, skipped: true }`.
+   * Provision (idempotently) the per-org vanity TLS certificate, if any. Called by the
+   * ClusterTenant reconciler on every reconcile; safe to re-invoke. MUST NOT throw on
+   * backend-unavailable — return `{ ready: false, skipped: true }`.
    *
-   * @param req - Org coordinates, platform base, optional vanity domain, ingress IP.
-   * @returns The provisioned apex, wildcard name, readiness, and skip flag.
+   * @param req - Org coordinates, platform base, optional vanity domain.
+   * @returns The org host, TLS secret name (if a vanity cert was issued), readiness, skip.
    */
   provisionOrgDomain(req: OrgDomainProvisionRequest): Promise<OrgDomainProvisionResult>;
 
   /**
-   * Tear down the per-org DNS record + certificate when the org is deleted. Idempotent:
-   * a missing record / Certificate / CRD are all no-ops.
+   * Tear down the per-org vanity certificate when the org is deleted. Idempotent: a
+   * missing Certificate / CRD are no-ops.
    *
    * @param orgName - The org (ClusterTenant) name being deprovisioned.
    * @param platformBaseDomain - The platform wildcard base the org hung off.
@@ -139,44 +131,6 @@ export interface CertManagerOperations
    * @param name      - Certificate name.
    */
   deleteCertificate(namespace: string, name: string): Promise<void>;
-}
-
-/** Whether an external-dns DNSEndpoint was declared (so the record will be reconciled). */
-export interface DnsEndpointReadiness
-{
-  /** True when the DNSEndpoint was applied; false when external-dns's CRD is absent. */
-  applied: boolean;
-  /** Human-readable reason when not applied (CRD-absent note). */
-  reason?: string;
-}
-
-/**
- * Minimal interface over the external-dns `DNSEndpoint` operations the
- * OrgDomainProvisioner needs. The operator declares the desired records as a namespaced
- * custom resource and external-dns reconciles them into the configured DNS provider — so
- * the operator carries no cloud SDK. Injected so unit tests can substitute a fake.
- */
-export interface DnsEndpointOperations
-{
-  /**
-   * Apply (create-or-replace) a DNSEndpoint CR, idempotently. A re-apply carries the
-   * live resourceVersion so it never conflicts. Surfaces `applied: false` (fail-closed,
-   * never throws) when external-dns's DNSEndpoint CRD is absent.
-   *
-   * @param namespace - Namespace the DNSEndpoint lives in (the org's bound namespace).
-   * @param manifest  - The DNSEndpoint manifest to apply.
-   * @returns Whether the DNSEndpoint was applied (false when external-dns is absent).
-   */
-  applyDnsEndpoint(namespace: string, manifest: Record<string, unknown>): Promise<DnsEndpointReadiness>;
-
-  /**
-   * Delete the named DNSEndpoint if present; absence (404) and a missing CRD are both
-   * no-ops (idempotent teardown).
-   *
-   * @param namespace - Namespace the DNSEndpoint lives in.
-   * @param name      - DNSEndpoint name.
-   */
-  deleteDnsEndpoint(namespace: string, name: string): Promise<void>;
 }
 
 /**

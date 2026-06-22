@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 import { defaultConfig, _makeTenant } from "../fixtures.js";
-import { _BuildIngressHost } from "../../tenants/deploy/ingress-host.js";
+import { _ResolveOrgServingDomain } from "../../tenants/internal/org-serving-domain.js";
 
 describe("TenantOperator", () =>
 {
@@ -16,12 +16,13 @@ describe("TenantOperator", () =>
     expect(`openclaw-${name}-bucket`).toBe("openclaw-jente-bucket");
   });
 
-  it("generates correct ingress host", () =>
+  it("serves a user at the ORG host (no per-user subdomain) via the gateway proxy", () =>
   {
-    const tenant = _makeTenant("sarah");
-    const host = _BuildIngressHost(tenant.metadata!.name!, defaultConfig.ingressDomain);
-
-    expect(host).toBe("sarah.opencrane.local");
+    // After the per-user-subdomain cut, the serving host is the org apex `<org>.<base>`
+    // (or vanity), NOT `<user>.<org>.<base>`. The proxy routes by identity, not host.
+    expect(_ResolveOrgServingDomain("acme", undefined, defaultConfig.ingressDomain)).toBe("acme.opencrane.local");
+    // A ref-less openclaw falls back to the bare platform base.
+    expect(_ResolveOrgServingDomain(undefined, undefined, defaultConfig.ingressDomain)).toBe("opencrane.local");
   });
 
   it("respects custom image override", () =>

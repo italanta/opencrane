@@ -30,10 +30,11 @@ import { _BuildOrgDomainProvisioner } from "./internal/org-domain.provisioner.fa
  *      `opencrane-<name>` namespace for in-cluster tiers; `failed` for an
  *      unsupported tier).
  *   3. Fence the bound namespace (PSA `restricted`) idempotently.
- *   4. Invoke the real `OrgDomainProvisioner.provisionOrgDomain(...)` — it applies the
- *      per-org wildcard Certificate and declares the A records as an external-dns
- *      `DNSEndpoint`, runtime-gating to a recorded skip condition when cert-manager or the
- *      DNSEndpoint CRD is genuinely absent; it never throws, so a missing backend cannot fail reconcile.
+ *   4. Invoke the real `OrgDomainProvisioner.provisionOrgDomain(...)` — for the canonical
+ *      host `<org>.<base>` there is nothing to do (it rides the platform `*.<base>` cert +
+ *      record); only a customer-vanity domain triggers a per-org Certificate, runtime-gated
+ *      to a recorded skip when cert-manager is absent. It never throws, so a missing backend
+ *      cannot fail reconcile.
  *   5. `ready` — stamp `boundNamespace` + provisioner + domain status so
  *      `_ResolveClusterTenant` stops hard-failing and openclaws can attach.
  *
@@ -120,11 +121,9 @@ export class ClusterTenantOperator
       case K8sWatchEventType.Modified:
         await this.reconcile(clusterTenant);
         break;
-      // Delete: namespace GC reclaims the namespaced Certificate/DNSEndpoint CRs, but
-      // external-dns only reaps the records it owns once the DNSEndpoint is actually
-      // gone — so we explicitly deprovision the per-org domain rather than relying on
-      // GC ordering. The bound namespace and attached openclaws are torn down by their
-      // own lifecycles.
+      // Delete: explicitly deprovision the per-org (vanity) Certificate so its TLS Secret
+      // is reclaimed, rather than relying solely on namespace GC ordering. The bound
+      // namespace and attached openclaws are torn down by their own lifecycles.
       case K8sWatchEventType.Deleted:
         await this.deprovision(clusterTenant);
         break;
@@ -169,16 +168,15 @@ export class ClusterTenantOperator
       //    exists is treated as a converged no-op by __K8sApplyResource.
       await __K8sApplyResource(this.coreApi, _BuildClusterTenantNamespace(boundary.boundNamespace, name), this.log);
 
-      // 4. Per-org domain (DNS + wildcard TLS) — runtime-gated. The provisioner applies
-      //    the real Certificate and declares the A records as an external-dns DNSEndpoint,
-      //    returning ready:false, skipped:true ONLY when cert-manager AND external-dns are
-      //    both genuinely absent; it never throws, so a missing backend cannot fail the reconcile.
+      // 4. Per-org domain — runtime-gated. The canonical host `<org>.<base>` is covered by
+      //    the platform `*.<base>` cert/record (no per-org work); only a vanity domain applies
+      //    a real per-org Certificate, returning ready:false, skipped:true when cert-manager is
+      //    absent. It never throws, so a missing backend cannot fail the reconcile.
       const domain = await this.domainProvisioner.provisionOrgDomain({
         orgName: name,
         boundNamespace: boundary.boundNamespace,
         platformBaseDomain: this.config.ingressDomain,
         vanityDomain: clusterTenant.spec.vanityDomain,
-        ingressIp: this.config.ingressIp || undefined,
       });
       if (domain.skipped)
       {
@@ -214,10 +212,10 @@ export class ClusterTenantOperator
   /**
    * Tear down an org's per-org domain when its ClusterTenant CR is deleted (DOMAIN.T2).
    *
-   * Deletes the per-org wildcard Certificate + external-dns DNSEndpoint so external-dns
-   * reaps the org's DNS records (it only does so once the owning DNSEndpoint is gone).
-   * The bound namespace is re-derived deterministically (`opencrane-<name>`) — the CR's
-   * `status` may already be stripped on a delete event, so we never depend on it.
+   * Deletes the per-org (vanity) Certificate so its TLS Secret is reclaimed (a no-op when
+   * the org had no vanity domain). The bound namespace is re-derived deterministically
+   * (`opencrane-<name>`) — the CR's `status` may already be stripped on a delete event, so
+   * we never depend on it.
    *
    * Idempotent and fail-soft: `deprovisionOrgDomain` treats missing CRs / absent CRDs as
    * no-ops, and any unexpected error is logged but swallowed — there is no CR left to
@@ -251,10 +249,10 @@ export class ClusterTenantOperator
  *
  * Owns K8s client construction so the operator class depends only on the abstractions
  * it needs. The domain provisioner is the real `DefaultOrgDomainProvisioner`, built by
- * `_BuildOrgDomainProvisioner` from operator config: it applies the per-org Certificate
- * through cert-manager and declares the per-org A records as an external-dns `DNSEndpoint`.
- * It is runtime-gated — cert-manager / DNSEndpoint CRD absence is detected at apply time and
- * surfaced as a skip, never a crash — so it is safe on the dev cluster as-is.
+ * `_BuildOrgDomainProvisioner` from operator config: it applies a per-org (vanity-only)
+ * Certificate through cert-manager. It is runtime-gated — cert-manager CRD absence is
+ * detected at apply time and surfaced as a skip, never a crash — so it is safe on the dev
+ * cluster as-is.
  *
  * @param kc - Resolved KubeConfig.
  * @param config - Operator runtime configuration.

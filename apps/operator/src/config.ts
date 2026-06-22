@@ -33,15 +33,7 @@ export interface OpenClawTenantOperatorConfig
   /** Base domain for tenant ingress hostnames. */
   ingressDomain: string;
 
-  /**
-   * Cluster ingress external IP the per-org wildcard A records (declared as a DNSEndpoint
-   * CR) point at. Empty when unknown (e.g. on-prem or before the LoadBalancer IP is
-   * assigned); the per-org DNS side effect is then skipped and only the Certificate is
-   * applied.
-   */
-  ingressIp: string;
-
-  /** cert-manager issuer name the per-org Certificate references. */
+  /** cert-manager issuer name the per-org (vanity) Certificate references. */
   certManagerIssuerName: string;
 
   /** Issuer kind for the per-org Certificate: `ClusterIssuer` (default) or `Issuer`. */
@@ -55,6 +47,15 @@ export interface OpenClawTenantOperatorConfig
 
   /** Port number exposed by the OpenClaw gateway inside tenant pods. */
   gatewayPort: number;
+
+  /**
+   * Namespace the identity-routing gateway proxy runs in. The per-pod gateway
+   * NetworkPolicy admits the gateway port only from this namespace (the proxy is the
+   * sole client that reaches a pod's gateway now that per-user Ingresses are gone).
+   * Defaults to this operator's own namespace (the proxy is a platform singleton in
+   * the install namespace).
+   */
+  gatewayProxyNamespace: string;
 
   /**
    * Reverse-proxy CIDRs/IPs the OpenClaw gateway trusts for `trusted-proxy` auth
@@ -176,12 +177,12 @@ export function _LoadOperatorConfig(): OpenClawTenantOperatorConfig
     tenantDefaultImage: _readEnvValue<string>("TENANT_DEFAULT_IMAGE", "string"),
     defaultOpenclawVersion: _readEnvValue<string>("DEFAULT_OPENCLAW_VERSION", "string", false, "2026.6.9"),
     ingressDomain: _readEnvValue<string>("INGRESS_DOMAIN", "string"),
-    ingressIp: _readEnvValue<string>("INGRESS_IP", "string", false, ""),
     certManagerIssuerName: _readEnvValue<string>("CERT_MANAGER_ISSUER_NAME", "string", false, "opencrane-issuer"),
     certManagerIssuerKind: _readEnvValue<string>("CERT_MANAGER_ISSUER_KIND", "string", false, "ClusterIssuer") === "Issuer" ? "Issuer" : "ClusterIssuer",
     ingressTlsEnabled: _readEnvValue<boolean>("INGRESS_TLS_ENABLED", "boolean", false, false),
     ingressTlsSecretName: _readEnvValue<string>("INGRESS_TLS_SECRET_NAME", "string", false, "opencrane-wildcard-tls"),
     gatewayPort: _readEnvValue<number>("GATEWAY_PORT", "number"),
+    gatewayProxyNamespace: _readEnvValue<string>("GATEWAY_PROXY_NAMESPACE", "string", false, ownNamespace),
     gatewayTrustedProxies: trustedProxies.cidrs,
     gatewayTrustNothing: trustedProxies.trustNothing,
     gatewayTrustedProxyUserHeader: _readEnvValue<string>("GATEWAY_TRUSTED_PROXY_USER_HEADER", "string", false, "X-Forwarded-User"),
