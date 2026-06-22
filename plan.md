@@ -274,6 +274,18 @@ Stacked on `feat/org-admin-billing`.
   cluster + real DNS — the unverified seam). Single-label-tenant-name / host-only-cookie /
   delegated-subzone constraints: see plan-done.md. Anchors: `5-ingress.ts`, `values.yaml`,
   `cluster-issuer.yaml`, `core/platform-dns/`, `apps/cli/src/commands/platform.ts`.
+- [x] **CONN.10 Per-pod owner pinning (cross-tenant gateway guard).** trusted-proxy mode (CONN.9)
+  trusts whatever identity the proxy injects, and `gateway-verify` only checks that *a* session exists
+  — it does NOT bind the session to the host's tenant, and the pod had no owner allowlist. So any
+  authenticated user who reached another tenant's pod (guessable `<user>.<org>.<base>` host) was
+  accepted as themselves, with access to that pod's mounted secrets / MCP connections / model keys.
+  *Fixed:* the operator renders `gateway.auth.trustedProxy.allowUsers: [<owner email>]` into each
+  tenant's `openclaw.json` (`2-config-map.ts`), normalised `trim().toLowerCase()` to match the email
+  `gateway-verify` injects, so the gateway rejects any non-owner `X-Forwarded-User`. Ownership is now
+  enforced **server-side at the pod**, independent of routing — the prerequisite that makes collapsing
+  per-user subdomains safe (see Track DOMAIN). Docs: `website/security/connection-security.md` §0.
+  **Verify:** confirm `trustedProxy.allowUsers` is honoured by the pinned OpenClaw image (v0.23.1); if
+  not, bump the pin or fall back to a host→tenant check in `gateway-verify`.
 
 
 ### Track P4-D — MCP & Skills platform completion (the two 🔶 gaps)

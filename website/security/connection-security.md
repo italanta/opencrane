@@ -47,6 +47,62 @@ Build slices: frontend repo `plan.md` — **S5** (Option B) and **S6** (proxy vi
 
 ---
 
+## 0. Adopted model — trusted-proxy gateway auth + per-pod owner pinning (CONN.9 / CONN.10)
+
+> This supersedes the bootstrap-/device-token mechanics described in §1–§3 below
+> (retired in CONN.3): there is **no token in the browser at all**. Those sections
+> are kept as the decision record for the credential-theft analysis; the live
+> connection model is the one described here.
+
+**How a connection is authorised today:**
+
+1. The browser opens the pod's gateway WebSocket (`wss://<host>`). It holds **no
+   pod credential** — only its OIDC **session cookie**.
+2. The pod's ingress runs an `auth_request` against the control plane
+   (`GET /api/v1/auth/gateway-verify`). A live session → `204` and the verified
+   email is copied into the upstream `X-Forwarded-User` header (any client-supplied
+   value is stripped — header hygiene); no session → `401` and the upgrade is
+   refused. This is the **central cut**: revoke the session and re-connects stop.
+3. The gateway runs in **trusted-proxy** auth mode and trusts the injected
+   `X-Forwarded-User` as the authenticated identity.
+
+**The owner-pinning guard (CONN.10).** Trusted-proxy mode trusts *whatever* identity
+the proxy injects — so on its own it does **not** verify that the identity matches
+the pod's owner. Because there is **one pod per tenant** and the pod holds that
+owner's mounted secrets, MCP connections, and model keys, any authenticated user
+who reached another tenant's pod would be accepted as themselves — a cross-tenant
+gap. We close it at the pod with OpenClaw's
+[`gateway.auth.trustedProxy.allowUsers`](https://docs.openclaw.ai/gateway/trusted-proxy-auth):
+the operator renders the pod's **owner email** into the allowlist, so the gateway
+**rejects any `X-Forwarded-User` that isn't the owner**.
+
+```jsonc
+// per-tenant openclaw.json (rendered by the operator)
+"gateway": {
+  "auth": {
+    "mode": "trusted-proxy",
+    "trustedProxy": {
+      "userHeader": "X-Forwarded-User",
+      "allowUsers": ["owner@example.com"]   // the tenant's verified owner email
+    }
+  }
+}
+```
+
+The allowlist is normalised the **same way** `gateway-verify` normalises the
+injected identity — `email.trim().toLowerCase()` — or a case/whitespace mismatch
+would lock the owner out.
+
+**Why this matters for routing.** Ownership is now enforced **server-side at the
+pod**, independent of *how* the connection is routed. Today routing is by hostname
+(`<user>.<org>.<base>` → that user's pod); the guard means a user who connects to
+someone else's host is rejected by the pod rather than silently admitted. It is
+also the prerequisite that makes **collapsing per-user subdomains** safe — once the
+pod self-enforces its owner, an identity-routing proxy on a single per-org host
+carries no new cross-tenant risk. See the domain topology design for that step.
+
+---
+
 ## 1. How the connection works today
 
 ```
