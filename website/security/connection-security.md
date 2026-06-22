@@ -60,12 +60,14 @@ Build slices: frontend repo `plan.md` — **S5** (Option B) and **S6** (proxy vi
 
 **How a connection is authorised today:**
 
-1. The browser opens the pod's gateway WebSocket (`wss://<host>`). It holds **no
-   pod credential** — only its OIDC **session cookie**.
-2. The pod's ingress runs an `auth_request` against the control plane
-   (`GET /api/v1/auth/gateway-verify`). A live session → `204` and the verified
-   email is copied into the upstream `X-Forwarded-User` header (any client-supplied
-   value is stripped — header hygiene); no session → `401` and the upgrade is
+1. The browser opens its org's gateway WebSocket (`wss://<org>.<base>`). It holds
+   **no pod credential** — only its OIDC **session cookie**.
+2. The **identity-routing gateway proxy** (§0.1, folded into the operator) authorises
+   the upgrade by calling the control plane (`GET /api/v1/auth/gateway-resolve`,
+   replaying only the cookie). A live session resolves the caller's verified email →
+   tenant → pod; the proxy copies that verified email into the upstream
+   `X-Forwarded-User` header (stripping any client-supplied value — header hygiene) and
+   reverse-proxies to the pod. No session (or no/ambiguous tenant) → the upgrade is
    refused. This is the **central cut**: revoke the session and re-connects stop.
 3. The gateway runs in **trusted-proxy** auth mode and trusts the injected
    `X-Forwarded-User` as the authenticated identity.
@@ -93,64 +95,66 @@ the operator renders the pod's **owner email** into the allowlist, so the gatewa
 }
 ```
 
-The allowlist is normalised the **same way** `gateway-verify` normalises the
-injected identity — `email.trim().toLowerCase()` — or a case/whitespace mismatch
-would lock the owner out.
+The allowlist is normalised the **same way** the proxy normalises the injected
+identity — `email.trim().toLowerCase()` — or a case/whitespace mismatch would lock
+the owner out.
 
-**Why this matters for routing.** Ownership is now enforced **server-side at the
-pod**, independent of *how* the connection is routed. Today routing is by hostname
-(`<user>.<org>.<base>` → that user's pod); the guard means a user who connects to
-someone else's host is rejected by the pod rather than silently admitted. It is
-also the prerequisite that makes **collapsing per-user subdomains** safe — once the
-pod self-enforces its owner, an identity-routing proxy on a single per-org host
-carries no new cross-tenant risk. See the domain topology design for that step.
+**Why this matters for routing.** Ownership is enforced **server-side at the pod**,
+independent of *how* the connection is routed. Routing is now by **identity, not
+host**: every user in an org hits the same org host `<org>.<base>` and the proxy
+(§0.1) forwards each session to its own pod. Even if the proxy ever mis-routed a
+socket, the pod would reject any `X-Forwarded-User` that isn't its owner — so the
+routing layer and the pod are two independent cross-tenant guards.
 
 ### 0.1 Identity-routing gateway proxy — single per-org host (DOMAIN.T4)
 
-The next step replaces per-user subdomains (`<user>.<org>.<base>`) with **one host
-per org** (`<org>.<base>`): the app UI, `/api/*`, and the gateway WebSocket are all
-served **same-origin** under that host, and an in-cluster **identity-routing proxy**
-forwards each user's gateway socket to their own pod. The proxy is a thin,
-logic-free choke point — it holds **no session store and no secrets**, delegating
-every decision to the control plane (the same delegate-auth shape as the nginx
-`auth_request`, so the express session store is never shared across services).
+There are **no per-user subdomains**. Each org is served at **one host**
+(`<org>.<base>`): the app UI, `/api/*`, and the gateway WebSocket are all served
+**same-origin** under that host. An **identity-routing proxy — folded in-process into
+the ClusterTenant operator** (interim; it can be split into its own pod later without
+a contract change) — forwards each user's gateway socket to their own pod. It is a
+thin, logic-free choke point holding **no session store and no secrets**, delegating
+every decision to the control plane (delegate-auth, so the session store is never
+shared across services). One proxy serves every org; it routes by **session identity,
+not hostname**.
 
 On each gateway WS upgrade the proxy, in order:
 
-1. **Origin allowlist (CSWSH).** It checks the `Origin` header against an exact
-   allowlist and refuses anything else. WebSocket upgrades are **not** covered by
-   CORS, and the browser sends the session cookie automatically cross-site — so this
-   allowlist is the *only* server-side defence against Cross-Site WebSocket
-   Hijacking. It **fails closed**: a missing or non-allowlisted Origin is rejected,
-   and an empty allowlist refuses every upgrade.
+1. **Origin allowlist (CSWSH).** It checks `Origin` against an allowlist — exact
+   entries for vanity hosts plus a base-domain match so any `https://<org>.<base>` is
+   allowed without enumeration — and refuses anything else. WebSocket upgrades are
+   **not** covered by CORS, so this is the *only* server-side defence against
+   Cross-Site WebSocket Hijacking. **Fails closed**: a missing/non-`https`/non-allowed
+   Origin is rejected; with no allowlist configured, every upgrade is refused.
 2. **Delegated auth + routing.** It calls the control plane's
    `GET /api/v1/auth/gateway-resolve`, replaying **only** the cookie. The control
    plane verifies the session and resolves `{ user, tenant, podService }` from the
    IdP-verified email via the **same fail-closed email→tenant rule** as `/pod-token`
-   — no request-supplied tenant input, and a missing/ambiguous mapping returns
-   **403**. The proxy makes no authorization decision itself.
+   — no request-supplied tenant input, and a missing/ambiguous mapping returns **403**.
 3. **Per-identity rate limit.** A per-replica fixed-window counter keyed on the
    resolved identity bounds how many sockets one user opens per minute.
-4. **Forward** to the resolved pod's cluster-internal Service
-   (`openclaw-<user>.<ns>.svc:<gatewayPort>`).
+4. **Inject + forward.** It strips any client-supplied `X-Forwarded-User`, sets it to
+   the verified email, and reverse-proxies to the resolved pod's Service
+   (`openclaw-<user>.<ns>.svc:<gatewayPort>`) — so the pod's trusted-proxy auth trusts
+   only the control-plane-resolved identity.
 
-**Defence in depth.** Cross-tenant safety now rests on **two independent layers**:
-the proxy's `gateway-resolve` (routing level) *and* per-pod owner pinning (CONN.10,
-pod level). Neither the routing layer nor the pod will serve a foreign user, and
-either alone is sufficient — so a bug in one is not a breach.
+**Defence in depth.** Cross-tenant safety rests on **two independent layers**: the
+proxy's `gateway-resolve` (routing level) *and* per-pod owner pinning (CONN.10, pod
+level) — either alone is sufficient.
 
-**Same-origin cookie.** Because everything is served under the one org host, the
-OIDC session cookie is **host-scoped** to `<org>.<base>` — never the parent
-`.<base>` — so a cookie minted for one org cannot be replayed at another. (Cutover
-prerequisite: the OIDC redirect-URI allowlist must accept the per-org hosts.)
+**Same-origin cookie + DNS.** Login/callback happen on the org host (the control plane
+derives the OIDC `redirect_uri` from the request host), so the session cookie is
+**host-scoped** to `<org>.<base>`. The org host gets an **explicit `<org>.<base>` DNS
+record** emitted by the operator as an external-dns `DNSEndpoint` (external-dns
+reconciles it) and rides the platform `*.<base>` TLS cert; a customer-vanity host adds
+a per-org HTTP-01 cert. There is **no per-user record** and **no per-org wildcard**.
 
-**Status.** The proxy service (`@opencrane/gateway-proxy`) and the
-`gateway-resolve` endpoint are **built and tested**; the proxy is shipped behind
-`gatewayProxy.enabled` (off by default). The remaining cutover work — one per-org
-Ingress that path-routes `/api`/UI/gateway-WS, retiring the operator's per-user
-Ingress + per-user DNS/cert, and confirming multi-host OIDC redirects — is tracked
-as the final DOMAIN.T4 slice. Until it lands, routing stays per-user-subdomain and
-this proxy is dormant.
+**Status.** Implemented and gated behind `gatewayProxy.enabled` (off by default).
+Enabling it makes the operator pod internet-facing via the wildcard Ingress — a
+deliberate interim trade-off. **Operator prerequisites:** the IdP must allow per-org
+redirect hosts (a wildcard redirect URI, e.g. `https://*.<base>/api/v1/auth/callback`),
+the pod's `GATEWAY_TRUSTED_PROXIES` must include the operator pod, and the operator
+needs an ingress NetworkPolicy permitting the ingress controller → its proxy port.
 
 ---
 
@@ -160,17 +164,20 @@ See [§0](#_0-adopted-model-trusted-proxy-gateway-auth-per-pod-owner-pinning-con
 for the authoritative description. In brief:
 
 ```
-browser ──OIDC session cookie──▶ pod ingress
-   │            └─ auth_request → OpenCrane  GET /auth/gateway-verify  (204 + X-Forwarded-User, or 401)
-   └──Gateway WS (wss://): trusted-proxy auth──▶ tenant OpenClaw pod
+browser ──wss://<org>.<base> + OIDC cookie──▶ wildcard Ingress (*.<base>)
+   │                                              └─ "/" ▶ gateway proxy (in the operator)
+   │                                                        ├─ Origin allowlist (CSWSH)
+   │                                                        ├─ GET /auth/gateway-resolve (cookie only)
+   │                                                        └─ inject X-Forwarded-User, reverse-proxy
+   └──Gateway WS: trusted-proxy auth──────────────────────▶ tenant OpenClaw pod (allowUsers: owner)
 ```
 
 1. The browser holds **no pod credential** — only its OIDC **session cookie**. It
-   opens the pod's gateway WebSocket directly.
-2. The pod's ingress runs an `auth_request` against OpenCrane
-   (`GET /auth/gateway-verify`): a live session yields `204` plus the verified
-   email injected as `X-Forwarded-User`; no session yields `401` and the upgrade is
-   refused.
+   opens its org's gateway WebSocket (`wss://<org>.<base>`).
+2. The identity-routing proxy (in the operator) authorises the upgrade via
+   `GET /auth/gateway-resolve` (cookie replayed): a live session resolves the verified
+   email → tenant → pod and the proxy injects `X-Forwarded-User`; no session (or
+   no/ambiguous tenant) refuses the upgrade.
 3. The gateway runs in **trusted-proxy** mode, trusts the injected identity, and
    pins it to the pod's owner via `gateway.auth.trustedProxy.allowUsers` (CONN.10).
 
