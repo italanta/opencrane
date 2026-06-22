@@ -129,6 +129,17 @@ describe("clusterTenantsRouter — org-admin guard matrix (ORG-ADMIN.3/4)", func
     expect(orgs.size).toBe(0);
   });
 
+  it("allows the platform operator (superadmin) to create WITHOUT a billing account", async function _operatorNoBilling()
+  {
+    const { prisma, orgs } = _mockPrisma({ billing: [] });
+    const res = await request(_buildApp(prisma, { sub: "op", isPlatformOperator: true })).post("/api/v1/cluster-tenants").send(_body());
+
+    expect(res.status).toBe(201);
+    expect(orgs.has("acme")).toBe(true);
+    // The billing lookup must be bypassed entirely for the operator.
+    expect(prisma.billingAccount.findUnique).not.toHaveBeenCalled();
+  });
+
   it("allows a create from a billing-account holder and records the caller as owner", async function _createRecordsOwner()
   {
     const { prisma, orgs, memberships } = _mockPrisma({ billing: ["user-1"] });

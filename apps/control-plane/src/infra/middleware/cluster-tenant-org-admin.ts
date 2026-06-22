@@ -29,8 +29,10 @@ function _callerSubject(req: Request): string
  *   1. No session — FAIL OPEN under the dev-mode bypass (no OIDC, no env token), so a
  *      fresh local install / the OPEN dev backend still works; FAIL CLOSED otherwise
  *      (401) — an anonymous caller in a real deployment must never create an org.
- *   2. Session present — allow iff a billing account exists for the caller's subject;
- *      otherwise 403 with a code the SPA can use to route the user to billing first.
+ *   2. Platform operator (env-seeded superadmin) — always allowed, no billing account
+ *      required (they operate the fleet, not a customer billing relationship).
+ *   3. Other established session — allow iff a billing account exists for the caller's
+ *      subject; otherwise 403 with a code the SPA can use to route the user to billing.
  *
  * @param prisma - Prisma client for the billing-account lookup.
  * @returns Express middleware enforcing the billing gate (401/403 on denial).
@@ -53,7 +55,16 @@ export function _RequireBillingAccountForOrgCreate(prisma: PrismaClient): Reques
       return;
     }
 
-    // 2. Established session — require an existing billing account for this subject.
+    // 2. Exception: the platform operator (the env-seeded superadmin) bootstraps and
+    //    operates the fleet, not a customer billing relationship, so they may create
+    //    organisations without a billing account.
+    if (authUser.isPlatformOperator === true)
+    {
+      next();
+      return;
+    }
+
+    // 3. Established non-operator session — require an existing billing account.
     const subject = _callerSubject(req);
     prisma.billingAccount.findUnique({ where: { subject }, select: { id: true } })
       .then(function _onAccount(account)
