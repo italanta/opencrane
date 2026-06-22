@@ -2904,7 +2904,7 @@ export const spec = {
       post: {
         operationId: "getPodConnection",
         summary: "Resolve the caller's OpenClaw pod gateway connection coordinates from their OIDC session",
-        description: "Single sign-on across the control plane and the tenant pod: requires an established OIDC session (cookie) and returns the `wss://` gateway URL for the caller's own pod. Under trusted-proxy gateway auth the browser holds no credential — the gateway socket is authorised at the ingress against the live session (`/auth/gateway-verify`), so no token is returned. The tenant is resolved solely from the session's verified email, so a caller cannot obtain another user's pod connection. Returns 401 without a session, 403 when no tenant matches the session email, 409 when the pod has no gateway URL / ingress host yet or when the email maps to more than one tenant.",
+        description: "Single sign-on across the control plane and the tenant pod: requires an established OIDC session (cookie) and returns the `wss://` gateway URL for the caller's own pod (the org host). Under trusted-proxy gateway auth the browser holds no credential — the identity-routing gateway proxy authorises the socket against the live session (`/auth/gateway-resolve`), so no token is returned. The tenant is resolved solely from the session's verified email, so a caller cannot obtain another user's pod connection. Returns 401 without a session, 403 when no tenant matches the session email, 409 when the pod has no gateway URL / ingress host yet or when the email maps to more than one tenant.",
         tags: ["Auth"],
         security: [],
         responses: {

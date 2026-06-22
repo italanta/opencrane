@@ -279,7 +279,9 @@ export class OidcAuthService
     //    issuer (Mode-2 broker, no upstream Entra), but this uses nothing Zitadel-specific —
     //    it works against any spec-compliant issuer at OIDC_ISSUER_URL.
     const loginUrl = client.buildAuthorizationUrl(discoveredConfig, {
-      redirect_uri: this.config.redirectUri,
+      // Host-derived so per-org-host login works AND the cookie stays host-scoped to the
+      // org host; matches the origin completeLogin derives at the callback (DOMAIN.T4).
+      redirect_uri: _buildRedirectUri(req, this.config.redirectUri),
       scope: this.config.scopes,
       code_challenge: codeChallenge,
       code_challenge_method: "S256",
@@ -537,6 +539,30 @@ function _buildCurrentUrl(req: Request): URL
   const host = typeof forwardedHost === "string" ? forwardedHost.split(",")[0].trim() : req.get("host");
 
   return new URL(`${protocol}://${host}${req.originalUrl}`);
+}
+
+/**
+ * Build the OIDC redirect_uri for THIS request's host (DOMAIN.T4 multi-host).
+ *
+ * Every org is served at its own host `<org>.<base>`, so login/callback must happen on
+ * that same host for the session cookie to be host-scoped to it. We take the callback
+ * PATH from the configured `OIDC_REDIRECT_URI` (so the path stays operator-controlled)
+ * but derive the ORIGIN from the request — exactly the origin `completeLogin` will see at
+ * the callback (`_buildCurrentUrl`), so the auth-request and token-exchange redirect_uri
+ * always match. The IdP must allow these per-org hosts (e.g. a wildcard redirect URI).
+ *
+ * @param req                 - The login request (carries the org host).
+ * @param configuredRedirect  - The chart-configured redirect URI (its path is reused).
+ * @returns The host-derived redirect URI string.
+ */
+function _buildRedirectUri(req: Request, configuredRedirect: string): string
+{
+  const forwardedProto = req.headers["x-forwarded-proto"];
+  const forwardedHost = req.headers["x-forwarded-host"];
+  const protocol = typeof forwardedProto === "string" ? forwardedProto.split(",")[0].trim() : req.protocol;
+  const host = typeof forwardedHost === "string" ? forwardedHost.split(",")[0].trim() : req.get("host");
+  const callbackPath = new URL(configuredRedirect).pathname;
+  return `${protocol}://${host}${callbackPath}`;
 }
 
 /** Limit return targets to local relative paths to prevent open redirects. */
