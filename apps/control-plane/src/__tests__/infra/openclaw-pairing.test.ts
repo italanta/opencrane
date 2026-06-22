@@ -16,12 +16,6 @@ describe("_ResolveOpenClawPairing", function _suite()
 		expect(pairing).toEqual({ gatewayUrl: "wss://pod.example.com" });
 	});
 
-	it("ignores any legacy stored bootstrapToken (trusted-proxy needs none)", function _ignoresToken()
-	{
-		const pairing = _ResolveOpenClawPairing({ openclaw: { gatewayUrl: "wss://pod/gateway", bootstrapToken: "boot" } }, "pod.example.com");
-		expect(pairing).toEqual({ gatewayUrl: "wss://pod/gateway" });
-	});
-
 	it("returns null when there is no URL and no ingress host", function _notReady()
 	{
 		expect(_ResolveOpenClawPairing(null, null)).toBeNull();

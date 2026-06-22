@@ -43,13 +43,48 @@ describe("TenantResourceBuilder", () =>
     // connection); trustedProxies + userHeader come from operator config.
     expect(payload.gateway.auth.mode).toBe("trusted-proxy");
     expect(payload.gateway.auth.trustedProxy.userHeader).toBe(defaultConfig.gatewayTrustedProxyUserHeader);
+    // CONN.10: the pod is pinned to its OWNER so trusted-proxy cannot accept any other
+    // injected identity (cross-tenant guard); _makeTenant("cfg") → cfg@example.com.
+    expect(payload.gateway.auth.trustedProxy.allowUsers).toEqual(["cfg@example.com"]);
     expect(payload.gateway.trustedProxies).toEqual(defaultConfig.gatewayTrustedProxies);
+    // Fail-closed marker mirrors config.gatewayTrustNothing so an empty allowlist
+    // can never be read by the runtime as trust-all.
+    expect(payload.gateway.auth.trustedProxy.trustNothing).toBe(false);
     expect(payload.agents.defaults.model).toBe("gpt-4o");
     expect(runtimeContract.mode).toBe("managed");
     expect(runtimeContract.tenant.name).toBe("cfg");
     expect(runtimeContract.contractVersion).toBe("2.1.0");
     expect(runtimeContract.mcp.gateway).toBe(defaultConfig.mcpGatewayUrl);
     expect(runtimeContract.skills.registry).toBe(defaultConfig.skillRegistryUrl);
+  });
+
+  it("normalises the gateway owner allowlist (trim + lowercase) to match gateway-verify", () =>
+  {
+    // gateway-verify injects email.trim().toLowerCase(); a mixed-case / padded owner
+    // email must normalise to the SAME value or the allowlist would lock the owner out.
+    const tenant = _makeTenant("mixed");
+    tenant.spec.email = "  Mike.Owner@EXAMPLE.com  ";
+
+    const configMap = _BuildConfigMap(defaultConfig, tenant, "default");
+    const payload = JSON.parse(configMap.data?.["openclaw.json"] ?? "{}");
+
+    expect(payload.gateway.auth.trustedProxy.allowUsers).toEqual(["mike.owner@example.com"]);
+  });
+
+  it("renders an unambiguous trust-nothing gateway config when no proxy is configured (OC-2 / CONN.4)", () =>
+  {
+    // An operator with no GATEWAY_TRUSTED_PROXIES resolves to trust-nothing; the
+    // ConfigMap must emit both an empty allowlist AND the explicit trustNothing
+    // marker so the runtime never reads `trustedProxies: []` as trust-all.
+    const trustNothingConfig = { ...defaultConfig, gatewayTrustedProxies: [], gatewayTrustNothing: true };
+    const tenant = _makeTenant("trust-none");
+
+    const configMap = _BuildConfigMap(trustNothingConfig, tenant, "default");
+    const payload = JSON.parse(configMap.data?.["openclaw.json"] ?? "{}");
+
+    expect(payload.gateway.auth.mode).toBe("trusted-proxy");
+    expect(payload.gateway.trustedProxies).toEqual([]);
+    expect(payload.gateway.auth.trustedProxy.trustNothing).toBe(true);
   });
 
   it("populates litellm-proxy models[] when a non-empty model set is supplied", () =>

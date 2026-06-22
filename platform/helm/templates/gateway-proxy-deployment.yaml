@@ -1,0 +1,67 @@
+{{- /* Identity-routing gateway proxy (DOMAIN.T4). OFF by default — rendered only when
+       gatewayProxy.enabled. It is a stateless, logic-free WS reverse proxy: it holds no
+       session store and no secrets, delegating every auth + routing decision to the
+       control plane's /auth/gateway-resolve. No ServiceAccount/RBAC: it never touches
+       the Kubernetes API, reaching pods purely by in-cluster Service DNS. */ -}}
+{{- if .Values.gatewayProxy.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "opencrane.fullname" . }}-gateway-proxy
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway-proxy
+spec:
+  replicas: {{ .Values.gatewayProxy.replicas }}
+  selector:
+    matchLabels:
+      {{- include "opencrane.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: gateway-proxy
+  template:
+    metadata:
+      labels:
+        {{- include "opencrane.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: gateway-proxy
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.gatewayProxy.podSecurityContext | nindent 8 }}
+      containers:
+        - name: gateway-proxy
+          image: "{{ .Values.gatewayProxy.image.repository }}:{{ .Values.gatewayProxy.image.tag }}"
+          imagePullPolicy: {{ .Values.gatewayProxy.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.gatewayProxy.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.gatewayProxy.service.port }}
+          env:
+            - name: PORT
+              value: {{ .Values.gatewayProxy.service.port | quote }}
+            {{- include "opencrane.observabilityEnv" (dict "ctx" $ "component" "gateway-proxy") | nindent 12 }}
+            # The sole auth authority — the proxy delegates every decision here.
+            - name: CONTROL_PLANE_URL
+              value: "http://{{ include "opencrane.fullname" . }}-control-plane.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.controlPlane.service.port }}"
+            # The OpenClaw gateway port inside tenant pods (matches tenant.gatewayPort).
+            - name: GATEWAY_PORT
+              value: {{ .Values.tenant.gatewayPort | quote }}
+            # CSWSH allowlist — empty renders an empty string => fail closed (refuse all).
+            - name: ALLOWED_ORIGINS
+              value: {{ join "," .Values.gatewayProxy.allowedOrigins | quote }}
+            - name: RATE_LIMIT_PER_MINUTE
+              value: {{ .Values.gatewayProxy.rateLimitPerMinute | quote }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.gatewayProxy.resources | nindent 12 }}
+{{- end }}

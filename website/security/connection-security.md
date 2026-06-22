@@ -68,7 +68,113 @@ points, defence-in-depth.
 
 ---
 
+## 0. Adopted model — trusted-proxy gateway auth + per-pod owner pinning (CONN.9 / CONN.10)
+
+> This supersedes the bootstrap-/device-token mechanics described in §1–§3 below
+> (retired in CONN.3): there is **no token in the browser at all**. Those sections
+> are kept as the decision record for the credential-theft analysis; the live
+> connection model is the one described here.
+
+**How a connection is authorised today:**
+
+1. The browser opens the pod's gateway WebSocket (`wss://<host>`). It holds **no
+   pod credential** — only its OIDC **session cookie**.
+2. The pod's ingress runs an `auth_request` against the control plane
+   (`GET /api/v1/auth/gateway-verify`). A live session → `204` and the verified
+   email is copied into the upstream `X-Forwarded-User` header (any client-supplied
+   value is stripped — header hygiene); no session → `401` and the upgrade is
+   refused. This is the **central cut**: revoke the session and re-connects stop.
+3. The gateway runs in **trusted-proxy** auth mode and trusts the injected
+   `X-Forwarded-User` as the authenticated identity.
+
+**The owner-pinning guard (CONN.10).** Trusted-proxy mode trusts *whatever* identity
+the proxy injects — so on its own it does **not** verify that the identity matches
+the pod's owner. Because there is **one pod per tenant** and the pod holds that
+owner's mounted secrets, MCP connections, and model keys, any authenticated user
+who reached another tenant's pod would be accepted as themselves — a cross-tenant
+gap. We close it at the pod with OpenClaw's
+[`gateway.auth.trustedProxy.allowUsers`](https://docs.openclaw.ai/gateway/trusted-proxy-auth):
+the operator renders the pod's **owner email** into the allowlist, so the gateway
+**rejects any `X-Forwarded-User` that isn't the owner**.
+
+```jsonc
+// per-tenant openclaw.json (rendered by the operator)
+"gateway": {
+  "auth": {
+    "mode": "trusted-proxy",
+    "trustedProxy": {
+      "userHeader": "X-Forwarded-User",
+      "allowUsers": ["owner@example.com"]   // the tenant's verified owner email
+    }
+  }
+}
+```
+
+The allowlist is normalised the **same way** `gateway-verify` normalises the
+injected identity — `email.trim().toLowerCase()` — or a case/whitespace mismatch
+would lock the owner out.
+
+**Why this matters for routing.** Ownership is now enforced **server-side at the
+pod**, independent of *how* the connection is routed. Today routing is by hostname
+(`<user>.<org>.<base>` → that user's pod); the guard means a user who connects to
+someone else's host is rejected by the pod rather than silently admitted. It is
+also the prerequisite that makes **collapsing per-user subdomains** safe — once the
+pod self-enforces its owner, an identity-routing proxy on a single per-org host
+carries no new cross-tenant risk. See the domain topology design for that step.
+
+### 0.1 Identity-routing gateway proxy — single per-org host (DOMAIN.T4)
+
+The next step replaces per-user subdomains (`<user>.<org>.<base>`) with **one host
+per org** (`<org>.<base>`): the app UI, `/api/*`, and the gateway WebSocket are all
+served **same-origin** under that host, and an in-cluster **identity-routing proxy**
+forwards each user's gateway socket to their own pod. The proxy is a thin,
+logic-free choke point — it holds **no session store and no secrets**, delegating
+every decision to the control plane (the same delegate-auth shape as the nginx
+`auth_request`, so the express session store is never shared across services).
+
+On each gateway WS upgrade the proxy, in order:
+
+1. **Origin allowlist (CSWSH).** It checks the `Origin` header against an exact
+   allowlist and refuses anything else. WebSocket upgrades are **not** covered by
+   CORS, and the browser sends the session cookie automatically cross-site — so this
+   allowlist is the *only* server-side defence against Cross-Site WebSocket
+   Hijacking. It **fails closed**: a missing or non-allowlisted Origin is rejected,
+   and an empty allowlist refuses every upgrade.
+2. **Delegated auth + routing.** It calls the control plane's
+   `GET /api/v1/auth/gateway-resolve`, replaying **only** the cookie. The control
+   plane verifies the session and resolves `{ user, tenant, podService }` from the
+   IdP-verified email via the **same fail-closed email→tenant rule** as `/pod-token`
+   — no request-supplied tenant input, and a missing/ambiguous mapping returns
+   **403**. The proxy makes no authorization decision itself.
+3. **Per-identity rate limit.** A per-replica fixed-window counter keyed on the
+   resolved identity bounds how many sockets one user opens per minute.
+4. **Forward** to the resolved pod's cluster-internal Service
+   (`openclaw-<user>.<ns>.svc:<gatewayPort>`).
+
+**Defence in depth.** Cross-tenant safety now rests on **two independent layers**:
+the proxy's `gateway-resolve` (routing level) *and* per-pod owner pinning (CONN.10,
+pod level). Neither the routing layer nor the pod will serve a foreign user, and
+either alone is sufficient — so a bug in one is not a breach.
+
+**Same-origin cookie.** Because everything is served under the one org host, the
+OIDC session cookie is **host-scoped** to `<org>.<base>` — never the parent
+`.<base>` — so a cookie minted for one org cannot be replayed at another. (Cutover
+prerequisite: the OIDC redirect-URI allowlist must accept the per-org hosts.)
+
+**Status.** The proxy service (`@opencrane/gateway-proxy`) and the
+`gateway-resolve` endpoint are **built and tested**; the proxy is shipped behind
+`gatewayProxy.enabled` (off by default). The remaining cutover work — one per-org
+Ingress that path-routes `/api`/UI/gateway-WS, retiring the operator's per-user
+Ingress + per-user DNS/cert, and confirming multi-host OIDC redirects — is tracked
+as the final DOMAIN.T4 slice. Until it lands, routing stays per-user-subdomain and
+this proxy is dormant.
+
+---
+
 ## 1. How the connection works today
+
+See [§0](#_0-adopted-model-trusted-proxy-gateway-auth-per-pod-owner-pinning-conn-9-conn-10)
+for the authoritative description. In brief:
 
 ```
 SaaS ──OpenAPI (OIDC session)──▶ OpenCrane  POST /auth/pod-token
@@ -95,23 +201,36 @@ through the single org host; the proxy routes them to the right pod.
 
 ---
 
-## 2. The credential model
+## 2. The credential model *(historical — the retired bootstrap/device-token design)*
 
-| Credential | Lifetime | Where it lives | Risk |
+> **Decision record, not current state.** The credentials below were **retired in
+> CONN.3** and no longer exist in the codebase. The live model holds **no token in
+> the browser** (see [§0](#_0-adopted-model-trusted-proxy-gateway-auth-per-pod-owner-pinning-conn-9-conn-10)).
+> This table records the credential-theft risk of the old design — the analysis
+> that motivated moving to session-authorised trusted-proxy auth.
+
+| Credential | Lifetime | Where it lived | Risk |
 |---|---|---|---|
 | **Bootstrap token** | Short-lived, single-device | Transient — broker → browser → spent at handshake | **Low.** HTTPS to an already-authenticated browser; usable only to *open* one pairing, then consumed. |
-| **Device token** (`hello-ok`) | **No documented TTL** — long-lived | Browser `localStorage` (current impl) | **High.** Persistent bearer credential; XSS-exfiltratable; grants `operator.read/write` until explicitly revoked. The weakest link. |
+| **Device token** (`hello-ok`) | **No documented TTL** — long-lived | Browser `localStorage` | **High.** Persistent bearer credential; XSS-exfiltratable; grants `operator.read/write` until explicitly revoked. The weakest link — and the reason this design was retired. |
 
-The bootstrap profile auto-grants `node` + bounded `operator` (read/write/approvals);
-`operator.admin`/`operator.pairing` need a separate approved pairing — so the
-browser deliberately **cannot** revoke or manage devices. The device-signature
-scheme is **[unconfirmed]** (B1).
+The bootstrap profile auto-granted `node` + bounded `operator`
+(read/write/approvals); `operator.admin`/`operator.pairing` needed a separate
+approved pairing — so the browser deliberately **could not** revoke or manage
+devices. The device-signature scheme was **[unconfirmed]** (B1).
 
 ---
 
-## 3. The two clocks (the crux)
+## 3. The two clocks (the crux) *(analysis of the retired token design)*
 
-A token and a socket run on **two independent clocks**; the token only controls
+> **Decision record.** This reasons about the **retired** bootstrap-token handshake
+> (§2). In the live §0 model there is no browser-held token, and "opening a
+> connection" is gated by the OIDC session at the ingress rather than a minted
+> token. The "Clock 2" socket-lifetime analysis below still holds — a live socket
+> runs unbounded regardless of how it was authorised — and it is what motivates the
+> §5 Kubernetes force-disconnect levers.
+
+A token and a socket run on **two independent clocks**; the token only controlled
 the first.
 
 ### Clock 1 — opening a connection (token)

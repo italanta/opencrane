@@ -13,7 +13,7 @@ import type { CreateTenantRequest, TenantDatasetsResponse, TenantResponse, Updat
 import type { EffectiveContractResponse } from "./tenants.types.js";
 import { _DetectTenantProjectionDrift } from "./internal/projection-drift.js";
 import { _RepairTenantProjection } from "./internal/projection-repair.js";
-import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "./internal/crd-constants.js";
+import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "../shared/crd-constants.js";
 
 /** Tenant CR appearance SLO constants. */
 const TENANT_CR_APPEARANCE_TIMEOUT_MS = 30_000;
@@ -435,7 +435,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
 
     // Normalise the parent ClusterTenant ref so a present-but-empty value clears
     // it (stored null, field deleted from the CRD spec via merge-patch), mirroring
-    // how baseDomain is cleared on cluster-tenants. Absent → field left untouched.
+    // how vanityDomain is cleared on cluster-tenants. Absent → field left untouched.
     const clusterTenantRefProvided = body.clusterTenantRef !== undefined;
     const normalizedClusterTenantRef = clusterTenantRefProvided && body.clusterTenantRef!.trim() ? body.clusterTenantRef!.trim() : null;
 
@@ -604,7 +604,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
       }
 
       // 2. Merge into the existing configOverrides.openclaw block so unrelated
-      //    overrides are preserved; any legacy stored bootstrapToken is dropped.
+      //    overrides are preserved.
       const tenant = await prisma.tenant.findUnique({ where: { name }, select: { configOverrides: true } });
       if (!tenant)
       {
@@ -614,10 +614,9 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
 
       const existing = (tenant.configOverrides ?? {}) as Record<string, unknown>;
       const existingOpenclaw = (typeof existing.openclaw === "object" && existing.openclaw !== null ? { ...existing.openclaw } : {}) as Record<string, unknown>;
-      delete existingOpenclaw.bootstrapToken;
       const mergedOpenclaw: Record<string, unknown> = { ...existingOpenclaw, gatewayUrl };
 
-      // 3. Persist the rotated pairing and audit the change (without the token).
+      // 3. Persist the gateway URL and audit the change.
       await prisma.tenant.update({
         where: { name },
         data: { configOverrides: { ...existing, openclaw: mergedOpenclaw } as Prisma.InputJsonValue },

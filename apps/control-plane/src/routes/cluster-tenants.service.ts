@@ -112,7 +112,7 @@ export function _ToContract(row: ClusterTenantRow): ClusterTenant
   return {
     name: row.name,
     displayName: row.displayName,
-    ...(row.baseDomain ? { baseDomain: row.baseDomain } : {}),
+    ...(row.vanityDomain ? { vanityDomain: row.vanityDomain } : {}),
     isolationTier: _FromPrismaTier(row.isolationTier as unknown as string),
     compute: {
       mode: _FromPrismaCompute(row.computeMode as unknown as string),

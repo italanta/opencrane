@@ -306,6 +306,21 @@ tenant:
       memory: 4Gi
   # -- OpenClaw gateway port inside tenant pods
   gatewayPort: 18789
+  # -- OpenClaw gateway trusted-proxy auth (OC-2 / CONN.4).
+  gateway:
+    # -- CIDR(s)/IP(s) the gateway trusts the X-Forwarded-User identity header from
+    #    — the ingress controller's pod source range. The control-plane brokers every
+    #    gateway WebSocket upgrade (auth_request → /auth/gateway-verify → 204 +
+    #    X-Forwarded-User), so the gateway honours that header only from a trusted source.
+    #
+    #    FAIL-CLOSED: an EMPTY list means **trust nothing** — the gateway honours no
+    #    proxy source and no connection authenticates. It is NEVER read as trust-all.
+    #    Leave empty for installs that have not pinned their ingress source range; set
+    #    it to the cluster's ingress-nginx pod CIDR for trusted-proxy auth to work. A
+    #    NetworkPolicy independently locks the gateway port to the ingress namespace, so
+    #    a wide CIDR here still can't be abused by other pods. A malformed entry crashes
+    #    the operator at startup rather than silently shifting the trust boundary.
+    trustedProxies: []
   # -- OpenClaw npm package version installed into each tenant pod. Pinned (not `latest`)
   # so the gateway can't silently roll across breaking changes; bump deliberately. A
   # Tenant CR's `spec.openclawVersion` overrides this per-tenant.
@@ -332,15 +347,32 @@ ingress:
   enabled: true
   # -- Ingress class is set by the hosting adapter; override here only for custom setups.
   className: nginx
-  # -- The ClusterTenant base domain for this instance. Per-user UserTenant gateways
-  #    are exposed as subdomains under it (<usertenant>.domain). See
-  #    docs/agents/cluster-architecture.md → "Tenancy Model — ClusterTenant vs UserTenant".
+  # -- The platform org-wildcard BASE domain for this install (fixed-wildcard topology).
+  #    Orgs (ClusterTenants) are served at `<org>.<domain>` and their users at
+  #    `<user>.<org>.<domain>`; the platform wildcard `*.<domain>` covers the org apexes.
+  #    This is wired to the operator as INGRESS_DOMAIN (the wildcard base it derives
+  #    UserTenant hosts from). See docs/agents/cluster-architecture.md → "Tenancy Model".
   domain: opencrane.local
+  # -- The FIXED super-operator / control-plane host (the management API above every
+  #    org). DISTINCT from the org-wildcard base above — it is its own host, never an
+  #    org under `*.<domain>`. Defaults to `platform.<domain>` when left empty so a
+  #    default render still produces a sane, separate host. Set it to a dedicated name
+  #    (e.g. `platform.weownai.eu`) in production.
+  controlPlaneHost: ""
   annotations: {}
+  # -- Cluster ingress external IP the per-org wildcard A records point at. Leave empty
+  #    on-prem or until the LoadBalancer IP is assigned; the operator then skips the
+  #    per-org DNS side effect (the Certificate is still applied). Wired to the operator
+  #    as INGRESS_IP.
+  externalIp: ""
   tls:
     enabled: false
-    # -- Secret name for the wildcard TLS cert (*.domain) covering every UserTenant
-    #    gateway host under the ClusterTenant base domain.
+    # -- Secret name for the platform wildcard TLS cert (`*.<domain>`, covering every
+    #    org apex `<org>.<domain>`) that per-UserTenant Ingresses reference by default.
+    #    NOTE: this wildcard does NOT cover the per-user level `<user>.<org>.<domain>`
+    #    (DNS wildcards match one label) — each org gets its own `*.<org>.<domain>`
+    #    cert at provision time. See docs/agents/cluster-architecture.md → "Multi-level
+    #    wildcard TLS".
     secretName: opencrane-wildcard-tls
 
 # -- Documentation site (optional). When enabled, serves the VitePress docs build
@@ -388,6 +420,17 @@ monitoring:
   warnSeverity: warning
   # -- Base URL prefix for runbook links embedded in alert annotations.
   runbookBaseUrl: https://github.com/opencrane/opencrane/blob/main/docs/runbooks
+
+# -- external-dns integration (DOMAIN.T1). When enabled, the operator is granted RBAC to
+# create namespaced `DNSEndpoint` CRs (externaldns.k8s.io/v1alpha1); its ClusterTenant
+# reconciler declares the per-org `*.<org>.<domain>` + apex A records as a DNSEndpoint and
+# the external-dns controller reconciles them into whatever DNS provider the platform runs
+# (Cloud DNS, Route53, Cloudflare, RFC2136, …) — so the operator talks to no cloud DNS API.
+# external-dns itself is a PREREQUISITE (like cert-manager): install it with `--source=crd`
+# and access to the platform's DNS zone. When disabled (or its CRD is absent) the operator
+# skips the per-org DNS side effect at runtime; the Certificate is still applied.
+externalDns:
+  enabled: false
 
 certManager:
   enabled: false
@@ -559,6 +602,50 @@ skillRegistry:
       limits:
         cpu: 500m
         memory: 256Mi
+
+# -- Identity-routing gateway proxy (DOMAIN.T4). A thin, logic-free WS reverse proxy
+# that serves every user in an org through the org's SINGLE host (`<org>.<domain>`)
+# instead of per-user subdomains: on a gateway WS upgrade it delegates auth to the
+# control plane (`/auth/gateway-resolve`), enforces an Origin allowlist (CSWSH), and
+# forwards to the resolved `openclaw-<user>.<ns>.svc` pod. OFF by default — enabling
+# it is the per-org-host cutover (see website/security/connection-security.md); until
+# then the operator keeps minting per-user Ingresses.
+gatewayProxy:
+  enabled: false
+  image:
+    repository: ghcr.io/italanta/opencrane-gateway-proxy
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    port: 8090
+  # -- Exact `Origin` values allowed on a gateway WS upgrade (scheme://host[:port]).
+  #    EMPTY = fail closed (every browser upgrade refused). Set to the org host(s)
+  #    this proxy fronts, e.g. ["https://acme.opencrane.ai"]. CORS does not cover
+  #    WebSockets, so this allowlist is the only Origin defence.
+  allowedOrigins: []
+  # -- Max gateway sockets one identity may open per minute (per replica abuse backstop).
+  rateLimitPerMinute: 60
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 128Mi
 
 # -- Audience-bound projected token settings for tenant access into ingress planes
 projectedIdentity:

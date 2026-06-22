@@ -10,6 +10,7 @@ import { _ResolveOpenClawPairing } from "./openclaw-pairing.js";
 import { _RecordBrokeredDevice } from "./brokered-device.js";
 import { _CutTenant } from "../../core/connections/cut-tenant.js";
 import type { OpenClawGatewayAdmin } from "../../core/connections/gateway-admin.types.js";
+import { _ResolveGatewayTarget } from "../../core/connections/gateway-resolve.js";
 
 /**
  * Build the auth router covering:
@@ -77,6 +78,60 @@ export function ___AuthRouter(authService: OidcAuthService, prisma: PrismaClient
     // (and strips any client-supplied one) for the gateway to trust.
     res.setHeader("X-Forwarded-User", email);
     res.status(204).end();
+  });
+
+  /**
+   * Routing-authority endpoint for the identity-routing gateway proxy (DOMAIN.T4).
+   *
+   * Where `/gateway-verify` answers a yes/no for nginx's `auth_request` (single-host,
+   * per-user-subdomain model), this endpoint answers **where** a session's gateway
+   * socket should go when every user in an org shares one host: it returns the verified
+   * identity plus the authoritative `{ tenant, podService }` the proxy forwards to. The
+   * proxy holds NO session logic — the control plane stays the sole auth authority
+   * (delegate-auth, like the nginx `auth_request`), so the express session store is
+   * never shared across services.
+   *
+   * **Cross-tenant safety (routing half):** the target is resolved solely from the
+   * session's IdP-verified email via the fail-closed email→tenant rule — no
+   * request-supplied tenant input — and a missing/ambiguous mapping fails closed with
+   * **403**. Combined with per-pod owner pinning (CONN.10, the pod-level half) this is
+   * defence in depth: neither the routing layer nor the pod will serve a foreign user.
+   *
+   * Public (mounted before `___AuthMiddleware`); enforces the session inline.
+   */
+  router.get("/gateway-resolve", async function _gatewayResolve(req, res, next)
+  {
+    try
+    {
+      const authUser = req.session?.authUser;
+      if (!authUser)
+      {
+        res.status(401).json({ error: "Authentication required", code: "UNAUTHORIZED" });
+        return;
+      }
+
+      const email = typeof authUser.email === "string" ? authUser.email : "";
+      const sub = typeof authUser.sub === "string" ? authUser.sub : "";
+      const outcome = await _ResolveGatewayTarget(prisma, namespace, email, sub);
+
+      if (!outcome.ok)
+      {
+        // Every fail-closed reason is a 403: the proxy treats it as "refuse the upgrade".
+        const message = outcome.code === "AMBIGUOUS_TENANT"
+          ? "Multiple OpenClaw pods match this account; contact your administrator"
+          : outcome.code === "NO_TENANT"
+            ? "No OpenClaw is provisioned for this account"
+            : "Session has no email claim; cannot resolve a tenant";
+        res.status(403).json({ error: message, code: outcome.code });
+        return;
+      }
+
+      res.status(200).json(outcome.resolved);
+    }
+    catch (err)
+    {
+      next(err);
+    }
   });
 
   // --------------------------------------------------------------------------

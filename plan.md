@@ -7,7 +7,7 @@
 - **Phase 4 Track A** (MCP & Skills runtime planes): complete. P4A.1–P4A.3 implemented, tested, and Helm/NetworkPolicy wired (2026-06-10).
 - **Phase 4 Track B** (fleet organizational awareness): **decision-unblocked 2026-06-13** (P4B.0 closed). **P4B.1 Awareness SDK landed**; greenfield remainder P4B.2–P4B.7 (incl. P4B.7 scope-aware retrieval plugin + CLI/API session→scope binding for anti-spill). See Phase 4 Decisions for the locked choices.
 - **Track P4-C** (agent identity & personalisation via OpenClaw workspace files): **P4C.1–P4C.5 landed** (2026-06-13). Workspace bootstrap/seeding, contract-derived TOOLS.md, company-doc API + immutable versioning + L0 guard, agent-driven reconciliation (deterministic merger; LiteLLM agent merge is the seam) producing approve/reject proposals, and version-gated delivery into the pod via the re-pull loop. Whole track testable spine complete; live LiteLLM merge quality is the remaining upgrade.
-- **Track CONN** (OpenClaw connection auth & session security): pairing-broker endpoint implemented (2026-06-13); connection-security posture **decided = Option B** (short-lived re-brokered credentials + per-user kill-switch; control plane stays connection-stateless). Full trade-off in `website/security/connection-security.md`. Transport hardening landed 2026-06-13 (CONN.2); `website/security/identity.md` rewritten for the pairing broker (CONN.6); **CONN.8 wildcard TLS** landed (operator Ingress `tls:` + cert-manager ClusterIssuer/Certificate Helm scaffold, dev selfSigned + prod ACME DNS-01; **onboarding CLI/API `oc platform dns set` + dev sslip.io hosts landed 2026-06-13**) with cross-namespace + live-ACME-e2e as the remaining (cluster-bound) follow-ups. **Kill-switch chain landed 2026-06-13 (CONN.3 persistence+decode, CONN.4 device registry, CONN.5 cut + RBAC)** — testable spine complete; the gateway per-device revoke + CP-held operator device + in-pod mint exec are the remaining live-infra seams. Proxy (Option C) deferred as a contingent vision.
+- **Track CONN** (OpenClaw connection auth & session security): pairing-broker endpoint implemented (2026-06-13); connection-security posture **decided = Option B** (short-lived re-brokered credentials + per-user kill-switch; control plane stays connection-stateless). Full trade-off in `website/security/connection-security.md`. Transport hardening landed 2026-06-13 (CONN.2); `website/security/identity.md` rewritten for the pairing broker (CONN.6); **CONN.8 wildcard TLS** landed (operator Ingress `tls:` + cert-manager ClusterIssuer/Certificate Helm scaffold, dev selfSigned + prod ACME DNS-01; **onboarding CLI/API `oc platform dns set` + dev sslip.io hosts landed 2026-06-13**) with cross-namespace + live-ACME-e2e as the remaining (cluster-bound) follow-ups. **Kill-switch chain landed 2026-06-13 (CONN.3 persistence+decode, CONN.4 device registry, CONN.5 cut + RBAC)** — testable spine complete; the gateway per-device revoke + CP-held operator device + in-pod mint exec are the remaining live-infra seams. **Trusted-proxy connection model pinned fail-closed (CONN.9, 2026-06-22):** `GATEWAY_TRUSTED_PROXIES` empty ⇒ trust-nothing, malformed ⇒ crash, Helm-values-driven with the weownai-dev pod CIDR as the dev default. Proxy (Option C) deferred as a contingent vision.
 - **Track P4-D** (MCP & Skills platform completion — the two 🔶 gaps): scoped + decisions locked 2026-06-13. P4D.2 OCI/Zot **foundation slice landed** (`OciBundleStore` + gated Zot Helm; runtime cutover deferred to a live-Zot slice). P4D.1 **brokering-model slice landed** (credential brokering-mode + custody validation + API/CLI + gated encryption-at-rest Helm; live OBO push/exchange parked). See Open Backlog → Track P4-D.
 - **Track AIR** (AI model routing, selection & cost optimization): **scoped 2026-06-18** from the LiteLLM BYOK/BYOM + autonomous-router research (`litellm-byok-byom-research.md`, `litellm-router-autonomous-improvement-research.md`). Explicit / skill-pinned / opt-in-`auto` model selection, the BYOM model registry, and the shadow-mode measurement + nightly improvement loop that lowers token cost at equal quality. Locked: full AGPL (OpenRouter = inspiration only), no fee (meter only), no Enterprise license, BYOK at control-plane/ClusterTenant level (not per-openclaw-tenant), k8s-native secrets (GCP-SM + ESO + CMEK-by-default). GuardLLM verified **not** implemented (design-only). See Open Backlog → Track AIR.
 - **Review discipline** (2026-06-13): the `review` agent (`.claude/agents/review.md`) now has a mandatory **"verify every finding before reporting"** step — re-trace the cited code and construct a concrete repro before asserting; unconfirmed concerns go under *Open questions*, not *Findings*. Added after a review surfaced a finding that did not survive verification.
@@ -87,10 +87,116 @@ creates a billing account, then creates an org and becomes its root admin.
 - **Derivation:** `isOrgAdmin` + the caller's `ownedOrgs` are derived from `OrgMembership` (per-org) and surfaced
   on `/auth/me` (additive — existing `isOrgAdmin`/`clusterTenant` fields unchanged so WeOwnAI keeps working). The
   platform-operator seed path stays intact + fail-closed.
-- **Deferred to the cluster-tenants operator track:** create still only persists `pending`; the provisioner/CR
-  watcher that reconciles `pending → ready` is a separate workstream (a named hand-off hook is left in place).
+- **Cluster-tenants operator track — CLOSED by PR #50:** create persists `pending` and the DB→K8s bridge
+  projects a `clustertenants` CR; the operator's ClusterTenant reconciler now drives `pending → ready` and
+  calls the real per-org domain provisioner (see Track DOMAIN → PR #50).
 - Tests: billing-account create, create-records-owner, the full guard matrix, membership-derived `isOrgAdmin`
   (+20; control-plane suite 407 green).
+
+### Track DOMAIN — Fixed wildcard + CNAME domain topology — LANDED 2026-06-22
+
+Replaced the "each customer brings their own domain + delegated DNS-01" model with a **fixed-wildcard
+topology**: ONE platform org-wildcard base + a fixed super-operator/control-plane host; orgs are derived at
+`<org>.<base>`, users at `<user>.<org>.<base>`; customers optionally CNAME a vanity domain onto `<org>.<base>`.
+Stacked on `feat/org-admin-billing`.
+- **Chart values:** `ingress.controlPlaneHost` (fixed super-operator host, defaults `platform.<base>`,
+  distinct from the wildcard) + `ingress.domain` reframed as the platform org-wildcard base.
+  `control-plane-ingress.yaml` serves the fixed host; the platform `Certificate` SANs are
+  `*.<base>` + apex + control-plane host (operator/control-plane deployment templates untouched to keep merges trivial).
+- **Host derivation:** `_BuildOrgDomain`/`_BuildUserHost`/`_BuildOrgWildcard` in `libs/contracts`
+  (`domain-topology.types.ts`); operator `_ResolveOrgServingDomain` derives `<user>.<org>.<base>` with the
+  vanity domain as an overlay (ref-less openclaws unchanged at `<user>.<base>`).
+- **Schema:** ClusterTenant `base_domain` → `vanity_domain` (`migrations/0024`), repurposed as the optional
+  CNAME overlay; mirrored through contracts, openapi, CLI (`--vanity-domain`), and the CRD.
+- **Multi-level wildcard TLS (decided):** `*.<base>` covers org apexes but NOT `<user>.<org>.<base>` (a
+  wildcard matches one label) → a **per-org** `*.<org>.<base>` `Certificate` issued at org-provision via
+  cert-manager DNS-01 (reference manifest `platform/helm/examples/per-org-wildcard-cert.yaml`).
+- **DNS automation:** `modules/dns` extended — platform wildcard + apex + control-plane-host records, and a
+  `var.org_wildcards`-driven per-org `*.<org>.<base>` record matching the operator hook's shape.
+- **Per-org provisioning — IMPLEMENTED (operator-owned, PR #50):** `DefaultOrgDomainProvisioner`
+  (`apps/operator/src/cluster-tenants/internal/org-domain.provisioner.ts`) behind the `OrgDomainProvisioner`
+  interface. It applies the per-org wildcard `Certificate` (`*.<org>.<base>` + apex/vanity SANs) via
+  cert-manager DNS-01 (`CertManagerClient` over the custom-objects API) and declares the
+  `*.<org>.<base>`/`<org>.<base>` A records as a namespaced external-dns `DNSEndpoint` CR
+  (`externaldns.k8s.io/v1alpha1`, `DnsEndpointClient` over the custom-objects API), which the external-dns
+  controller reconciles into the platform's DNS provider — no cloud SDK (see DOMAIN.T1). Both side effects
+  idempotent. **Fail-closed + runtime-gated by real capability detection:** an absent cert-manager/DNSEndpoint
+  CRD short-circuits fail-closed and reports a skip — never crashes — while the resource-authoring path stays
+  real (the manifests are genuinely built and applied, not no-op stubs). Wired by `_BuildOrgDomainProvisioner`
+  from operator config; the create path never mutates DNS/cert-manager — only the reconciler (in the operator)
+  does (fail-closed, API-first).
+- **Docs:** `docs/agents/cluster-architecture.md` + `website/operators/dns-config.md` rewritten to the new
+  topology with the exact customer CNAME instruction.
+- **PR #50 (org-provision-wiring) — LANDED:** the ClusterTenant reconciler (`apps/operator/src/cluster-tenants/operator.ts`)
+  now CALLS the real `provisionOrgDomain(...)` on every reconcile. The dead control-plane copies of the
+  provisioner/cert/DNS clients (never invoked there) and the hardcoded always-skip `GatedOrgDomainProvisioner`
+  stub were deleted; the one real provisioner is owned by the operator (the reconciler/executor). Helm wires
+  `INGRESS_IP`/`CERT_MANAGER_ISSUER_*` + RBAC: `certManager.enabled` gates the operator's `certificates` RBAC
+  and `externalDns.enabled` gates its `dnsendpoints` RBAC (see DOMAIN.T1). Live cert/DNS apply remains the
+  batched human-authorised step (cert-manager is not installed on the shared dev cluster) — prepared, not
+  executed.
+- Validation: `helm template` (operator + RBAC) green; operator (155; +provisioner/cert/DNS/gating unit
+  tests), control-plane (407) suites green; touched-package build + lint clean.
+
+#### Follow-ups
+- **DOMAIN.T1 — k8s-native DNS instead of the direct GCP binding — DONE.** Replaced the imperative
+  `CloudDnsClient` (`@google-cloud/dns`) with a declarative `DnsEndpointClient`: the operator's ClusterTenant
+  reconciler now declares the per-org `*.<org>.<base>` + apex A records as an external-dns `DNSEndpoint` CR
+  (`externaldns.k8s.io/v1alpha1`) in the org's bound namespace, and the external-dns controller reconciles them
+  into whatever provider the platform runs. The operator carries NO cloud SDK (the `@google-cloud/dns` optional
+  dep is removed). Same fail-closed posture as cert-manager: an absent DNSEndpoint CRD → `applied:false` skip,
+  never a crash. Helm: `externalDns.enabled` gates the operator's `dnsendpoints` RBAC; `DNS_MANAGED_ZONE` env +
+  `ingress.dnsManagedZone` value removed. external-dns is a prerequisite (install with `--source=crd`), like
+  cert-manager. The k8s-error classification (`_IsCrdAbsent`/`_IsConflict`/`_IsNotFound`) was extracted to a
+  shared `k8s-api-errors.ts` used by both the cert-manager and DNSEndpoint clients.
+- **DOMAIN.T2 — wire org-domain teardown on ClusterTenant delete — DONE.** The reconciler's `Deleted` case now
+  invokes `OrgDomainProvisioner.deprovisionOrgDomain(...)` (deletes the per-org `Certificate` + external-dns
+  `DNSEndpoint` so external-dns reaps the records it owns). The bound namespace is re-derived deterministically
+  (`opencrane-<name>`) so delete never depends on `status` being present; the call is idempotent and fail-soft
+  (errors logged, not re-thrown — namespace GC is the backstop). +3 operator tests (suite 158).
+- **DOMAIN.T3 — collapse the now-vestigial control-plane provisioner runtime paths — DONE.** The operator owns
+  provisioning, so the control-plane `ClusterTenantProvisioner` interface + its `SharedClusterProvisioner` /
+  `ExternalWebhookProvisioner` implementations (all `provision()`/`getStatus()`/`deprovision()` dead at runtime)
+  and the unused `provisionerFor` registry method were deleted. The registry is now a pure tier-availability gate
+  carrying `{ id, tiers }` entries — `isTierAvailable` + `capabilities` only (the live callers). `dedicatedCluster`
+  gating + the HTTPS-only webhook-config validation are preserved (`_ReadExternalWebhookConfig`). Contracts lib
+  unchanged (its `ClusterTenantProvisionerRegistry` was already minimal). `provisioner.test.ts` → `registry.test.ts`.
+- **DOMAIN.T4 — collapse per-user subdomains to a single per-org host with an identity-routing proxy —
+  PARTIALLY LANDED (service + endpoint built & gated; ingress cutover remains).** Landed this slice: the new
+  `@opencrane/gateway-proxy` app (thin, logic-free WS reverse proxy: Origin/CSWSH allowlist → delegated auth →
+  per-identity rate limit → forward to `openclaw-<user>.<ns>.svc`), the control-plane
+  `GET /api/v1/auth/gateway-resolve` routing authority (fail-closed email→tenant; 403 on no/ambiguous), Helm
+  deployment+service gated behind `gatewayProxy.enabled` (off; `automountServiceAccountToken:false`, no RBAC —
+  it never touches the k8s API), the CI image build, and §0.1 of connection-security.md. 19 proxy tests + 7
+  gateway-resolve tests. **STILL TO DO (the cutover, its own slice):** one per-org Ingress that path-routes
+  `/api`/UI/gateway-WS; retire the operator's per-user Ingress + per-user DNS/cert minting; confirm the OIDC
+  redirect-URI allowlist accepts per-org hosts; flip `gatewayProxy.enabled` per install. Until then routing
+  stays per-user-subdomain and the proxy is dormant.
+  **Decisions LOCKED (2026-06):** (a) **per-org host** `company.opencrane.ai` (preserves cross-org origin
+  isolation + vanity CNAMEs; one DNS record + one **HTTP-01** cert per org → no wildcard, no DNS-01, no
+  cert-manager zone access — supersedes the wildcard parts of T1); (b) **same-origin** — the app UI, `/api/*`,
+  and the gateway WS are ALL served under that one host, so the browser is same-origin (no CORS) and the OIDC
+  session cookie is **host-scoped** to it (no parent-domain cross-org leak). The only external CNAME a customer
+  needs is `company.opencrane.ai` (or vanity → it).
+  - **Prerequisite (DONE):** CONN.10 per-pod owner pinning (`allowUsers`), so the pod self-enforces its owner
+    regardless of routing — without it, identity-routing would be the *only* cross-tenant guard.
+  - **New component — identity-routing WS proxy (DONE)** on the per-org host. On a gateway WS upgrade it calls a new
+    control-plane endpoint `GET /auth/gateway-resolve` (verify session → return `{ user, tenant, podService }`,
+    reusing the existing fail-closed email→tenant resolution; **403** if no/ambiguous tenant), validates the
+    `Origin` header against the same-origin host (CSWSH guard — CORS does NOT cover WS), then reverse-proxies
+    to `openclaw-<user>.<ns>.svc`. The proxy holds NO session logic — the control-plane stays the auth
+    authority (delegate-auth pattern, like today's nginx `auth_request`). This avoids sharing the express
+    session store across services.
+  - **Ingress (REMAINS):** one per-org Ingress for `company.opencrane.ai` — path-route `/api/*`→control-plane, UI→
+    frontend, gateway WS→the proxy. The operator STOPS minting per-user Ingresses + per-user DNS/cert.
+  - **OIDC (REMAINS):** login/callback/session now happen on the per-org host (host-scoped cookie). Confirm the OIDC
+    redirect-URI handling supports per-org hosts (multi-host redirect allowlist) before cutover.
+  - **Security controls (DONE):** Origin allowlist on the WS upgrade (CSWSH, fail-closed); proxy is a thin,
+    logic-free, heavily-logged choke point; per-identity rate limits live in the proxy. Cross-tenant safety rests
+    on CONN.10 (pod-level) + the proxy's `gateway-resolve` (routing-level) — defence in depth. (Host-scoped cookie
+    lands with the ingress/OIDC cutover above.)
+  - **Docs (DONE):** `website/security/connection-security.md` §0.1 documents the proxy + Origin controls +
+    delegated-auth flow + cutover status.
 
 ### Track P5 — Close Phase 5 — ✅ COMPLETE · full history: plan-done.md § Completed Tracks (archived 2026-06-15)
 
@@ -178,12 +284,14 @@ creates a billing account, then creates an org and becomes its root admin.
   (`gatewayUrl`/`bootstrapToken`/`tenant`/`ingressHost`); fail-closed email→tenant resolution. Landed.
 - [x] **CONN.2 Transport hardening** — HSTS, prod-forced `Secure` cookies, `wss://`-only broker guard,
   opt-in HTTP→HTTPS redirect. Landed. (`__Host-` cookie prefix deferred to CONN.6 doc review.)
-- [ ] **CONN.3 Pairing-link provisioning + short bootstrap.** *Persist + decode halves landed*
-  (`PUT /api/v1/tenants/:name/pairing` stores/rotates into `configOverrides.openclaw`; operator
-  `_ParseOpenClawSetupCode` decodes the base64 setup code); mint command resolved
-  (`openclaw qr --setup-code-only --json`). **Remaining (live seam):** the in-pod `openclaw qr` exec
-  (k8s pod-exec; issue-#19352 chicken-and-egg gateway token) wired into operator reconcile → the
-  rotate endpoint. Anchor: operator pod provisioning + `routes/tenants.ts`.
+- [~] **CONN.3 Pairing-link provisioning + short bootstrap.** **Superseded by trusted-proxy (CONN.9 / #48).**
+  The bootstrap-token pairing model is no longer the connection method; the gateway authenticates via
+  the ingress `auth_request` trusted-proxy header, so no per-pod `bootstrapToken` is minted or stored.
+  The operator-side decode half (`_ParseOpenClawSetupCode` + `openclaw-pairing-provision.*`) and the
+  control-plane `bootstrapToken` machinery (the `routes/tenants.ts` strip-guard + the legacy-token test
+  scaffolding) have all been **removed** — no live cluster holds a stored token, so the defensive strip
+  is unnecessary. `PUT /:name/pairing` now stores only the `wss://` gateway URL; `_ResolveOpenClawPairing`
+  and the `/auth/pod-token` broker resolve the connection coordinate (URL only), never a token.
 - [ ] **CONN.4 CP-held operator device + device registry.** *Device-registry half landed*
   (`BrokeredDevice` model + `0008` migration; every `/auth/pod-token` broker upserts a row). **B1
   device-signature fully resolved** — Ed25519 (NOT ECDSA-P256), byte-exact against `openclaw@2026.6.6`
@@ -211,6 +319,35 @@ creates a billing account, then creates an org and becomes its root admin.
   cluster + real DNS — the unverified seam). Single-label-tenant-name / host-only-cookie /
   delegated-subzone constraints: see plan-done.md. Anchors: `5-ingress.ts`, `values.yaml`,
   `cluster-issuer.yaml`, `core/platform-dns/`, `apps/cli/src/commands/platform.ts`.
+- [x] **CONN.10 Per-pod owner pinning (cross-tenant gateway guard).** trusted-proxy mode (CONN.9)
+  trusts whatever identity the proxy injects, and `gateway-verify` only checks that *a* session exists
+  — it does NOT bind the session to the host's tenant, and the pod had no owner allowlist. So any
+  authenticated user who reached another tenant's pod (guessable `<user>.<org>.<base>` host) was
+  accepted as themselves, with access to that pod's mounted secrets / MCP connections / model keys.
+  *Fixed:* the operator renders `gateway.auth.trustedProxy.allowUsers: [<owner email>]` into each
+  tenant's `openclaw.json` (`2-config-map.ts`), normalised `trim().toLowerCase()` to match the email
+  `gateway-verify` injects, so the gateway rejects any non-owner `X-Forwarded-User`. Ownership is now
+  enforced **server-side at the pod**, independent of routing — the prerequisite that makes collapsing
+  per-user subdomains safe (see Track DOMAIN). Docs: `website/security/connection-security.md` §0.
+  **Verify:** confirm `trustedProxy.allowUsers` is honoured by the pinned OpenClaw image (v0.23.1); if
+  not, bump the pin or fall back to a host→tenant check in `gateway-verify`.
+
+- [x] **CONN.9 Trusted-proxy connection model pinned (fail-closed).** Product accepted trusted-proxy;
+  single-use tokens are **not** re-introduced. The operator now parses `GATEWAY_TRUSTED_PROXIES`
+  fail-closed (`apps/operator/src/trusted-proxies.ts`): **empty ⇒ trust nothing** (never the ambiguous
+  trust-all) surfaced as `config.gatewayTrustNothing`, a CIDR/IP allowlist when configured, and a
+  **malformed entry crashes config load** rather than silently shifting the trust boundary. The tenant
+  ConfigMap renders both the empty allowlist *and* an explicit `gateway.auth.trustedProxy.trustNothing`
+  marker so the runtime can't read `[]` as trust-all. Helm-values-driven (`tenant.gateway.trustedProxies`,
+  empty default in `values.yaml`); dev default set to the weownai-dev cluster pod CIDR `10.55.128.0/17`
+  (discovered read-only: GKE `clusterIpv4Cidr` + ingress-nginx pod `10.55.128.156`) in
+  `values/gke-dev.yaml`. **Confirmed read-only on weownai-dev:** suspended UserTenant `alex` renders
+  `auth.mode=trusted-proxy` + `userHeader=X-Forwarded-User`, its gateway NetworkPolicy locks port 18789
+  to the `ingress-nginx` namespace, and its Ingress carries `auth-url → /api/v1/auth/gateway-verify` +
+  `auth-response-headers: X-Forwarded-User`. **Remaining (live seam):** the end-to-end auth_request →
+  204 + header → pod-accepts-identity handshake needs one additive test pod (prepared, authorization-gated,
+  in the PR). Anchors: `apps/operator/src/{trusted-proxies.ts,config.ts}`, `tenants/deploy/2-config-map.ts`,
+  `platform/helm/{values.yaml,values/gke-dev.yaml,templates/operator-deployment.yaml}`.
 
 
 ### Track P4-D — MCP & Skills platform completion (the two 🔶 gaps)

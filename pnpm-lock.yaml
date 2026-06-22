@@ -94,6 +94,31 @@ importers:
         specifier: ^3.1.0
         version: 3.2.4(@types/node@22.15.31)(jiti@2.6.1)(sass@1.97.1)(tsx@4.21.0)
 
+  apps/gateway-proxy:
+    dependencies:
+      '@opencrane/observability':
+        specifier: workspace:*
+        version: link:../../libs/observability
+      http-proxy:
+        specifier: ^1.18.1
+        version: 1.18.1
+    devDependencies:
+      '@types/http-proxy':
+        specifier: ^1.17.14
+        version: 1.17.17
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.42
+      tsx:
+        specifier: ^4.0.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.3.0
+        version: 5.8.2
+      vitest:
+        specifier: ^3.1.0
+        version: 3.2.4(@types/node@20.19.42)(jiti@2.6.1)(sass@1.97.1)(tsx@4.21.0)
+
   apps/harvesting-agent:
     dependencies:
       '@opencrane/observability':
@@ -127,6 +152,9 @@ importers:
       '@kubernetes/client-node':
         specifier: ^1.0.0
         version: 1.4.0(encoding@0.1.13)
+      '@opencrane/contracts':
+        specifier: workspace:*
+        version: link:../../libs/contracts
       '@opencrane/observability':
         specifier: workspace:*
         version: link:../../libs/observability
@@ -1579,6 +1607,9 @@ packages:
   '@types/http-errors@2.0.5':
     resolution: {integrity: sha512-r8Tayk8HJnX0FztbZN7oVqGccWgw98T/0neJphO91KkmOzug1KkofZURD4UaD5uH8AqcFLfdPErnBod0u71/qg==}
 
+  '@types/http-proxy@1.17.17':
+    resolution: {integrity: sha512-ED6LB+Z1AVylNTu7hdzuBqOgMnvG/ld6wGCG8wFnAzKX5uyW2K3WD52v0gnLCTK/VLpXtKckgWuyScYK6cSPaw==}
+
   '@types/js-yaml@4.0.9':
     resolution: {integrity: sha512-k4MGaQl5TGo/iipqb2UDG2UwjXziSWkh0uysQelTlJpX1qGlpUZYm8PnO4DxG1qBomtJUdYJ6qR6xdIah10JLg==}
 
@@ -2287,6 +2318,9 @@ packages:
     resolution: {integrity: sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ==}
     engines: {node: '>=6'}
 
+  eventemitter3@4.0.7:
+    resolution: {integrity: sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==}
+
   events-universal@1.0.1:
     resolution: {integrity: sha512-LUd5euvbMLpwOF8m6ivPCbhQeSiYVNb8Vs0fQ8QjXo0JTkEHpz8pxdQf0gStltaPpw0Cca8b39KxvK9cfKRiAw==}
 
@@ -2358,6 +2392,15 @@ packages:
 
   focus-trap@7.8.0:
     resolution: {integrity: sha512-/yNdlIkpWbM0ptxno3ONTuf+2g318kh2ez3KSeZN5dZ8YC6AAmgeWz+GasYYiBJPFaYcSAPeu4GfhUaChzIJXA==}
+
+  follow-redirects@1.16.0:
+    resolution: {integrity: sha512-y5rN/uOsadFT/JfYwhxRS5R7Qce+g3zG97+JrtFZlC9klX/W5hD7iiLzScI4nZqUS7DNUdhPgw4xI8W2LuXlUw==}
+    engines: {node: '>=4.0'}
+    peerDependencies:
+      debug: '*'
+    peerDependenciesMeta:
+      debug:
+        optional: true
 
   forever-agent@0.6.1:
     resolution: {integrity: sha512-j0KLYPhm6zeac4lz3oJ3o65qvgQCcPubiyotZrXqEaG4hNagNYO8qdlUrX5vwqv9ohqeT/Z3j6+yW067yWWdUw==}
@@ -2498,6 +2541,10 @@ packages:
   http-proxy-agent@5.0.0:
     resolution: {integrity: sha512-n2hY8YdoRE1i7r6M0w9DIw5GgZN0G25P8zLCRQ8rjXtTU3vsNFBI/vWK/UIeE6g5MUUz6avwAPXmL6Fy9D/90w==}
     engines: {node: '>= 6'}
+
+  http-proxy@1.18.1:
+    resolution: {integrity: sha512-7mz/721AbnJwIVbnaSv1Cz3Am0ZLT/UBwkC92VlxhXv/k/BBQfM2fXElQNC27BVGr0uwUpplYPQM9LnaBMR5NQ==}
+    engines: {node: '>=8.0.0'}
 
   http-signature@1.2.0:
     resolution: {integrity: sha512-CAbnr6Rz4CYQkLYUtSNXxQPUH2gK8f3iWexVlsnMeD+GjlsQ0Xsy1cOX+mN3dtxYomRy21CiOzU8Uhw6OwncEQ==}
@@ -3086,6 +3133,9 @@ packages:
   require-in-the-middle@7.5.2:
     resolution: {integrity: sha512-gAZ+kLqBdHarXB64XpAe2VCjB7rIRv+mU8tfRWziHRJ5umKsIHN2tLLv6EtMw7WCdP19S0ERVMldNvxYCHnhSQ==}
     engines: {node: '>=8.6.0'}
+
+  requires-port@1.0.0:
+    resolution: {integrity: sha512-KigOCHcocU3XODJxsu8i/j8T9tzT4adHiecwORRQ0ZZFcp7ahwXuRU1m+yuO90C5ZUyGeGfocHDI14M3L3yDAQ==}
 
   resolve-pkg-maps@1.0.0:
     resolution: {integrity: sha512-seS2Tj26TBVOC2NIc2rOe2y2ZO7efxITtLZcGSOnHHNOQ7CkiUBfw0Iw2ck6xkIhPwLhKNLS8BO+hEpngQlqzw==}
@@ -5132,6 +5182,10 @@ snapshots:
 
   '@types/http-errors@2.0.5': {}
 
+  '@types/http-proxy@1.17.17':
+    dependencies:
+      '@types/node': 22.15.31
+
   '@types/js-yaml@4.0.9': {}
 
   '@types/linkify-it@5.0.0': {}
@@ -5907,6 +5961,8 @@ snapshots:
   event-target-shim@5.0.1:
     optional: true
 
+  eventemitter3@4.0.7: {}
+
   events-universal@1.0.1:
     dependencies:
       bare-events: 2.8.2
@@ -6060,6 +6116,8 @@ snapshots:
   focus-trap@7.8.0:
     dependencies:
       tabbable: 6.4.0
+
+  follow-redirects@1.16.0: {}
 
   forever-agent@0.6.1: {}
 
@@ -6252,6 +6310,14 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
     optional: true
+
+  http-proxy@1.18.1:
+    dependencies:
+      eventemitter3: 4.0.7
+      follow-redirects: 1.16.0
+      requires-port: 1.0.0
+    transitivePeerDependencies:
+      - debug
 
   http-signature@1.2.0:
     dependencies:
@@ -6839,6 +6905,8 @@ snapshots:
       resolve: 1.22.12
     transitivePeerDependencies:
       - supports-color
+
+  requires-port@1.0.0: {}
 
   resolve-pkg-maps@1.0.0: {}
 

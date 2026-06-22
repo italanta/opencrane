@@ -74,12 +74,17 @@ spec:
   issuerRef:
     name: {{ $cm.issuerName | quote }}
     kind: ClusterIssuer
-  # Wildcard covers every UserTenant gateway host (<user>.<domain>) under the
-  # ClusterTenant base domain; the apex is added so the control plane served at the
-  # bare base domain is also covered (a wildcard does not match the apex).
+  # Fixed-wildcard topology. The platform wildcard `*.<domain>` covers every ORG APEX
+  # `<org>.<domain>`; the base apex `<domain>` is added for completeness, and the fixed
+  # control-plane host is added explicitly so it is browser-trusted even when set to a
+  # name OUTSIDE `<domain>`. NOTE: this cert does NOT cover the per-user level
+  # `<user>.<org>.<domain>` (a wildcard matches exactly one label) — each org gets its
+  # own `*.<org>.<domain>` cert issued at provision time by the cluster-tenants operator
+  # via DNS-01 (see docs/agents/cluster-architecture.md → "Multi-level wildcard TLS").
   dnsNames:
     - {{ printf "*.%s" .Values.ingress.domain | quote }}
     - {{ .Values.ingress.domain | quote }}
+    - {{ .Values.ingress.controlPlaneHost | default (printf "platform.%s" .Values.ingress.domain) | quote }}
 {{- else }}
 {{- /* Namespaced mode: a per-instance-namespace Issuer + wildcard Certificate. */ -}}
 {{- $namespaces := include "opencrane.instanceNamespaces" . | fromJsonArray }}
@@ -125,12 +130,14 @@ spec:
     # Namespaced Issuer in this same namespace — never a cluster-singleton.
     name: {{ $cm.issuerName | quote }}
     kind: Issuer
-  # Wildcard covers every UserTenant gateway host (<user>.<domain>) under the
-  # ClusterTenant base domain; the apex is added so the control plane served at the
-  # bare base domain is also covered (a wildcard does not match the apex).
+  # Fixed-wildcard topology (see the legacy block above). `*.<domain>` covers org
+  # apexes `<org>.<domain>`; the base apex + the fixed control-plane host are added.
+  # Per-user `<user>.<org>.<domain>` is covered by a per-org `*.<org>.<domain>` cert
+  # issued at provision time, NOT by this platform cert.
   dnsNames:
     - {{ printf "*.%s" $.Values.ingress.domain | quote }}
     - {{ $.Values.ingress.domain | quote }}
+    - {{ $.Values.ingress.controlPlaneHost | default (printf "platform.%s" $.Values.ingress.domain) | quote }}
 {{- end }}
 {{- end }}
 {{- end }}

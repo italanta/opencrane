@@ -145,24 +145,24 @@ describe("clusterTenantsRouter (CT.2 management API)", function _suite()
     expect(res.body.code).toBe("VALIDATION_ERROR");
   });
 
-  it("persists and returns a valid baseDomain, and rejects a malformed one (CT.8)", async function _baseDomain()
+  it("persists and returns a valid vanityDomain, and rejects a malformed one", async function _vanityDomain()
   {
     const app = _buildApp(_mockPrisma(new Map()), _mockRegistry(false));
 
-    // 1. A valid customer domain round-trips on create.
-    const okRes = await request(app).post("/api/v1/cluster-tenants").send({ ..._sharedBody(), baseDomain: "ai.client-company.com" });
+    // 1. A valid customer-vanity domain round-trips on create.
+    const okRes = await request(app).post("/api/v1/cluster-tenants").send({ ..._sharedBody(), vanityDomain: "ai.client-company.com" });
     expect(okRes.status).toBe(201);
-    expect(okRes.body.baseDomain).toBe("ai.client-company.com");
+    expect(okRes.body.vanityDomain).toBe("ai.client-company.com");
 
     // 2. A malformed domain is rejected before persistence.
-    const badRes = await request(app).post("/api/v1/cluster-tenants").send({ ..._sharedBody(), name: "bad", baseDomain: "not a domain" });
+    const badRes = await request(app).post("/api/v1/cluster-tenants").send({ ..._sharedBody(), name: "bad", vanityDomain: "not a domain" });
     expect(badRes.status).toBe(400);
     expect(badRes.body.code).toBe("VALIDATION_ERROR");
 
-    // 3. Update can clear the domain with an empty string (falls back to ingress.domain).
-    const clrRes = await request(app).put("/api/v1/cluster-tenants/acme").send({ baseDomain: "" });
+    // 3. Update can clear the vanity domain with an empty string (back to the derived apex only).
+    const clrRes = await request(app).put("/api/v1/cluster-tenants/acme").send({ vanityDomain: "" });
     expect(clrRes.status).toBe(200);
-    expect(clrRes.body.baseDomain).toBeUndefined();
+    expect(clrRes.body.vanityDomain).toBeUndefined();
   });
 
   it("returns 404 for an unknown cluster tenant", async function _notFound()

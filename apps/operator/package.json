@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@kubernetes/client-node": "^1.0.0",
+    "@opencrane/contracts": "workspace:*",
     "@opencrane/observability": "workspace:*",
     "pino": "^9.6.0"
   },

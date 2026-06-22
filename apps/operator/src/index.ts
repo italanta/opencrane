@@ -9,6 +9,7 @@ import { _LoadOperatorConfig } from "./config.js";
 import { ObotHealthChecker } from "./mcp-gateway/obot-health-checker.js";
 import { RuntimePlaneDriftRepairer } from "./runtime-planes/drift-repairer.js";
 import { _CreateTenantOperator, IdleChecker } from "./tenants/index.js";
+import { _CreateClusterTenantOperator } from "./cluster-tenants/index.js";
 import { PolicyOperator } from "./policies/operator.js";
 import { _ReadTenantRolloutConfig, TenantUpdateWithCanaryStrategyController } from "./tenant-rollout/tenant-update-with-canary-strategy.controller.js";
 
@@ -40,6 +41,10 @@ async function main(): Promise<void>
 
   const tenantOperator = _CreateTenantOperator(kc, config, log);
   const policyOperator = new PolicyOperator(kc, config, log);
+  // Reconciles the cluster-scoped ClusterTenant CR (org) from `pending` to `ready`:
+  // binds the namespace boundary and (gated) the per-org domain. Without this, an
+  // org created via the control plane would sit `pending` forever.
+  const clusterTenantOperator = _CreateClusterTenantOperator(kc, config, log);
   const idleChecker = new IdleChecker(kc, config, log);
 
   // Start tenant rollout canary release polling when auto-update is enabled
@@ -107,8 +112,8 @@ async function main(): Promise<void>
   _idleCheckerRef = idleChecker;
   idleChecker.start();
 
-  // Start both watchers concurrently
-  await Promise.all([tenantOperator.start(), policyOperator.start()]);
+  // Start all watchers concurrently
+  await Promise.all([tenantOperator.start(), policyOperator.start(), clusterTenantOperator.start()]);
 }
 
 /**

@@ -81,3 +81,50 @@ describe("_LoadOperatorConfig multi-instance fail-closed guard (MI.1 / brief B2)
 		expect(config.controlPlaneInternalUrl).toContain(".default.svc:");
 	});
 });
+
+describe("_LoadOperatorConfig trusted-proxy fail-closed wiring (OC-2 / CONN.4)", function _trustedProxySuite()
+{
+	let _saved: NodeJS.ProcessEnv;
+
+	beforeEach(function _save()
+	{
+		_saved = process.env;
+		// WATCH_NAMESPACE is mandatory; set it so config load reaches the build step.
+		process.env = { ..._BASE_ENV, WATCH_NAMESPACE: "oc-acme" };
+	});
+
+	afterEach(function _restore()
+	{
+		process.env = _saved;
+	});
+
+	it("resolves an unset GATEWAY_TRUSTED_PROXIES to trust-nothing (never trust-all)", function _unset()
+	{
+		// GATEWAY_TRUSTED_PROXIES intentionally absent from _BASE_ENV.
+		const config = _LoadOperatorConfig();
+		expect(config.gatewayTrustedProxies).toEqual([]);
+		expect(config.gatewayTrustNothing).toBe(true);
+	});
+
+	it("resolves an empty GATEWAY_TRUSTED_PROXIES to trust-nothing", function _empty()
+	{
+		process.env.GATEWAY_TRUSTED_PROXIES = "  ";
+		const config = _LoadOperatorConfig();
+		expect(config.gatewayTrustedProxies).toEqual([]);
+		expect(config.gatewayTrustNothing).toBe(true);
+	});
+
+	it("parses a configured CIDR allowlist and clears the trust-nothing flag", function _configured()
+	{
+		process.env.GATEWAY_TRUSTED_PROXIES = "10.55.128.0/17, 192.168.1.0/24";
+		const config = _LoadOperatorConfig();
+		expect(config.gatewayTrustedProxies).toEqual(["10.55.128.0/17", "192.168.1.0/24"]);
+		expect(config.gatewayTrustNothing).toBe(false);
+	});
+
+	it("crashes config load on a malformed CIDR rather than shifting the trust boundary", function _malformed()
+	{
+		process.env.GATEWAY_TRUSTED_PROXIES = "10.55.128.0/99";
+		expect(function _load() { _LoadOperatorConfig(); }).toThrow(/invalid IP\/CIDR entry/);
+	});
+});

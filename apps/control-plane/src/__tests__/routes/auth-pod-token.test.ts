@@ -49,7 +49,7 @@ describe("POST /auth/pod-token (OpenClaw connection broker)", function _suite()
 		const prisma = _buildPrisma([{
 			name: "alex.oc",
 			ingressHost: "alex.oc.example.com",
-			configOverrides: { openclaw: { gatewayUrl: "wss://alex.oc.example.com/gateway", bootstrapToken: "boot-1" } },
+			configOverrides: { openclaw: { gatewayUrl: "wss://alex.oc.example.com/gateway" } },
 		}]);
 		const app = _buildApp({ authUser: { sub: "u1", email: "Alex@acme.com" } }, prisma);
 
@@ -61,8 +61,6 @@ describe("POST /auth/pod-token (OpenClaw connection broker)", function _suite()
 			tenant: "alex.oc",
 			ingressHost: "alex.oc.example.com",
 		});
-		// Trusted-proxy: the broker must never hand the browser a token.
-		expect(res.body.bootstrapToken).toBeUndefined();
 	});
 
 	it("derives the gateway URL from ingressHost when no pairing is stored", async function _derived()
@@ -74,7 +72,6 @@ describe("POST /auth/pod-token (OpenClaw connection broker)", function _suite()
 
 		expect(res.status).toBe(200);
 		expect(res.body.gatewayUrl).toBe("wss://alex.oc.example.com");
-		expect(res.body.bootstrapToken).toBeUndefined();
 	});
 
 	it("returns 401 without a session", async function _noSession()

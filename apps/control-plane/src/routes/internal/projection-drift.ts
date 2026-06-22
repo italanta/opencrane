@@ -1,7 +1,7 @@
 import type * as k8s from "@kubernetes/client-node";
 import type { PrismaClient } from "@prisma/client";
 
-import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL, POLICY_CRD_PLURAL } from "./crd-constants.js";
+import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL, POLICY_CRD_PLURAL } from "../../shared/crd-constants.js";
 
 /** Single detect-only mismatch discovered between CRDs and PostgreSQL projections. */
 export interface ProjectionDriftMismatch

@@ -23,8 +23,8 @@ export interface ClusterTenantCreateRequest
   name: string;
   /** Human-readable customer name. */
   displayName: string;
-  /** Customer-owned base domain serving this tenant's UserTenant gateways; optional. */
-  baseDomain?: string;
+  /** Optional customer-vanity domain CNAMEd onto the org's derived apex; an overlay, not the org identity. */
+  vanityDomain?: string;
   /** Isolation strength chosen for this customer. */
   isolationTier: ClusterTenantIsolationTier;
   /** Compute placement policy. */
@@ -38,8 +38,8 @@ export interface ClusterTenantUpdateRequest
 {
   /** New human-readable customer name. */
   displayName?: string;
-  /** New customer-owned base domain (empty string clears it). */
-  baseDomain?: string;
+  /** New customer-vanity domain CNAMEd onto the org apex (empty string clears it). */
+  vanityDomain?: string;
   /** New isolation strength. */
   isolationTier?: ClusterTenantIsolationTier;
   /** New compute placement policy. */

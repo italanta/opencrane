@@ -168,19 +168,45 @@ describe("ClusterTenant isolation enforcement (CT.5 reconcile flow)", () =>
     expect(podSpec?.tolerations?.[0]?.key).toBe("opencrane.io/dedicated");
   });
 
-  it("derives the UserTenant ingress host from the ClusterTenant baseDomain (CT.8)", async () =>
+  it("derives the UserTenant host from the org's apex under the platform base (<user>.<org>.<base>)", async () =>
   {
     const clusterTenant = _makeClusterTenant("acme", "ct-acme");
-    clusterTenant.spec.baseDomain = "ai.client-company.com";
     const tenant = _makeTenant("mike", { clusterTenantRef: "acme" });
 
     const operator = _makeOperator(core, apps, networking, clusterTenant);
     await operator.reconcileTenant(tenant);
 
-    // The Ingress host comes from the parent's customer-owned base domain, not the
-    // per-instance ingress.domain.
+    // No vanity domain: the org is served at its DERIVED apex <org>.<base>
+    // (acme.opencrane.local), so the user lands at <user>.<org>.<base>.
+    const ingress = networking.created.find((r) => r.kind === "Ingress") as k8s.V1Ingress | undefined;
+    expect(ingress?.spec?.rules?.[0]?.host).toBe("mike.acme.opencrane.local");
+  });
+
+  it("a customer-vanity domain CNAMEd onto the org apex overrides the derived apex", async () =>
+  {
+    const clusterTenant = _makeClusterTenant("acme", "ct-acme");
+    clusterTenant.spec.vanityDomain = "ai.client-company.com";
+    const tenant = _makeTenant("mike", { clusterTenantRef: "acme" });
+
+    const operator = _makeOperator(core, apps, networking, clusterTenant);
+    await operator.reconcileTenant(tenant);
+
+    // With a vanity overlay set, the user serves under the vanity name.
     const ingress = networking.created.find((r) => r.kind === "Ingress") as k8s.V1Ingress | undefined;
     expect(ingress?.spec?.rules?.[0]?.host).toBe("mike.ai.client-company.com");
+  });
+
+  it("a ref-less openclaw derives its host at the bare platform base (<user>.<base>)", async () =>
+  {
+    // No parent org → no apex to derive; the user serves directly under the platform
+    // base (config.ingressDomain), so the single-install default path is unchanged.
+    const tenant = _makeTenant("plain");
+
+    const operator = _makeOperator(core, apps, networking);
+    await operator.reconcileTenant(tenant);
+
+    const ingress = networking.created.find((r) => r.kind === "Ingress") as k8s.V1Ingress | undefined;
+    expect(ingress?.spec?.rules?.[0]?.host).toBe("plain.opencrane.local");
   });
 
   it("default (ref-less) openclaw renders no namespace/quota/limitrange and no scheduling", async () =>

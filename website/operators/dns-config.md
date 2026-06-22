@@ -205,8 +205,12 @@ token takes effect on re-apply):
    certificate into the Secret that the wildcard Ingress references
    (`ingress.tls.secretName`, default `opencrane-wildcard-tls`).
 
-The certificate appearing in the wildcard Secret happens on a live cluster with real DNS;
-this endpoint's job is to author and apply the two resources correctly.
+This authorises the issuer **on the zone**. Per **org** the cluster-tenants operator then
+issues a `*.<org>.<base>` certificate at provision time, reusing the same issuer/token (see
+[Why two wildcard levels](#why-two-wildcard-levels) above and
+`platform/helm/examples/per-org-wildcard-cert.yaml`). The certificate appearing in a Secret
+happens on a live cluster with real DNS; this endpoint's job is to author and apply the
+issuer + Secret correctly.
 
 ## Customer vanity domains
 

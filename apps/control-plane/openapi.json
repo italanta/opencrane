@@ -400,9 +400,9 @@
             "type": "string",
             "description": "Human-readable customer name."
           },
-          "baseDomain": {
+          "vanityDomain": {
             "type": "string",
-            "description": "Customer-owned base domain serving this tenant's UserTenant gateways (<user>.<baseDomain>); falls back to the per-instance ingress.domain when unset."
+            "description": "Optional customer-vanity domain CNAMEd onto the org's derived apex (<name>.<platformBaseDomain>); an overlay, not the org identity. When unset, only the derived apex serves the org."
           },
           "isolationTier": {
             "type": "string",
@@ -486,9 +486,9 @@
             "type": "string",
             "description": "Human-readable customer name."
           },
-          "baseDomain": {
+          "vanityDomain": {
             "type": "string",
-            "description": "Customer-owned base domain (e.g. ai.client-company.com); optional, falls back to the per-instance ingress.domain."
+            "description": "Optional customer-vanity domain CNAMEd onto the org's derived apex (<name>.<platformBaseDomain>); an overlay, not the org identity."
           },
           "isolationTier": {
             "type": "string",
@@ -537,9 +537,9 @@
             "type": "string",
             "description": "New human-readable customer name (must be non-blank when present)."
           },
-          "baseDomain": {
+          "vanityDomain": {
             "type": "string",
-            "description": "New customer-owned base domain; an empty string clears it (back to the per-instance ingress.domain fallback)."
+            "description": "New customer-vanity domain CNAMEd onto the org apex; an empty string clears it (back to the derived <name>.<base> apex only)."
           },
           "isolationTier": {
             "type": "string",

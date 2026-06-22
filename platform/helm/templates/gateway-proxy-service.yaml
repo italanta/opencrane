@@ -1,0 +1,22 @@
+{{- /* ClusterIP for the identity-routing gateway proxy. Rendered only when enabled.
+       The per-org Ingress path-routes the gateway WS upgrade to this Service; /api and
+       the UI route elsewhere (control-plane / frontend) on the same host. */ -}}
+{{- if .Values.gatewayProxy.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "opencrane.fullname" . }}-gateway-proxy
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway-proxy
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.gatewayProxy.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "opencrane.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway-proxy
+{{- end }}

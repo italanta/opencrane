@@ -19,6 +19,7 @@ import { _ResolveTenantPolicy } from "./internal/policy-resolution.js";
 import { _FetchTenantModels } from "./internal/tenant-models.js";
 import { _ResolveClusterTenant } from "./internal/cluster-tenant-resolution.js";
 import type { ClusterTenantResource } from "./internal/cluster-tenant-resolution.types.js";
+import { _ResolveOrgServingDomain } from "./internal/org-serving-domain.js";
 import { TenantStatusWriter } from "./internal/tenant-status-writer.js";
 
 /**
@@ -194,10 +195,18 @@ export class TenantOperator
         await this.enforceClusterTenantIsolation(clusterTenantResolution.clusterTenant, namespace);
       }
       const compute = clusterTenantResolution.clusterTenant?.spec.compute;
-      // CT.8 — derive UserTenant ingress hosts from the parent ClusterTenant's
-      // customer-owned base domain when set; ref-less openclaws fall back to the
-      // per-instance ingress.domain so the default path is byte-for-byte unchanged.
-      const ingressDomain = clusterTenantResolution.clusterTenant?.spec.baseDomain ?? this.config.ingressDomain;
+      // Fixed-wildcard topology — derive the UserTenant ingress host from the org's
+      // domain under the platform wildcard base (`config.ingressDomain`). An org
+      // (ClusterTenant) is served at its DERIVED apex `<org>.<base>`, so its users
+      // land at `<user>.<org>.<base>` — handled by `_ResolveOrgServingDomain`, which
+      // also lets a customer-vanity domain (CNAMEd onto the apex) override the apex.
+      // Ref-less openclaws have no parent org → they stay at the bare
+      // `<user>.<base>` per-instance host, so the default path is unchanged.
+      const ingressDomain = _ResolveOrgServingDomain(
+        clusterTenantResolution.clusterTenant?.metadata?.name,
+        clusterTenantResolution.clusterTenant?.spec.vanityDomain,
+        this.config.ingressDomain,
+      );
 
       // 0b. Effective policy — resolve policyRef deterministically so runtime behavior
       //    is predictable even when selectors or default policies are configured.

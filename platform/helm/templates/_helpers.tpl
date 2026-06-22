@@ -77,6 +77,22 @@ All resources here are namespaced, so the same rule list is valid in a Role.
 - apiGroups: ["cilium.io"]
   resources: ["ciliumnetworkpolicies"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+{{- if .Values.certManager.enabled }}
+# Per-org wildcard TLS Certificates the ClusterTenant reconciler applies into each
+# org's bound namespace (fixed-wildcard topology). Granted only when cert-manager is
+# enabled; without it the operator skips the cert side effect at runtime anyway.
+- apiGroups: ["cert-manager.io"]
+  resources: ["certificates"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+{{- end }}
+{{- if .Values.externalDns.enabled }}
+# Per-org DNSEndpoint CRs the ClusterTenant reconciler declares into each org's bound
+# namespace; external-dns reconciles them into the configured DNS provider. Granted only
+# when external-dns is enabled; without it the operator skips the DNS side at runtime.
+- apiGroups: ["externaldns.k8s.io"]
+  resources: ["dnsendpoints"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+{{- end }}
 # Events for audit trail
 - apiGroups: [""]
   resources: ["events"]

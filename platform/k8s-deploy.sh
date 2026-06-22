@@ -13,11 +13,11 @@
 # Usage:
 #   ./platform/k8s-deploy.sh [--domain DOMAIN] [--namespace NS] [--release NAME]
 #                            [--image-tag TAG] [--storage-class SC]
+#                            [--control-plane-tag TAG] [--operator-tag TAG]
+#                            [--tenant-tag TAG]
 #                            [--oidc-issuer-url URL] [--oidc-client-id ID]
 #                            [--oidc-redirect-uri URI]
 #                            [--platform-operator-seed-email EMAIL]
-#                            [--control-plane-tag TAG] [--operator-tag TAG]
-#                            [--tenant-tag TAG]
 #                            [--values FILE] [--set k=v ...]
 #
 # The platform-operator seed email bootstraps the FIRST platform operator: the

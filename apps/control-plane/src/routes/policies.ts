@@ -7,7 +7,7 @@ import type { CreatePolicyRequest } from "../types.js";
 import { _PropagatePolicyToCognee, _ResolvePolicyAffectedTenants } from "../core/grants/cognee-awareness-sync.js";
 import { _DetectPolicyProjectionDrift } from "./internal/projection-drift.js";
 import { _RepairPolicyProjection } from "./internal/projection-repair.js";
-import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, POLICY_CRD_PLURAL } from "./internal/crd-constants.js";
+import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, POLICY_CRD_PLURAL } from "../shared/crd-constants.js";
 
 /**
  * Creates an Express router that exposes CRUD operations

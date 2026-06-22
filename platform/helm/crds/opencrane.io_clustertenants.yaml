@@ -31,14 +31,16 @@ spec:
                   type: string
                   minLength: 1
                   description: Human-readable customer name.
-                baseDomain:
+                vanityDomain:
                   type: string
                   maxLength: 253
                   pattern: '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$'
                   description: >-
-                    Customer-owned base domain this ClusterTenant serves its UserTenant gateways
-                    under (e.g. ai.client-company.com). UserTenant hosts are <user>.<baseDomain>.
-                    Optional — when unset the operator falls back to the per-instance ingress.domain.
+                    Optional customer-vanity domain CNAMEd onto this org's canonical apex
+                    <name>.<platformBaseDomain> (e.g. ai.client-company.com). An OVERLAY, not the
+                    org identity: the org is always served at its derived <name>.<base> apex (and
+                    users at <user>.<name>.<base>); a vanity domain is an additional name pointed at
+                    that apex. When unset, only the derived apex serves the org.
                 isolationTier:
                   type: string
                   enum: [shared, dedicatedNodes, dedicatedCluster]

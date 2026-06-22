@@ -15,3 +15,6 @@ export const TENANT_CRD_PLURAL = "tenants";
 
 /** Plural resource name for the AccessPolicy CRD. */
 export const POLICY_CRD_PLURAL = "accesspolicies";
+
+/** Plural resource name for the cluster-scoped ClusterTenant CRD. */
+export const CLUSTER_TENANT_CRD_PLURAL = "clustertenants";

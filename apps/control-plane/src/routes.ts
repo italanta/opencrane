@@ -121,7 +121,7 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
   app.use("/api/v1/org/workspace-docs", companyDocsRouter(prisma, _BuildDocMergeReconciler()));
   app.use("/api/v1/platform/dns", platformDnsRouter(customApi, coreApi));
   app.use("/api/v1/billing-accounts", billingAccountsRouter(prisma));
-  app.use("/api/v1/cluster-tenants", clusterTenantsRouter(prisma, clusterTenantRegistry));
+  app.use("/api/v1/cluster-tenants", clusterTenantsRouter(prisma, clusterTenantRegistry, customApi));
   app.use("/api/v1/awareness/rollout", awarenessRolloutRouter(prisma));
   app.use("/api/v1/awareness/participation", awarenessParticipationRouter(prisma));
   app.use("/api/v1/sessions", sessionsRouter(prisma));

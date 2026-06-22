@@ -14,6 +14,7 @@ env:
   CONTROL_PLANE_IMAGE: ghcr.io/${{ github.repository_owner }}/opencrane-control-plane
   TENANT_IMAGE: ghcr.io/${{ github.repository_owner }}/opencrane-tenant
   SKILL_REGISTRY_IMAGE: ghcr.io/${{ github.repository_owner }}/opencrane-skill-registry
+  GATEWAY_PROXY_IMAGE: ghcr.io/${{ github.repository_owner }}/opencrane-gateway-proxy
 
 jobs:
   test:
@@ -45,6 +46,9 @@ jobs:
 
       - name: Test skill-registry
         run: pnpm --filter @opencrane/skill-registry test
+
+      - name: Test gateway-proxy
+        run: pnpm --filter @opencrane/gateway-proxy test
 
   e2e-k3d:
     name: k3d e2e smoke test
@@ -164,5 +168,25 @@ jobs:
           push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta-skill-registry.outputs.tags }}
           labels: ${{ steps.meta-skill-registry.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract image metadata (gateway-proxy)
+        id: meta-gateway-proxy
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.GATEWAY_PROXY_IMAGE }}
+          tags: |
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build and push gateway-proxy
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/gateway-proxy/deploy/Dockerfile
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta-gateway-proxy.outputs.tags }}
+          labels: ${{ steps.meta-gateway-proxy.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

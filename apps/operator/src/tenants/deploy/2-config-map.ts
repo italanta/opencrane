@@ -50,6 +50,11 @@ export function _BuildConfigMap(config: OpenClawTenantOperatorConfig, tenant: Te
   const allowedModels = modelSet && modelSet.models.length > 0 ? [...modelSet.models] : [];
   const defaultModel = modelSet?.defaultModel ?? null;
 
+  // Owner identity this pod is pinned to. The gateway-verify broker injects the
+  // session's verified email trimmed + lowercased, so the allowlist MUST use the
+  // same normalisation or it would lock the owner out.
+  const ownerEmail = tenant.spec.email.trim().toLowerCase();
+
   // 1. Base runtime config — establish the OpenClaw gateway defaults that every
   //    tenant needs before any tenant-specific overrides are applied.
   const baseConfig: Record<string, unknown> = {
@@ -62,8 +67,31 @@ export function _BuildConfigMap(config: OpenClawTenantOperatorConfig, tenant: Te
       // gateway trusts it only from the configured proxy source. No shared token
       // (mutually exclusive with trusted-proxy); a NetworkPolicy locks the port
       // to the ingress so the trusted range can't be abused by other pods.
+      //
+      // Fail-closed: when the operator was given no proxy source
+      // (`gatewayTrustNothing`), render an empty allowlist AND an explicit
+      // `trustNothing: true` marker so the runtime can never read the empty
+      // `trustedProxies: []` as the ambiguous "trust every source". With no
+      // trusted source the user header is never honoured and no connection
+      // authenticates — an unconfigured operator denies, it does not trust-all.
       trustedProxies: config.gatewayTrustedProxies,
-      auth: { mode: "trusted-proxy", trustedProxy: { userHeader: config.gatewayTrustedProxyUserHeader } },
+      // CONN.10 — pin the pod to its OWNER. trusted-proxy trusts whatever identity
+      // the proxy injects, so without `allowUsers` ANY authenticated platform user
+      // who reaches this pod (e.g. by hitting another tenant's host) is accepted as
+      // themselves — a cross-tenant gap, since the pod holds the owner's mounted
+      // secrets / MCP connections / model keys. `allowUsers` makes the gateway reject
+      // any X-Forwarded-User that isn't the owner, so per-pod ownership is enforced
+      // server-side regardless of how the connection is routed (host or identity proxy).
+      auth: {
+        mode: "trusted-proxy",
+        trustedProxy: {
+          userHeader: config.gatewayTrustedProxyUserHeader,
+          // Fail-closed proxy-trust marker (CONN.9): empty allowlist => trust nothing,
+          // never read `trustedProxies: []` as "trust every source".
+          trustNothing: config.gatewayTrustNothing,
+          allowUsers: [ownerEmail],
+        },
+      },
     },
     ...(config.liteLlmEnabled
       ? {

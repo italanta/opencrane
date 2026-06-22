@@ -25,6 +25,21 @@ operator:
 tenant:
   image:
     tag: latest
+  gateway:
+    # OC-2 / CONN.4 trusted-proxy allowlist for the weownai-dev GKE cluster.
+    #
+    # Discovered read-only (2026-06-22):
+    #   - GKE cluster pod IPv4 CIDR (authoritative): 10.55.128.0/17
+    #     `gcloud container clusters describe weownai-dev --region europe-west1`
+    #   - ingress-nginx controller pod: 10.55.128.156 (inside that range)
+    #     `kubectl get pods -n ingress-nginx -o wide`
+    #
+    # Set to the whole cluster pod CIDR so the value still matches wherever the
+    # ingress controller pod is (re)scheduled — the per-tenant gateway NetworkPolicy
+    # independently restricts ingress to the gateway port to the ingress-nginx
+    # namespace, so this CIDR cannot be abused by other in-cluster pods.
+    trustedProxies:
+      - 10.55.128.0/17
 
 multiInstance:
   # Re-enable the isolation guard (requireWatchNamespace: true is correct for

@@ -85,7 +85,7 @@ ai.client-co.com          → optional vanity CNAME → <org>.<base>
 
 ## Physical Cluster
 
-- **Cloud target: GKE Autopilot** (`platform/terraform/cloud/gcp/`) — Google-managed nodes, pay-per-pod, private nodes, VPC-native with secondary IP ranges for pods/services, Cloud NAT egress, Cloud DNS wildcard pointing at a reserved static global IP. Provisioned in phases: networking → cluster → Artifact Registry → in-cluster Bitnami PostgreSQL + the chart → DNS.
+- **Cloud target: GKE Autopilot** (`platform/terraform/cloud/gcp/`) — Google-managed nodes, pay-per-pod, private nodes, VPC-native with secondary IP ranges for pods/services, Cloud NAT egress, an install-time Cloud DNS wildcard (`*.<base>`, covering org apexes `<org>.<base>` — **not** per-user UserTenant hosts `<user>.<org>.<base>`, which need a per-org `*.<org>.<base>` record) pointing at a reserved static global IP. Provisioned in phases: networking → cluster → Artifact Registry → in-cluster Bitnami PostgreSQL + the chart → DNS.
 - **Cloud-agnostic target** (`platform/terraform/core/`) — assumes a ready kubeconfig and applies only the chart; works on k3d (local dev/e2e), EKS, AKS, on-prem. `hosting.provider: onprem` makes cloud storage/identity no-ops.
 
 ## Helm Template Inventory
