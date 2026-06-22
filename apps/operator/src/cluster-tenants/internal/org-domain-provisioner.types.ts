@@ -23,7 +23,12 @@
 /** Inputs the reconciler passes when provisioning an org's domain + TLS. */
 export interface OrgDomainProvisionRequest
 {
-  /** Org (ClusterTenant) name — the single DNS label, e.g. `acme`. */
+  /**
+   * Org (ClusterTenant) name — the single DNS label, e.g. `acme`. Sourced from the
+   * ClusterTenant CR's `metadata.name`, which Kubernetes already validates as an
+   * RFC 1123 subdomain, so it is safe to use unescaped in derived hostnames, the
+   * bound-namespace name, and Certificate label values.
+   */
   orgName: string;
   /** Platform wildcard base the org hangs off, e.g. `weownai.eu`. */
   platformBaseDomain: string;

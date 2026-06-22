@@ -5,6 +5,8 @@ import { CertManagerClient } from "../../cluster-tenants/internal/cert-manager.c
 
 /** A 404 the API server returns when the cert-manager CRD type is NOT served. */
 const _CRD_ABSENT = Object.assign(new Error("the server could not find the requested resource"), { code: 404, body: { message: "the server could not find the requested resource" } });
+/** A 404 whose Status names the cert-manager group as the missing subject (no discovery message). */
+const _CRD_ABSENT_BY_GROUP = Object.assign(new Error("not found"), { code: 404, body: { reason: "NotFound", details: { group: "cert-manager.io", kind: "certificates", name: "org-wildcard-tls-acme" } } });
 /** A 404 the API server returns when the TARGET NAMESPACE is missing (CRD present). */
 const _NAMESPACE_MISSING = Object.assign(new Error("namespaces \"opencrane-acme\" not found"), { code: 404, body: { reason: "NotFound", message: "namespaces \"opencrane-acme\" not found", details: { kind: "namespaces", name: "opencrane-acme" } } });
 /** A plain 404 (already-gone) for delete idempotency. */
@@ -37,6 +39,19 @@ describe("CertManagerClient — Certificate CR apply (fail-closed on absent cert
     expect(result.ready).toBe(false);
     expect(result.certManagerInstalled).toBe(false);
     expect(result.reason).toContain("cert-manager is not installed");
+  });
+
+  it("gates CRD-absent when the 404 Status names the cert-manager group, even with a details.name", async function _crdAbsentByGroup()
+  {
+    const createNamespacedCustomObject = vi.fn().mockRejectedValue(_CRD_ABSENT_BY_GROUP);
+    const customApi = { createNamespacedCustomObject } as unknown as k8s.CustomObjectsApi;
+
+    const result = await new CertManagerClient(customApi).applyCertificate("opencrane-acme", _MANIFEST);
+
+    // A group-pinned 404 is unambiguously the cert-manager TYPE being unserved — a
+    // missing namespace never carries `details.group`. Fail closed, do not re-throw.
+    expect(result.certManagerInstalled).toBe(false);
+    expect(result.ready).toBe(false);
   });
 
   it("RE-THROWS a namespace-missing 404 rather than misattributing it as cert-manager-absent", async function _namespaceMissing()

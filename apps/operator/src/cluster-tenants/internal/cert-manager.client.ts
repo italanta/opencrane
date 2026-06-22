@@ -164,8 +164,12 @@ function _isCrdAbsent(err: unknown): boolean
   const message = (body as { message?: string })?.message ?? (err as { message?: string })?.message ?? "";
   const details = (body as { details?: { group?: string; kind?: string; name?: string } })?.details;
 
-  // (a) The Status names the cert-manager group/Certificate type as the missing TYPE.
-  if (details?.group === _CM_GROUP && !details?.name)
+  // (a) The Status names the cert-manager group as the subject of the 404. The API
+  //     server populates `details.group` only when the missing thing is the cert-manager
+  //     TYPE itself (an unserved CRD); a missing namespace carries `details.kind` =
+  //     "namespaces" with NO group. So a cert-manager group here is unambiguously a
+  //     CRD-absent signal regardless of any `details.name`.
+  if (details?.group === _CM_GROUP)
   {
     return true;
   }

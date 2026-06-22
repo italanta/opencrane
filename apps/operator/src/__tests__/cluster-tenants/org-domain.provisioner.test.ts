@@ -196,6 +196,23 @@ describe("DefaultOrgDomainProvisioner — per-org wildcard cert + Cloud DNS", fu
     expect(result.message).toMatch(/issuance in flight/);
   });
 
+  it("propagates (does NOT skip) a precondition fault from the cert client — e.g. a missing namespace", async function _precondition()
+  {
+    const certs: CertManagerOperations & { applied: Array<{ namespace: string; manifest: Record<string, unknown> }> } = {
+      applied: [],
+      async applyCertificate()
+      {
+        // The cert client re-throws a namespace-missing 404 (not masked as CRD-absent);
+        // the provisioner must surface it as an error, not a silent skip.
+        throw Object.assign(new Error("namespaces \"opencrane-acme\" not found"), { code: 404 });
+      },
+      async deleteCertificate() {},
+    };
+    const provisioner = new DefaultOrgDomainProvisioner(certs, null, _CONFIG);
+
+    await expect(provisioner.provisionOrgDomain(_REQ)).rejects.toThrow(/not found/);
+  });
+
   it("deprovisions by deleting the Certificate and both A records (idempotent teardown)", async function _deprovision()
   {
     const certs = _fakeCerts({ ready: true, certManagerInstalled: true });
