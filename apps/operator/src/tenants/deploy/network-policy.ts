@@ -18,16 +18,14 @@ const _NAMESPACE_NAME_LABEL = "kubernetes.io/metadata.name";
  * arbitrary `X-Forwarded-User`. It scopes a single port for one ingress rule;
  * kubelet health probes are exempt from NetworkPolicy under GKE Dataplane V2.
  *
- * @param config         - Operator config (the gateway port + ingress namespace).
- * @param tenant         - The tenant whose pod the policy selects.
- * @param namespace      - Namespace the policy is created in.
- * @param ingressNamespace - Namespace of the ingress controller (default `ingress-nginx`).
+ * @param config    - Operator config (the gateway port + the operator's namespace).
+ * @param tenant    - The tenant whose pod the policy selects.
+ * @param namespace - Namespace the policy is created in.
  */
 export function _BuildGatewayNetworkPolicy(
   config: OpenClawTenantOperatorConfig,
   tenant: Tenant,
   namespace: string,
-  ingressNamespace = "ingress-nginx",
 ): k8s.V1NetworkPolicy
 {
   const name = tenant.metadata!.name!;
@@ -45,9 +43,15 @@ export function _BuildGatewayNetworkPolicy(
       policyTypes: ["Ingress"],
       ingress: [
         {
-          // `_from` is the @kubernetes/client-node property name; it serialises to
-          // the NetworkPolicy `from` field on the wire.
-          _from: [{ namespaceSelector: { matchLabels: { [_NAMESPACE_NAME_LABEL]: ingressNamespace } } }],
+          // `_from` is the @kubernetes/client-node property name; it serialises to the
+          // NetworkPolicy `from` field. The in-operator identity-routing proxy is the sole
+          // client of the gateway port now (per-user Ingresses are retired), so admit only
+          // the operator pods in the operator's namespace — no other pod can connect and
+          // assert an arbitrary X-Forwarded-User.
+          _from: [{
+            namespaceSelector: { matchLabels: { [_NAMESPACE_NAME_LABEL]: config.operatorNamespace } },
+            podSelector: { matchLabels: { "app.kubernetes.io/component": "operator" } },
+          }],
           ports: [{ protocol: "TCP", port: config.gatewayPort }],
         },
       ],

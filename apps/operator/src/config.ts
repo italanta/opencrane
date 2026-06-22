@@ -80,6 +80,24 @@ export interface OpenClawTenantOperatorConfig
   /** Header the trusted proxy injects with the authenticated user identity. */
   gatewayTrustedProxyUserHeader: string;
 
+  // -- Identity-routing gateway proxy, folded in-process into the operator (DOMAIN.T4) --
+
+  /** The operator's own namespace — the per-pod gateway NetworkPolicy admits the gateway
+   *  port from the operator (which now hosts the in-process proxy) in this namespace. */
+  operatorNamespace: string;
+  /** Whether the operator runs the in-process gateway proxy server. */
+  gatewayProxyEnabled: boolean;
+  /** TCP port the in-operator proxy listens on (distinct from the gateway port). */
+  gatewayProxyPort: number;
+  /** In-cluster DNS suffix for the pod Service FQDN the proxy forwards to. */
+  clusterDomain: string;
+  /** Exact `Origin` values allowed on a gateway WS upgrade (CSWSH), for vanity hosts. */
+  gatewayProxyAllowedOrigins: string[];
+  /** Platform base domains; any `https://<org>.<base>` host is allowed (CSWSH). */
+  gatewayProxyAllowedOriginBaseDomains: string[];
+  /** Max gateway sockets one identity may open per minute (per operator replica). */
+  gatewayProxyRateLimitPerMinute: number;
+
   /** Active hosting substrate. Defaults to on-prem. */
   hostingProvider: HostingProvider;
 
@@ -185,6 +203,13 @@ export function _LoadOperatorConfig(): OpenClawTenantOperatorConfig
     gatewayTrustedProxies: trustedProxies.cidrs,
     gatewayTrustNothing: trustedProxies.trustNothing,
     gatewayTrustedProxyUserHeader: _readEnvValue<string>("GATEWAY_TRUSTED_PROXY_USER_HEADER", "string", false, "X-Forwarded-User"),
+    operatorNamespace: ownNamespace,
+    gatewayProxyEnabled: _readEnvValue<boolean>("GATEWAY_PROXY_ENABLED", "boolean", false, false),
+    gatewayProxyPort: _readEnvValue<number>("GATEWAY_PROXY_PORT", "number", false, 8090),
+    clusterDomain: _readEnvValue<string>("CLUSTER_DOMAIN", "string", false, "svc.cluster.local"),
+    gatewayProxyAllowedOrigins: _splitCsv(_readEnvValue<string>("GATEWAY_PROXY_ALLOWED_ORIGINS", "string", false, "")),
+    gatewayProxyAllowedOriginBaseDomains: _splitCsv(_readEnvValue<string>("GATEWAY_PROXY_ALLOWED_ORIGIN_BASE_DOMAINS", "string", false, "")),
+    gatewayProxyRateLimitPerMinute: _readEnvValue<number>("GATEWAY_PROXY_RATE_LIMIT_PER_MINUTE", "number", false, 60),
     hostingProvider,
     gcp: hostingProvider === HostingProvider.Gcp
       ? {
@@ -235,6 +260,12 @@ export function _LoadOperatorConfig(): OpenClawTenantOperatorConfig
  *
  * @returns The operator's own namespace, or `default` when POD_NAMESPACE is unset.
  */
+/** Split a comma-separated env value into trimmed, non-empty entries. */
+function _splitCsv(raw: string): string[]
+{
+  return raw.split(",").map(s => s.trim()).filter(s => s.length > 0);
+}
+
 function _readOwnNamespace(): string
 {
   const raw = process.env["POD_NAMESPACE"]?.trim();

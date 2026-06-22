@@ -1,7 +1,7 @@
 import type * as k8s from "@kubernetes/client-node";
 
 import { HostingProvider } from "../../hosting-adapter.types.js";
-import type { GcpHostingConfig, HostingAdapter, IngressBinding, TenantStateVolume, TenantStorageBinding, TenantStorageRequest } from "../../hosting-adapter.types.js";
+import type { GcpHostingConfig, HostingAdapter, TenantStateVolume, TenantStorageBinding, TenantStorageRequest } from "../../hosting-adapter.types.js";
 import type { GcsBucketOperations } from "./gcp-bucket.client.js";
 
 /** Hosting adapter for GKE: Workload Identity + GCS Fuse CSI + in-operator bucket provisioning. */
@@ -69,12 +69,4 @@ export class GcpHostingAdapter implements HostingAdapter
     };
   }
 
-  /** GCE ingress class with the annotation GKE ingress controllers expect. */
-  public buildIngressBinding(): IngressBinding
-  {
-    return {
-      ingressClassName: "gce",
-      annotations: { "kubernetes.io/ingress.class": "gce" },
-    };
-  }
 }

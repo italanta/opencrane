@@ -49,47 +49,17 @@ export function ___AuthRouter(authService: OidcAuthService, prisma: PrismaClient
     }
   });
 
-  /**
-   * Reverse-proxy auth check for a tenant's OpenClaw gateway (trusted-proxy mode,
-   * OC-2 / CONN.4). The pod's ingress runs this as an nginx `auth_request` on the
-   * WebSocket upgrade: a valid OIDC session returns 204 with the caller's verified
-   * email in `X-Forwarded-User`; the ingress injects that header (overwriting any
-   * client-supplied value) so the gateway — configured `gateway.auth.mode =
-   * trusted-proxy`, trusting only the ingress source — authenticates the socket as
-   * that user, with no credential ever held by the browser.
-   *
-   * This makes the control-plane the connection **broker**: every gateway socket
-   * is authorised here against the live session. **Central cut** falls out for
-   * free — revoking the session makes this return 401, so the ingress refuses new
-   * upgrades (live sockets are still severed by the pod-delete kill-switch).
-   *
-   * Public (mounted before `___AuthMiddleware`); enforces the session inline.
-   */
-  router.get("/gateway-verify", function _gatewayVerify(req, res)
-  {
-    const authUser = req.session?.authUser;
-    const email = typeof authUser?.email === "string" ? authUser.email.trim().toLowerCase() : "";
-    if (!authUser || email.length === 0)
-    {
-      res.status(401).json({ error: "Authentication required", code: "UNAUTHORIZED" });
-      return;
-    }
-    // Identity the ingress copies into the upstream `X-Forwarded-User` header
-    // (and strips any client-supplied one) for the gateway to trust.
-    res.setHeader("X-Forwarded-User", email);
-    res.status(204).end();
-  });
 
   /**
    * Routing-authority endpoint for the identity-routing gateway proxy (DOMAIN.T4).
    *
-   * Where `/gateway-verify` answers a yes/no for nginx's `auth_request` (single-host,
-   * per-user-subdomain model), this endpoint answers **where** a session's gateway
-   * socket should go when every user in an org shares one host: it returns the verified
-   * identity plus the authoritative `{ tenant, podService }` the proxy forwards to. The
-   * proxy holds NO session logic — the control plane stays the sole auth authority
-   * (delegate-auth, like the nginx `auth_request`), so the express session store is
-   * never shared across services.
+   * Every user in an org shares ONE host (`<org>.<base>`); this endpoint tells the
+   * identity-routing proxy (now folded into the operator) **where** a session's gateway
+   * socket should go: it returns the verified identity plus the authoritative
+   * `{ tenant, podService }` the proxy forwards to (the proxy then injects that identity
+   * into the trusted-proxy user header on the upstream). The proxy holds NO session
+   * logic — the control plane stays the sole auth authority (delegate-auth), so the
+   * express session store is never shared across services.
    *
    * **Cross-tenant safety (routing half):** the target is resolved solely from the
    * session's IdP-verified email via the fail-closed email→tenant rule — no
@@ -144,11 +114,11 @@ export function ___AuthRouter(authService: OidcAuthService, prisma: PrismaClient
    * connection follows, never a second login (see `docs/auth.md`).
    *
    * Under trusted-proxy gateway auth (CONN.4) the browser holds **no credential**:
-   * it opens the returned `wss://` gateway URL, and the ingress authorises that
-   * socket against the live session via `/auth/gateway-verify` (injecting the
-   * verified user). So this route returns only the gateway URL — no token. The
-   * earlier designs (a minted Kubernetes token, then a bootstrap pairing token)
-   * are both retired.
+   * it opens the returned `wss://` gateway URL (the org host), and the identity-routing
+   * proxy authorises that socket against the live session via `/auth/gateway-resolve`
+   * (injecting the verified user on the upstream). So this route returns only the gateway
+   * URL — no token. The earlier designs (a minted Kubernetes token, then a bootstrap
+   * pairing token) are both retired.
    *
    * **Cross-tenant safety:** the target tenant is resolved solely from the
    * session's IdP-verified email — there is no request-supplied tenant input —

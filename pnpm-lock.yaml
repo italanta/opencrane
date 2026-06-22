@@ -94,31 +94,6 @@ importers:
         specifier: ^3.1.0
         version: 3.2.4(@types/node@22.15.31)(jiti@2.6.1)(sass@1.97.1)(tsx@4.21.0)
 
-  apps/gateway-proxy:
-    dependencies:
-      '@opencrane/observability':
-        specifier: workspace:*
-        version: link:../../libs/observability
-      http-proxy:
-        specifier: ^1.18.1
-        version: 1.18.1
-    devDependencies:
-      '@types/http-proxy':
-        specifier: ^1.17.14
-        version: 1.17.17
-      '@types/node':
-        specifier: ^20.0.0
-        version: 20.19.42
-      tsx:
-        specifier: ^4.0.0
-        version: 4.21.0
-      typescript:
-        specifier: ^5.3.0
-        version: 5.8.2
-      vitest:
-        specifier: ^3.1.0
-        version: 3.2.4(@types/node@20.19.42)(jiti@2.6.1)(sass@1.97.1)(tsx@4.21.0)
-
   apps/harvesting-agent:
     dependencies:
       '@opencrane/observability':
@@ -158,10 +133,16 @@ importers:
       '@opencrane/observability':
         specifier: workspace:*
         version: link:../../libs/observability
+      http-proxy:
+        specifier: ^1.18.1
+        version: 1.18.1
       pino:
         specifier: ^9.6.0
         version: 9.14.0
     devDependencies:
+      '@types/http-proxy':
+        specifier: ^1.17.14
+        version: 1.17.17
       '@types/node':
         specifier: ^22.0.0
         version: 22.15.31

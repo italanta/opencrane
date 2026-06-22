@@ -1,4 +1,5 @@
-import { GATEWAY_RESOLVE_PATH } from "./config.js";
+/** Path of the control-plane delegated-auth/routing endpoint. */
+export const GATEWAY_RESOLVE_PATH = "/api/v1/auth/gateway-resolve";
 
 /** The forward target the control plane authorises for a session. */
 export interface ResolvedTarget
@@ -14,16 +15,15 @@ export type ResolveOutcome =
   | { ok: false; status: number; reason: string };
 
 /**
- * Ask the control plane who a gateway socket belongs to and where it should go,
- * by replaying ONLY the upgrade request's `Cookie` header to
- * `GET /api/v1/auth/gateway-resolve`. The proxy holds no session state — the
- * control plane is the sole auth authority (delegate-auth, like nginx
- * `auth_request`), so the express session store is never shared across services.
+ * Ask the control plane who a gateway socket belongs to and where it should go, by
+ * replaying ONLY the upgrade request's `Cookie` header to
+ * `GET /api/v1/auth/gateway-resolve`. The proxy holds no session state — the control
+ * plane is the sole auth authority (delegate-auth), so the session store is never
+ * shared. Even folded into the operator, the proxy makes no auth decision locally.
  *
  * Fail closed on anything that is not a clean 200 with a well-formed body:
  *  - 401/403            → propagate (no session / no-or-ambiguous tenant).
- *  - any other status   → 502 (the control plane is the authority; if we can't get a
- *                         clean answer we refuse rather than guess a route).
+ *  - any other status   → 502 (refuse rather than guess a route).
  *  - network/parse error → 502.
  *
  * @param controlPlaneUrl - Internal control-plane base URL.
@@ -40,8 +40,6 @@ export async function _ResolveTarget(controlPlaneUrl: string, cookie: string | u
   {
     res = await fetch(url, {
       method: "GET",
-      // Replay only the cookie — never client-supplied identity headers, which the
-      // control plane ignores anyway (it trusts only the session).
       headers: cookie ? { cookie } : {},
       signal,
       redirect: "error",

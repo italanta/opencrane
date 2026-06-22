@@ -15,12 +15,14 @@
     "@kubernetes/client-node": "^1.0.0",
     "@opencrane/contracts": "workspace:*",
     "@opencrane/observability": "workspace:*",
+    "http-proxy": "^1.18.1",
     "pino": "^9.6.0"
   },
   "optionalDependencies": {
     "@google-cloud/storage": "^7.0.0"
   },
   "devDependencies": {
+    "@types/http-proxy": "^1.17.14",
     "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",

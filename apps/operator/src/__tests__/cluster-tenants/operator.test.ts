@@ -58,7 +58,6 @@ function _makeDomainProvisioner(result: Partial<OrgDomainProvisionResult>, depro
       calls.push(req);
       return {
         orgDomain: `${req.orgName}.${req.platformBaseDomain}`,
-        wildcardDnsName: `*.${req.orgName}.${req.platformBaseDomain}`,
         ready: false,
         skipped: true,
         ...result,

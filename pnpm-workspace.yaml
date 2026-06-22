@@ -4,7 +4,6 @@ packages:
   - libs/observability
   - apps/operator
   - apps/control-plane
-  - apps/gateway-proxy
   - apps/harvesting-agent
   - apps/cli
   - apps/skill-registry

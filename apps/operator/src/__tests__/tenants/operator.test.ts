@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 import { defaultConfig, _makeTenant } from "../fixtures.js";
-import { _BuildIngressHost } from "../../tenants/deploy/ingress-host.js";
+import { _ResolveOrgServingDomain } from "../../tenants/internal/org-serving-domain.js";
 
 describe("TenantOperator", () =>
 {
@@ -16,12 +16,12 @@ describe("TenantOperator", () =>
     expect(`openclaw-${name}-bucket`).toBe("openclaw-jente-bucket");
   });
 
-  it("generates correct ingress host", () =>
+  it("serves a user at the ORG host (no per-user subdomain)", () =>
   {
-    const tenant = _makeTenant("sarah");
-    const host = _BuildIngressHost(tenant.metadata!.name!, defaultConfig.ingressDomain);
-
-    expect(host).toBe("sarah.opencrane.local");
+    // The user reaches their pod through the org host `<org>.<base>` via the in-operator
+    // proxy; there is no `<user>.<org>.<base>` host any more.
+    expect(_ResolveOrgServingDomain("acme", undefined, defaultConfig.ingressDomain)).toBe("acme.opencrane.local");
+    expect(_ResolveOrgServingDomain(undefined, undefined, defaultConfig.ingressDomain)).toBe("opencrane.local");
   });
 
   it("respects custom image override", () =>

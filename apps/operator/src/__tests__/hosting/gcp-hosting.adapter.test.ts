@@ -77,14 +77,6 @@ describe("GcpHostingAdapter", () =>
     expect(vol.volume.csi?.volumeAttributes?.bucketName).toBe("opencrane-alice");
   });
 
-  it("returns gce ingress class with the legacy annotation", () =>
-  {
-    const binding = adapter.buildIngressBinding();
-
-    expect(binding.ingressClassName).toBe("gce");
-    expect(binding.annotations["kubernetes.io/ingress.class"]).toBe("gce");
-  });
-
   it("derives bucket names as {prefix}-{tenantName}", async () =>
   {
     await adapter.provisionTenantStorage({ tenantName: "bob", namespace: "default" });

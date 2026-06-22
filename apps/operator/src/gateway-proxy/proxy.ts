@@ -1,24 +1,40 @@
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 
-import type { Logger } from "@opencrane/observability";
+import type { Logger } from "pino";
 
-import type { GatewayProxyConfig } from "./config.js";
 import { _OriginAllowed } from "./origin.js";
 import type { FixedWindowRateLimiter } from "./rate-limit.js";
 import { _ResolveTarget } from "./auth-client.js";
 import type { ResolveOutcome } from "./auth-client.js";
 
+/** The proxy runtime settings the handler needs (a subset of the operator config). */
+export interface GatewayProxyRuntime
+{
+  /** Internal control-plane base URL the delegated-auth call targets. */
+  controlPlaneUrl: string;
+  /** The OpenClaw pod gateway port the proxy forwards to (cluster-internal). */
+  gatewayPort: number;
+  /** In-cluster DNS suffix for the pod Service FQDN (e.g. `svc.cluster.local`). */
+  clusterDomain: string;
+  /** Header the verified identity is injected into for the pod's trusted-proxy auth. */
+  userHeader: string;
+  /** Exact `Origin` values allowed (CSWSH), for vanity hosts. */
+  allowedOrigins: string[];
+  /** Platform base domains; any `https://<org>.<base>` host is allowed (CSWSH). */
+  allowedOriginBaseDomains: string[];
+}
+
 /** Minimal WS reverse-proxy surface the handler needs (satisfied by `http-proxy`). */
 export interface WsProxy
 {
-  ws(req: IncomingMessage, socket: Duplex, head: Buffer, options: { target: string }, callback: (err: Error) => void): void;
+  ws(req: IncomingMessage, socket: Duplex, head: Buffer, options: { target: string; headers?: Record<string, string> }, callback: (err: Error) => void): void;
 }
 
 /** Dependencies for {@link _HandleUpgrade}; injectable so the handler is unit-testable. */
 export interface UpgradeDeps
 {
-  config: GatewayProxyConfig;
+  config: GatewayProxyRuntime;
   proxy: WsProxy;
   limiter: FixedWindowRateLimiter;
   log: Logger;
@@ -30,18 +46,19 @@ export interface UpgradeDeps
 const _RESOLVE_TIMEOUT_MS = 5_000;
 
 /**
- * Authorise and route a single gateway WebSocket upgrade — the proxy's only job.
+ * Authorise and route a single gateway WebSocket upgrade — the proxy's only job, now
+ * folded into the operator process.
  *
  * Order is deliberate, cheapest-and-strictest first:
  *   1. **Origin allowlist** (CSWSH) — refuse before spending a control-plane call.
  *   2. **Delegated auth** — the control plane decides identity + forward target; the
  *      proxy holds NO session logic (it only replays the cookie).
  *   3. **Per-identity rate limit** — abuse backstop, keyed on the resolved email.
- *   4. **Reverse-proxy** the upgrade to `openclaw-<user>.<ns>.svc:<port>`.
+ *   4. **Inject + forward** — strip any client `X-Forwarded-User`, set it from the
+ *      control-plane resolution, and reverse-proxy to `openclaw-<user>.<ns>.svc:<port>`.
  *
- * Every refusal closes the socket with a status line and is logged. The proxy never
- * makes an authorization decision itself — cross-tenant safety rests on the control
- * plane's `gateway-resolve` (routing) plus per-pod owner pinning (CONN.10).
+ * Every refusal closes the socket with a status line and is logged. Cross-tenant safety
+ * rests on the control plane's `gateway-resolve` (routing) plus per-pod owner pinning.
  *
  * @param deps   - Injected config, proxy, limiter, logger, and (optionally) resolver.
  * @param req    - The HTTP upgrade request.
@@ -52,11 +69,11 @@ export async function _HandleUpgrade(deps: UpgradeDeps, req: IncomingMessage, so
 {
   const { config, proxy, limiter, log } = deps;
   const resolve = deps.resolve ?? _ResolveTarget;
-  const reqLog = log.child({ remoteAddress: req.socket.remoteAddress, url: req.url });
+  const reqLog = log.child({ component: "gateway-proxy", remoteAddress: req.socket.remoteAddress, url: req.url });
 
   // 1. CSWSH guard — fail closed on a missing or non-allowlisted Origin.
   const origin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
-  if (!_OriginAllowed(origin, config.allowedOrigins))
+  if (!_OriginAllowed(origin, config.allowedOrigins, config.allowedOriginBaseDomains))
   {
     reqLog.warn({ origin }, "gateway upgrade refused: origin not allowlisted");
     _refuse(socket, 403);
@@ -93,10 +110,11 @@ export async function _HandleUpgrade(deps: UpgradeDeps, req: IncomingMessage, so
     return;
   }
 
-  // 4. Reverse-proxy to the resolved pod's cluster-internal gateway Service.
+  // 4. Strip any client-supplied identity header, inject the verified one, forward.
+  delete req.headers[config.userHeader.toLowerCase()];
   const target = `ws://${podService.name}.${podService.namespace}.${config.clusterDomain}:${config.gatewayPort}`;
   reqLog.info({ email: user.email, tenant: tenant.name, target }, "gateway upgrade authorised; proxying");
-  proxy.ws(req, socket, head, { target }, function _onProxyError(err: Error)
+  proxy.ws(req, socket, head, { target, headers: { [config.userHeader]: user.email } }, function _onProxyError(err: Error)
   {
     reqLog.error({ err, target }, "gateway proxy transport error");
     if (!socket.destroyed)
@@ -116,7 +134,6 @@ const _REASONS: Record<number, string> = {
 
 /**
  * Refuse an upgrade by writing a bare HTTP response and closing the socket.
- * A WS upgrade has no response object yet, so we hand-write the status line.
  *
  * @param socket - The raw client socket to close.
  * @param status - The HTTP status to report before closing.

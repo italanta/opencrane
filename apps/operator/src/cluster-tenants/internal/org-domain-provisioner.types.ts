@@ -60,13 +60,11 @@ export interface OrgDomainProvisionRequest
 /** Result reported back to the reconciler so it can stamp the org's status. */
 export interface OrgDomainProvisionResult
 {
-  /** Canonical org apex the record + cert were provisioned for (`<name>.<base>`). */
+  /** Canonical org host the record (and any vanity cert) were provisioned for (`<name>.<base>`). */
   orgDomain: string;
-  /** The per-org wildcard DNS name (`*.<name>.<base>`). */
-  wildcardDnsName: string;
-  /** Name of the cert-manager-managed TLS Secret holding the issued wildcard cert. */
+  /** Name of the per-org vanity TLS Secret, when a vanity cert was issued. */
   tlsSecretName?: string;
-  /** Whether issuance completed. False while DNS-01 is in flight OR when skipped. */
+  /** Whether the org-host DNS record (and any vanity cert) is ready. */
   ready: boolean;
   /**
    * True when the backend (cert-manager / DNS) was unavailable and the step was

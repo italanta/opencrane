@@ -666,42 +666,24 @@ skillRegistry:
 # forwards to the resolved `openclaw-<user>.<ns>.svc` pod. OFF by default — enabling
 # it is the per-org-host cutover (see website/security/connection-security.md); until
 # then the operator keeps minting per-user Ingresses.
+# -- Identity-routing gateway proxy (DOMAIN.T4), folded IN-PROCESS into the operator
+# (interim — can be split into its own pod later). When enabled, the operator runs a WS
+# proxy on `port`: the per-org host's gateway WS upgrade is path-routed here, the proxy
+# delegates auth to the control plane (/auth/gateway-resolve), injects X-Forwarded-User,
+# and reverse-proxies to the user's pod. OFF by default — enabling it makes the operator
+# pod internet-facing (via the wildcard Ingress), a deliberate interim trade-off.
 gatewayProxy:
   enabled: false
-  image:
-    repository: ghcr.io/italanta/opencrane-gateway-proxy
-    tag: latest
-    pullPolicy: IfNotPresent
-  replicas: 1
-  service:
-    port: 8090
-  # -- Exact `Origin` values allowed on a gateway WS upgrade (scheme://host[:port]).
-  #    EMPTY = fail closed (every browser upgrade refused). Set to the org host(s)
-  #    this proxy fronts, e.g. ["https://acme.opencrane.ai"]. CORS does not cover
-  #    WebSockets, so this allowlist is the only Origin defence.
+  # -- TCP port the operator's proxy server listens on (distinct from the gateway port).
+  port: 8090
+  # -- Exact `Origin` values allowed on a gateway WS upgrade (CSWSH), for vanity hosts.
   allowedOrigins: []
-  # -- Max gateway sockets one identity may open per minute (per replica abuse backstop).
+  # -- Platform base domains; any `https://<org>.<base>` host is allowed without
+  #    enumeration. Defaults to [ingress.domain] when empty. Empty AND no exact origins
+  #    = fail closed (every browser upgrade refused). CORS does not cover WebSockets.
+  allowedOriginBaseDomains: []
+  # -- Max gateway sockets one identity may open per minute (per operator replica).
   rateLimitPerMinute: 60
-  podSecurityContext:
-    runAsNonRoot: true
-    runAsUser: 10001
-    runAsGroup: 10001
-    fsGroup: 10001
-    seccompProfile:
-      type: RuntimeDefault
-  securityContext:
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop:
-        - ALL
-    readOnlyRootFilesystem: true
-  resources:
-    requests:
-      cpu: 50m
-      memory: 64Mi
-    limits:
-      cpu: 500m
-      memory: 128Mi
 
 # -- Audience-bound projected token settings for tenant access into ingress planes
 projectedIdentity:

@@ -22,6 +22,11 @@ spec:
         - name: operator
           image: "{{ .Values.operator.image.repository }}:{{ .Values.operator.image.tag }}"
           imagePullPolicy: {{ .Values.operator.image.pullPolicy }}
+          {{- if .Values.gatewayProxy.enabled }}
+          ports:
+            - name: gateway-proxy
+              containerPort: {{ .Values.gatewayProxy.port }}
+          {{- end }}
           env:
             # -- This pod's own namespace (downward API). Used only as the safe
             #    fallback host for runtime-plane URLs when their env is unset, so a
@@ -72,6 +77,22 @@ spec:
             #    abused by other pods. Set to the ingress controller's pod source range.
             - name: GATEWAY_TRUSTED_PROXIES
               value: {{ join "," .Values.tenant.gateway.trustedProxies | quote }}
+            {{- if .Values.gatewayProxy.enabled }}
+            # -- Identity-routing gateway proxy, folded in-process (DOMAIN.T4). The operator
+            #    runs a WS proxy on GATEWAY_PROXY_PORT; the wildcard Ingress routes the gateway
+            #    WS upgrade here. CONTROL_PLANE_INTERNAL_URL (below) is its delegated-auth target.
+            - name: GATEWAY_PROXY_ENABLED
+              value: "true"
+            - name: GATEWAY_PROXY_PORT
+              value: {{ .Values.gatewayProxy.port | quote }}
+            - name: GATEWAY_PROXY_ALLOWED_ORIGINS
+              value: {{ join "," .Values.gatewayProxy.allowedOrigins | quote }}
+            # CSWSH base-domain allowlist; defaults to the platform base so every <org>.<base> is allowed.
+            - name: GATEWAY_PROXY_ALLOWED_ORIGIN_BASE_DOMAINS
+              value: {{ default (list .Values.ingress.domain) .Values.gatewayProxy.allowedOriginBaseDomains | join "," | quote }}
+            - name: GATEWAY_PROXY_RATE_LIMIT_PER_MINUTE
+              value: {{ .Values.gatewayProxy.rateLimitPerMinute | quote }}
+            {{- end }}
             - name: HOSTING_PROVIDER
               value: {{ .Values.hosting.provider | quote }}
             {{- if eq .Values.hosting.provider "gcp" }}

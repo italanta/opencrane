@@ -1,21 +1,17 @@
 /**
  * Per-identity fixed-window rate limiter for gateway WS upgrades.
  *
- * Bounds how many sockets one identity may open per minute, so a single
- * compromised or misbehaving session cannot exhaust pod connection slots. The
- * window is in-memory and therefore per-replica — an approximate global limit
- * across N replicas of `limit * N`, which is acceptable for an abuse backstop
- * (the authoritative cross-tenant guard is the control plane's `gateway-resolve`
- * plus per-pod owner pinning, not this counter).
- *
- * A monotonic clock is injected so the limiter is deterministically testable.
+ * Bounds how many sockets one identity may open per minute, so a single compromised
+ * or misbehaving session cannot exhaust pod connection slots. The window is in-memory
+ * (per operator replica); the authoritative cross-tenant guard is the control plane's
+ * `gateway-resolve` plus per-pod owner pinning, not this counter. A monotonic clock is
+ * injected so the limiter is deterministically testable.
  */
 export class FixedWindowRateLimiter
 {
   private readonly limit: number;
   private readonly windowMs: number;
   private readonly now: () => number;
-  /** Per-key { windowStart, count }. Pruned lazily on access. */
   private readonly buckets = new Map<string, { windowStart: number; count: number }>();
 
   /**
@@ -32,8 +28,8 @@ export class FixedWindowRateLimiter
   /**
    * Record an attempt for `key` and report whether it is within the limit.
    *
-   * @param key - The identity to bucket on (e.g. the resolved email).
-   * @returns True when the attempt is allowed; false when the window is exhausted.
+   * @param key - The identity to bucket on (the resolved email).
+   * @returns True when allowed; false when the window is exhausted.
    */
   allow(key: string): boolean
   {

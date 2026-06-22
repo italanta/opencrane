@@ -76,10 +76,10 @@ function _makeCustomApi(clusterTenant?: ClusterTenantResource): k8s.CustomObject
  * are no-op stubs so the reconcile flow runs end-to-end without a cluster.
  */
 function _makeOperator(core: RecordingClient, apps: RecordingClient, networking: RecordingClient,
-                       clusterTenant?: ClusterTenantResource): TenantOperator
+                       clusterTenant?: ClusterTenantResource, statusSink?: Record<string, unknown>[]): TenantOperator
 {
   const customApi = _makeCustomApi(clusterTenant);
-  const statusWriter = { async patchStatus(): Promise<void> {} } as never;
+  const statusWriter = { async patchStatus(_t: unknown, _ns: unknown, status: Record<string, unknown>): Promise<void> { statusSink?.push(status); } } as never;
   const encryptionKeys = { async ensureEncryptionKeySecret(): Promise<void> {} } as never;
   const liteLlmKeys = { async ensureLiteLlmKeySecret(): Promise<void> {} } as never;
   const cleanup = { async cleanupTenant(): Promise<void> {} } as never;
@@ -168,45 +168,43 @@ describe("ClusterTenant isolation enforcement (CT.5 reconcile flow)", () =>
     expect(podSpec?.tolerations?.[0]?.key).toBe("opencrane.io/dedicated");
   });
 
-  it("derives the UserTenant host from the org's apex under the platform base (<user>.<org>.<base>)", async () =>
+  it("serves a ref'd openclaw at the ORG host <org>.<base> (no per-user Ingress)", async () =>
   {
     const clusterTenant = _makeClusterTenant("acme", "ct-acme");
     const tenant = _makeTenant("mike", { clusterTenantRef: "acme" });
 
-    const operator = _makeOperator(core, apps, networking, clusterTenant);
+    const statuses: Record<string, unknown>[] = [];
+    const operator = _makeOperator(core, apps, networking, clusterTenant, statuses);
     await operator.reconcileTenant(tenant);
 
-    // No vanity domain: the org is served at its DERIVED apex <org>.<base>
-    // (acme.opencrane.local), so the user lands at <user>.<org>.<base>.
-    const ingress = networking.created.find((r) => r.kind === "Ingress") as k8s.V1Ingress | undefined;
-    expect(ingress?.spec?.rules?.[0]?.host).toBe("mike.acme.opencrane.local");
+    // No per-user Ingress is minted; the user is served at the org host via the in-operator
+    // proxy. The status records the org host (acme.opencrane.local).
+    expect(networking.created.some((r) => r.kind === "Ingress")).toBe(false);
+    expect(statuses.at(-1)?.ingressHost).toBe("acme.opencrane.local");
   });
 
-  it("a customer-vanity domain CNAMEd onto the org apex overrides the derived apex", async () =>
+  it("serves a ref'd openclaw at the vanity host when a vanity domain is set", async () =>
   {
     const clusterTenant = _makeClusterTenant("acme", "ct-acme");
     clusterTenant.spec.vanityDomain = "ai.client-company.com";
     const tenant = _makeTenant("mike", { clusterTenantRef: "acme" });
 
-    const operator = _makeOperator(core, apps, networking, clusterTenant);
+    const statuses: Record<string, unknown>[] = [];
+    const operator = _makeOperator(core, apps, networking, clusterTenant, statuses);
     await operator.reconcileTenant(tenant);
 
-    // With a vanity overlay set, the user serves under the vanity name.
-    const ingress = networking.created.find((r) => r.kind === "Ingress") as k8s.V1Ingress | undefined;
-    expect(ingress?.spec?.rules?.[0]?.host).toBe("mike.ai.client-company.com");
+    expect(statuses.at(-1)?.ingressHost).toBe("ai.client-company.com");
   });
 
-  it("a ref-less openclaw derives its host at the bare platform base (<user>.<base>)", async () =>
+  it("serves a ref-less openclaw at the bare platform base host", async () =>
   {
-    // No parent org → no apex to derive; the user serves directly under the platform
-    // base (config.ingressDomain), so the single-install default path is unchanged.
     const tenant = _makeTenant("plain");
 
-    const operator = _makeOperator(core, apps, networking);
+    const statuses: Record<string, unknown>[] = [];
+    const operator = _makeOperator(core, apps, networking, undefined, statuses);
     await operator.reconcileTenant(tenant);
 
-    const ingress = networking.created.find((r) => r.kind === "Ingress") as k8s.V1Ingress | undefined;
-    expect(ingress?.spec?.rules?.[0]?.host).toBe("plain.opencrane.local");
+    expect(statuses.at(-1)?.ingressHost).toBe("opencrane.local");
   });
 
   it("default (ref-less) openclaw renders no namespace/quota/limitrange and no scheduling", async () =>

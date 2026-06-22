@@ -1,0 +1,54 @@
+{{- if and .Values.ingress.enabled .Values.gatewayProxy.enabled -}}
+{{- /*
+Single-per-org-host topology (DOMAIN.T4). Every org is served at its own host under the
+platform wildcard `*.<ingress.domain>` (e.g. `acme.weownai.eu`). One wildcard Ingress covers
+them all and path-routes the SAME origin:
+  - `/api/*`  → the control plane (so the OIDC session cookie is host-scoped to the org host)
+  - `/`       → the operator's in-process gateway proxy (the gateway WebSocket upgrade)
+There are NO per-user subdomains and NO per-user Ingresses; the proxy routes each socket to the
+right pod by session identity (see /auth/gateway-resolve). The org host gets an EXPLICIT
+external-dns record (org-domain provisioner) and rides the platform `*.<domain>` TLS cert.
+See website/security/connection-security.md.
+*/ -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "opencrane.fullname" . }}-org-wildcard
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway-proxy
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ printf "*.%s" .Values.ingress.domain | quote }}
+      secretName: {{ .Values.ingress.tls.secretName | default "opencrane-wildcard-tls" }}
+  {{- end }}
+  rules:
+    - host: {{ printf "*.%s" .Values.ingress.domain | quote }}
+      http:
+        paths:
+          # API + OIDC login/callback on the org host (host-scoped session cookie).
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "opencrane.fullname" . }}-control-plane
+                port:
+                  number: {{ .Values.controlPlane.service.port }}
+          # Everything else (the gateway WebSocket upgrade) → the operator's proxy Service.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "opencrane.fullname" . }}-gateway-proxy
+                port:
+                  number: {{ .Values.gatewayProxy.port }}
+{{- end }}

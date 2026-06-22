@@ -12,6 +12,7 @@ import { _CreateTenantOperator, IdleChecker } from "./tenants/index.js";
 import { _CreateClusterTenantOperator } from "./cluster-tenants/index.js";
 import { PolicyOperator } from "./policies/operator.js";
 import { _ReadTenantRolloutConfig, TenantUpdateWithCanaryStrategyController } from "./tenant-rollout/tenant-update-with-canary-strategy.controller.js";
+import { GatewayProxyServer } from "./gateway-proxy/server.js";
 
 /** Root logger for the opencrane-operator process — structured JSON, trace-correlated. */
 const log = ___CreateLogger("operator");
@@ -24,6 +25,9 @@ let _idleCheckerRef: IdleChecker | null = null;
 
 /** Reference to the drift repairer, set during startup for shutdown access. */
 let _driftRepairerRef: RuntimePlaneDriftRepairer | null = null;
+
+/** Reference to the in-process gateway proxy server, for graceful shutdown. */
+let _gatewayProxyRef: GatewayProxyServer | null = null;
 
 /**
  * Bootstrap and start both the Tenant and Policy operator watch loops,
@@ -112,6 +116,31 @@ async function main(): Promise<void>
   _idleCheckerRef = idleChecker;
   idleChecker.start();
 
+  // Start the in-process identity-routing gateway proxy (DOMAIN.T4) when enabled. It
+  // serves the gateway WebSocket on its own port: the per-org Ingress routes the WS
+  // upgrade here, the proxy delegates auth to the control plane (/auth/gateway-resolve),
+  // injects the verified X-Forwarded-User, and reverse-proxies to the user's pod. It
+  // holds no Kubernetes client and no secrets.
+  if (config.gatewayProxyEnabled)
+  {
+    const gatewayProxy = new GatewayProxyServer({
+      port: config.gatewayProxyPort,
+      controlPlaneUrl: config.controlPlaneInternalUrl,
+      gatewayPort: config.gatewayPort,
+      clusterDomain: config.clusterDomain,
+      userHeader: config.gatewayTrustedProxyUserHeader,
+      allowedOrigins: config.gatewayProxyAllowedOrigins,
+      allowedOriginBaseDomains: config.gatewayProxyAllowedOriginBaseDomains,
+      rateLimitPerMinute: config.gatewayProxyRateLimitPerMinute,
+    }, log);
+    gatewayProxy.start();
+    _gatewayProxyRef = gatewayProxy;
+  }
+  else
+  {
+    log.info("in-operator gateway proxy disabled (GATEWAY_PROXY_ENABLED not true)");
+  }
+
   // Start all watchers concurrently
   await Promise.all([tenantOperator.start(), policyOperator.start(), clusterTenantOperator.start()]);
 }
@@ -132,6 +161,7 @@ async function _shutdown(signal: string): Promise<void>
 
   try
   {
+    await _gatewayProxyRef?.stop();
     await ___ShutdownTelemetry();
   }
   finally
