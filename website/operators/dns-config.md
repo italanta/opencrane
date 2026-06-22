@@ -191,7 +191,7 @@ token takes effect on re-apply):
 
 This authorises the issuer **on the zone**. Per **org** the cluster-tenants operator then
 issues a `*.<org>.<base>` certificate at provision time, reusing the same issuer/token (see
-[Multi-level wildcard TLS](/agents/cluster-architecture#multi-level-wildcard-tls) and
+[Why two wildcard levels](#why-two-wildcard-levels) above and
 `platform/helm/examples/per-org-wildcard-cert.yaml`). The certificate appearing in a Secret
 happens on a live cluster with real DNS; this endpoint's job is to author and apply the
 issuer + Secret correctly.
