@@ -91,7 +91,7 @@ export function _RegisterClusterTenants(parent: Command, getConfig: () => CliCon
     .command("create <name>")
     .description("Create a new cluster tenant")
     .requiredOption("--display-name <displayName>", "Human-readable customer name")
-    .option("--base-domain <domain>", "Customer-owned base domain for UserTenant gateways (e.g. ai.client-company.com)")
+    .option("--vanity-domain <domain>", "Optional customer-vanity domain CNAMEd onto the org apex (e.g. ai.client-company.com)")
     .requiredOption("--tier <tier>", "Isolation tier: shared|dedicatedNodes|dedicatedCluster")
     .option("--compute <mode>", "Compute placement: shared|dedicated", "shared")
     .option("--node-pool <nodePool>", "Dedicated node pool name (required when --compute dedicated)")
@@ -108,7 +108,7 @@ export function _RegisterClusterTenants(parent: Command, getConfig: () => CliCon
       const body = {
         name,
         displayName: opts.displayName,
-        ...(opts.baseDomain ? { baseDomain: opts.baseDomain } : {}),
+        ...(opts.vanityDomain ? { vanityDomain: opts.vanityDomain } : {}),
         isolationTier: opts.tier as "shared" | "dedicatedNodes" | "dedicatedCluster",
         compute: _buildComputeBody(opts.compute, opts.nodePool),
         resources: { quota: _BuildQuotaBody(opts) },
@@ -128,7 +128,7 @@ export function _RegisterClusterTenants(parent: Command, getConfig: () => CliCon
     .command("update <name>")
     .description("Update a cluster tenant (only the supplied fields change)")
     .option("--display-name <displayName>", "New human-readable customer name")
-    .option("--base-domain <domain>", "New customer-owned base domain (e.g. ai.client-company.com)")
+    .option("--vanity-domain <domain>", "New customer-vanity domain CNAMEd onto the org apex (e.g. ai.client-company.com)")
     .option("--tier <tier>", "New isolation tier: shared|dedicatedNodes|dedicatedCluster")
     .option("--compute <mode>", "New compute placement: shared|dedicated")
     .option("--node-pool <nodePool>", "New dedicated node pool name")
@@ -145,7 +145,7 @@ export function _RegisterClusterTenants(parent: Command, getConfig: () => CliCon
       const quota = _BuildQuotaBody(opts);
       const body = {
         ...(opts.displayName ? { displayName: opts.displayName } : {}),
-        ...(opts.baseDomain !== undefined ? { baseDomain: opts.baseDomain } : {}),
+        ...(opts.vanityDomain !== undefined ? { vanityDomain: opts.vanityDomain } : {}),
         ...(opts.tier ? { isolationTier: opts.tier as "shared" | "dedicatedNodes" | "dedicatedCluster" } : {}),
         ...(opts.compute ? { compute: _buildComputeBody(opts.compute, opts.nodePool) } : {}),
         ...(Object.keys(quota).length > 0 ? { resources: { quota } } : {}),

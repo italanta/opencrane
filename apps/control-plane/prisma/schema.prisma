@@ -137,8 +137,8 @@ model ClusterTenant {
   name           String                     @id
   /// Human-readable customer name.
   displayName    String                     @map("display_name")
-  /// Customer-owned base domain serving this tenant's UserTenant gateways (<user>.<baseDomain>); null falls back to the per-instance ingress.domain.
-  baseDomain     String?                    @map("base_domain")
+  /// Optional customer-vanity domain CNAMEd onto the org's canonical apex (<name>.<platformBaseDomain>); an overlay, not the org identity. Null → only the derived apex serves the org.
+  vanityDomain   String?                    @map("vanity_domain")
   /// Isolation strength chosen for this customer.
   isolationTier  ClusterTenantIsolationTier @default(Shared) @map("isolation_tier")
   /// Whether the customer shares nodes or gets a dedicated pool.

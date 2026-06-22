@@ -271,7 +271,7 @@ const ClusterTenantSchema = {
   properties: {
     name: { type: "string", description: "Stable cluster-scoped identifier (the customer key)." },
     displayName: { type: "string", description: "Human-readable customer name." },
-    baseDomain: { type: "string", description: "Customer-owned base domain serving this tenant's UserTenant gateways (<user>.<baseDomain>); falls back to the per-instance ingress.domain when unset." },
+    vanityDomain: { type: "string", description: "Optional customer-vanity domain CNAMEd onto the org's derived apex (<name>.<platformBaseDomain>); an overlay, not the org identity. When unset, only the derived apex serves the org." },
     isolationTier: { type: "string", enum: ["shared", "dedicatedNodes", "dedicatedCluster"], description: "Isolation strength chosen for this customer." },
     compute: {
       type: "object",
@@ -304,7 +304,7 @@ const ClusterTenantWriteSchema = {
   properties: {
     name: { type: "string", description: "Stable cluster-scoped identifier (the customer key)." },
     displayName: { type: "string", description: "Human-readable customer name." },
-    baseDomain: { type: "string", description: "Customer-owned base domain (e.g. ai.client-company.com); optional, falls back to the per-instance ingress.domain." },
+    vanityDomain: { type: "string", description: "Optional customer-vanity domain CNAMEd onto the org's derived apex (<name>.<platformBaseDomain>); an overlay, not the org identity." },
     isolationTier: { type: "string", enum: ["shared", "dedicatedNodes", "dedicatedCluster"] },
     compute: {
       type: "object",
@@ -348,7 +348,7 @@ const ClusterTenantUpdateSchema = {
   description: "Partial cluster-tenant update; the immutable name comes from the path. Every field is optional — only those present are changed.",
   properties: {
     displayName: { type: "string", description: "New human-readable customer name (must be non-blank when present)." },
-    baseDomain: { type: "string", description: "New customer-owned base domain; an empty string clears it (back to the per-instance ingress.domain fallback)." },
+    vanityDomain: { type: "string", description: "New customer-vanity domain CNAMEd onto the org apex; an empty string clears it (back to the derived <name>.<base> apex only)." },
     isolationTier: { type: "string", enum: ["shared", "dedicatedNodes", "dedicatedCluster"], description: "New isolation strength; re-gated against the provisioner registry when changed." },
     compute: {
       type: "object",

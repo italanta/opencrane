@@ -14,6 +14,7 @@ export {
   type ClusterTenantResources,
   type ClusterTenantStatus,
 } from "./cluster-tenant.types.js";
+export { _BuildOrgDomain, _BuildOrgWildcard, _BuildUserHost } from "./domain-topology.types.js";
 export { GrantAccess, GrantScope, GrantSubjectType, type Grant } from "./grant.types.js";
 export { type Group } from "./group.types.js";
 export { McpCredentialBrokeringMode, McpServerStatus, McpServerTransport, type McpServer, type McpServerCredential } from "./mcp-server.types.js";

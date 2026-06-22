@@ -36,7 +36,36 @@ follows [Keep a Changelog](https://keepachangelog.com/); the project uses
   or an owner/admin member of that specific org. Anonymous callers are rejected (401) in any real
   deployment.
 
+- **One fixed platform domain serves every org and user — no customer DNS delegation required.** The
+  platform now owns a single wildcard base (`ingress.domain`, e.g. `weownai.eu`) and a fixed
+  super-operator/control-plane host (`ingress.controlPlaneHost`, default `platform.<base>`). Each
+  organisation is automatically reachable at `<org>.<base>` (e.g. `acme.weownai.eu`) and each user at
+  `<user>.<org>.<base>` (e.g. `mike.acme.weownai.eu`) — derived names, created with zero per-name DNS
+  work once the org's wildcard exists. A customer who wants their own brand adds a single `CNAME` from
+  their domain onto `<org>.<base>` and sets the org's `vanityDomain` (`oc cluster-tenant update <org>
+  --vanity-domain …`); OpenCrane adds it to the org's TLS so it is browser-trusted, while the canonical
+  `<org>.<base>` keeps working.
+- **TLS now covers the full two-level hierarchy.** The chart issues the platform wildcard certificate
+  (`*.<base>` + apex + control-plane host) at install, and each org gets its own `*.<org>.<base>`
+  certificate at provision time (cert-manager DNS-01) — because a single wildcard cannot reach the
+  per-user `<user>.<org>.<base>` level. New users under an existing org get HTTPS automatically.
+- **Per-org domain serving + TLS is now actually provisioned, not just specified.** OpenCrane carries a
+  working `OrgDomainProvisioner` that, for a given org, applies the per-org wildcard `Certificate`
+  (`*.<org>.<base>` + the org apex, plus any vanity domain) through cert-manager and ensures the
+  matching `*.<org>.<base>` / `<org>.<base>` A records in the platform's Cloud DNS zone — so every user
+  under the org both resolves and is browser-trusted with no per-user setup. It is idempotent and
+  fail-closed: on a cluster without cert-manager it reports the org as not-yet-ready with a clear reason
+  instead of failing, and the Cloud DNS integration is an optional dependency that on-prem installs never
+  load. As before, this runs only from the org reconciler — creating an org over the API never touches
+  DNS or cert-manager directly.
+
 ### Changed
+
+- **A ClusterTenant's `baseDomain` is replaced by `vanityDomain`.** Under the fixed-wildcard topology an
+  org no longer brings its own base domain (its serving domain is derived as `<org>.<base>`); the field is
+  repurposed as an OPTIONAL customer-vanity domain CNAMEd onto that apex. The API, `oc cluster-tenant`
+  CLI (`--vanity-domain`), and the ClusterTenant CRD use the new name; existing values are carried over by
+  the migration as vanity overlays.
 
 - **The control-plane Helm chart now wires human-login OIDC end to end.** A new
   `controlPlane.oidc.*` values block (issuer/client/redirect, client+session secret via an

@@ -29,6 +29,9 @@
     "pino-http": "^10.0.0",
     "prisma": "^6.0.0"
   },
+  "optionalDependencies": {
+    "@google-cloud/dns": "^4.0.0"
+  },
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",

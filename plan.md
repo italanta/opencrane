@@ -92,6 +92,44 @@ creates a billing account, then creates an org and becomes its root admin.
 - Tests: billing-account create, create-records-owner, the full guard matrix, membership-derived `isOrgAdmin`
   (+20; control-plane suite 407 green).
 
+### Track DOMAIN — Fixed wildcard + CNAME domain topology — LANDED 2026-06-22
+
+Replaced the "each customer brings their own domain + delegated DNS-01" model with a **fixed-wildcard
+topology**: ONE platform org-wildcard base + a fixed super-operator/control-plane host; orgs are derived at
+`<org>.<base>`, users at `<user>.<org>.<base>`; customers optionally CNAME a vanity domain onto `<org>.<base>`.
+Stacked on `feat/org-admin-billing`.
+- **Chart values:** `ingress.controlPlaneHost` (fixed super-operator host, defaults `platform.<base>`,
+  distinct from the wildcard) + `ingress.domain` reframed as the platform org-wildcard base.
+  `control-plane-ingress.yaml` serves the fixed host; the platform `Certificate` SANs are
+  `*.<base>` + apex + control-plane host (operator/control-plane deployment templates untouched to keep merges trivial).
+- **Host derivation:** `_BuildOrgDomain`/`_BuildUserHost`/`_BuildOrgWildcard` in `libs/contracts`
+  (`domain-topology.types.ts`); operator `_ResolveOrgServingDomain` derives `<user>.<org>.<base>` with the
+  vanity domain as an overlay (ref-less openclaws unchanged at `<user>.<base>`).
+- **Schema:** ClusterTenant `base_domain` → `vanity_domain` (`migrations/0024`), repurposed as the optional
+  CNAME overlay; mirrored through contracts, openapi, CLI (`--vanity-domain`), and the CRD.
+- **Multi-level wildcard TLS (decided):** `*.<base>` covers org apexes but NOT `<user>.<org>.<base>` (a
+  wildcard matches one label) → a **per-org** `*.<org>.<base>` `Certificate` issued at org-provision via
+  cert-manager DNS-01 (reference manifest `platform/helm/examples/per-org-wildcard-cert.yaml`).
+- **DNS automation:** `modules/dns` extended — platform wildcard + apex + control-plane-host records, and a
+  `var.org_wildcards`-driven per-org `*.<org>.<base>` record matching the operator hook's shape.
+- **Per-org provisioning — IMPLEMENTED:** `DefaultOrgDomainProvisioner`
+  (`core/cluster-tenants/org-domain.provisioner.ts`) behind the `OrgDomainProvisioner` interface. It applies
+  the per-org wildcard `Certificate` (`*.<org>.<base>` + apex/vanity SANs) via cert-manager DNS-01
+  (`CertManagerClient` over the custom-objects API, mirroring `apply-dns-config.ts`) and ensures the
+  `*.<org>.<base>`/`<org>.<base>` A records in the terraform-managed Cloud DNS zone (`CloudDnsClient`, a thin
+  wrapper over `@google-cloud/dns` as an **optional** dep, lazy-loaded like the operator's `GcsBucketClient`).
+  Both side effects idempotent. **Fail-closed + gated:** an absent cert-manager CRD yields `ready:false` + a
+  reason and never crashes, while the resource-authoring path stays real (not a no-op stub). Wired from env via
+  `_BuildOrgDomainProvisioner`; the create path never mutates DNS/cert-manager — only the reconciler does
+  (fail-closed, API-first).
+- **Docs:** `docs/agents/cluster-architecture.md` + `website/operators/dns-config.md` rewritten to the new
+  topology with the exact customer CNAME instruction.
+- **Remaining (PR #50):** the CR watcher that CALLS `provisionOrgDomain(...)` on the `pending → ready`
+  reconcile. The provisioner itself is done; live cert/DNS apply remains the batched human-authorised step
+  (cert-manager is not installed on the shared dev cluster) — prepared, not executed.
+- Validation: `helm template` + `kubectl --dry-run=server` (control-plane Ingress) green; operator (105),
+  control-plane (424; +17 provisioner/cert/DNS unit tests), cli (4) suites green; touched-package build + lint clean.
+
 ### Track P5 — Close Phase 5 — ✅ COMPLETE · full history: plan-done.md § Completed Tracks (archived 2026-06-15)
 
 ### Track P4-A — Finish Phase 4 runtime-plane enforcement gaps — ✅ COMPLETE · full history: plan-done.md § Completed Tracks (archived 2026-06-15)

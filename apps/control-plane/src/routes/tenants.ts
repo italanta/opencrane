@@ -435,7 +435,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
 
     // Normalise the parent ClusterTenant ref so a present-but-empty value clears
     // it (stored null, field deleted from the CRD spec via merge-patch), mirroring
-    // how baseDomain is cleared on cluster-tenants. Absent → field left untouched.
+    // how vanityDomain is cleared on cluster-tenants. Absent → field left untouched.
     const clusterTenantRefProvided = body.clusterTenantRef !== undefined;
     const normalizedClusterTenantRef = clusterTenantRefProvided && body.clusterTenantRef!.trim() ? body.clusterTenantRef!.trim() : null;
 

@@ -1,5 +1,11 @@
 {{- if .Values.ingress.enabled -}}
-{{- $host := .Values.ingress.domain -}}
+{{- /*
+Fixed-wildcard topology: the control plane is the FIXED super-operator host, distinct
+from the org-wildcard base (`ingress.domain`). It serves at `ingress.controlPlaneHost`
+when set, else the derived default `platform.<ingress.domain>` — never under the org
+wildcard `*.<ingress.domain>`. See docs/agents/cluster-architecture.md → "Tenancy Model".
+*/ -}}
+{{- $host := .Values.ingress.controlPlaneHost | default (printf "platform.%s" .Values.ingress.domain) -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

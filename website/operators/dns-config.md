@@ -5,46 +5,58 @@ walks an admin through the happy path; this page documents the model, the full A
 surface, the cert-manager resources OpenCrane creates, and the per-provider and
 multi-instance options.
 
-## The model: delegate once, manage from the platform
+## The model: one fixed platform wildcard, orgs and users derived under it
 
-OpenCrane is designed so DNS is a **one-time delegation** at your provider, after which
-every assistant is reachable with no further record changes:
+OpenCrane uses a **fixed wildcard topology**. The platform owns **one base domain**
+(`<base>`, e.g. `weownai.eu`) and a **fixed super-operator / control-plane host**
+(`platform.<base>`). Every org and user name is **derived** under the base — customers do
+not bring their own domain:
 
-| Step | Where | How often |
-|------|-------|-----------|
-| Apex `A`/`CNAME` → ingress address | your DNS provider | once |
-| Wildcard `*.<zone>` `A`/`CNAME` → ingress address | your DNS provider | once |
-| `oc platform dns set …` (provider token for DNS-01) | the platform | once |
-| New assistant `alice.<zone>` resolves **and** gets HTTPS | automatic | every assistant, zero touch |
+| Name | Where it points | Set how often |
+|------|-----------------|---------------|
+| Control-plane host `platform.<base>` → ingress | platform DNS | once, at install |
+| Apex `<base>` → ingress | platform DNS | once, at install |
+| Platform wildcard `*.<base>` → ingress (resolves every **org apex** `<org>.<base>`) | platform DNS | once, at install |
+| Per-org wildcard `*.<org>.<base>` → ingress (resolves every **user** `<user>.<org>.<base>`) | platform DNS | automatic, per org at provision time |
+| New user `alice.<org>.<base>` resolves **and** gets HTTPS | — | automatic, zero touch |
 
-Two records and one token, set once. The provider stays the source of truth for the
-*delegation*; the platform owns everything underneath it.
+So an org is served at `<org>.<base>` (e.g. `acme.weownai.eu`) and its users at
+`<user>.<org>.<base>` (e.g. `mike.acme.weownai.eu`).
 
-### Why a wildcard
+### Why two wildcard levels
 
-A wildcard record (`*.<zone>`) resolves **every** name at that level to the cluster
-ingress address, so `alice.<zone>`, `bob.<zone>` and any future assistant resolve the
-moment they are created — without adding a record per assistant. All names land on the
-same ingress; the ingress controller then routes by the HTTP `Host:` header to the right
-tenant. DNS gets the request to the cluster; the ingress decides *which* assistant.
+A DNS wildcard matches **exactly one label**. `*.<base>` resolves every org apex
+`<org>.<base>`, but it does **not** reach the extra label in `<user>.<org>.<base>`. So each
+org gets its **own** wildcard `*.<org>.<base>` (record + certificate), created when the org
+is provisioned. Once an org exists, every user under it resolves and gets HTTPS the moment
+they are created — no per-user record. All names land on the same ingress; the ingress
+controller routes by the HTTP `Host:` header to the right gateway.
 
 ### Why a provider token is still needed
 
-The wildcard solves **routing**, but HTTPS needs a certificate valid for the name in the
-browser. OpenCrane issues a single wildcard certificate (`*.<zone>`) via Let's Encrypt,
-and a wildcard certificate can only be validated with the **ACME DNS-01 challenge** —
-cert-manager must briefly create a `_acme-challenge.<zone>` `TXT` record. The provider
-token you supply is used for **exactly that, and only that**: writing and removing that
-temporary validation record. cert-manager then auto-renews the certificate (~every 60
-days) using the same token. Per-assistant Ingresses reference the shared wildcard cert
-Secret, so adding an assistant needs no new issuance.
+Wildcards solve **routing**; HTTPS needs a certificate valid for the name in the browser.
+OpenCrane issues wildcard certificates via Let's Encrypt — the **platform** cert
+(`*.<base>` + apex + control-plane host) and, per org, a `*.<org>.<base>` cert. A wildcard
+certificate can only be validated with the **ACME DNS-01 challenge** — cert-manager briefly
+creates a `_acme-challenge.<zone>` `TXT` record. The provider token you supply is used for
+**exactly that, and only that**: writing and removing that temporary validation record.
+cert-manager then auto-renews (~every 60 days) using the same token.
 
-::: tip This page is about the wildcard model
-Programmatic, record-level management (real per-host `A`/`CNAME` records, custom/vanity
-domains, dropping the wildcard) is an `external-dns` extension that reuses the same
-provider token. It is an open decision — see the DNS-ownership item in
-[Hosting & deployment](/operators/hosting).
-:::
+### Optional: a customer-vanity domain (CNAME)
+
+A customer who wants their **own** domain (e.g. `ai.client-company.com`) does **not**
+delegate or transfer it — they add a single `CNAME` at their own provider pointing it at
+their org apex:
+
+```
+# At the customer's DNS provider, for org "acme" on base "weownai.eu":
+ai.client-company.com.   CNAME   acme.weownai.eu.
+```
+
+Then set the org's `vanityDomain` (`oc cluster-tenant update acme --vanity-domain
+ai.client-company.com`, or the `vanityDomain` field on the API). OpenCrane adds the vanity
+name to the org's TLS SANs so it is browser-trusted. The vanity domain is an **overlay**:
+the org is always also reachable at its canonical `<org>.<base>` apex.
 
 ## Configure it
 
@@ -61,7 +73,7 @@ oc platform dns set \
 | Flag | Required | Meaning |
 |------|----------|---------|
 | `--provider` | yes | DNS-01 solver provider key (`cloudflare`, `digitalocean`, `route53`, `rfc2136`, …) |
-| `--zone` | yes | Base/delegated zone the wildcard cert covers (e.g. `ai.example.com`) |
+| `--zone` | yes | The platform wildcard **base** the certs cover (e.g. `weownai.eu`) — orgs are `<org>.<base>`, users `<user>.<org>.<base>` |
 | `--email` | yes | ACME account contact address (renewal notices) |
 | `--server` | no | ACME directory URL (defaults to Let's Encrypt production) |
 | `--issuer-name` | no | Issuer name to create/update (defaults to `opencrane-issuer`) |
@@ -173,12 +185,16 @@ token takes effect on re-apply):
 1. **A credentials Secret** — `opencrane-dns01-<provider>` (token-based providers only),
    holding the provider token under the `api-token` key.
 2. **A cert-manager issuer** — an ACME DNS-01 issuer referencing that Secret (or the raw
-   solver block). cert-manager then issues/renews the wildcard `*.<zone>` certificate
-   into the Secret that per-tenant Ingresses reference (`ingress.tls.secretName`,
-   default `opencrane-wildcard-tls`).
+   solver block). cert-manager then issues/renews the **platform** wildcard `*.<base>`
+   certificate (plus the apex and the control-plane host) into the Secret the chart
+   references (`ingress.tls.secretName`, default `opencrane-wildcard-tls`).
 
-The certificate appearing in the wildcard Secret happens on a live cluster with real DNS;
-this endpoint's job is to author and apply the two resources correctly.
+This authorises the issuer **on the zone**. Per **org** the cluster-tenants operator then
+issues a `*.<org>.<base>` certificate at provision time, reusing the same issuer/token (see
+[Multi-level wildcard TLS](/agents/cluster-architecture#multi-level-wildcard-tls) and
+`platform/helm/examples/per-org-wildcard-cert.yaml`). The certificate appearing in a Secret
+happens on a live cluster with real DNS; this endpoint's job is to author and apply the
+issuer + Secret correctly.
 
 ## Issuer kind: single vs multi-instance
 

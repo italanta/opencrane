@@ -89,12 +89,14 @@ export interface ClusterTenant
   /** Human-readable customer name. */
   displayName: string;
   /**
-   * Customer-owned base domain this ClusterTenant serves its UserTenant gateways
-   * under (e.g. `ai.client-company.com`). UserTenant hosts are derived as
-   * `<user>.<baseDomain>`. Optional: when unset, the operator falls back to the
-   * per-instance `ingress.domain` Helm value, so existing installs are unchanged.
+   * Optional customer-vanity domain CNAMEd onto this org's canonical apex
+   * `<name>.<platformBaseDomain>` (e.g. `ai.client-company.com`). This is an OVERLAY,
+   * not the org's identity: the org is always served at its derived `<name>.<base>`
+   * apex (and users at `<user>.<name>.<base>`); a vanity domain is an additional name
+   * the customer points at that apex. When unset, only the platform-derived apex
+   * serves the org. See docs/agents/cluster-architecture.md → "Tenancy Model".
    */
-  baseDomain?: string;
+  vanityDomain?: string;
   /** Isolation strength chosen for this customer. */
   isolationTier: ClusterTenantIsolationTier;
   /** Compute placement policy. */

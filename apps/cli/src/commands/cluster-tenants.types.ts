@@ -27,8 +27,8 @@ export interface ClusterTenantCreateOptions extends ClusterTenantQuotaOptions
 {
   /** Human-readable customer name. */
   displayName: string;
-  /** Customer-owned base domain for UserTenant gateways (e.g. ai.client-company.com). */
-  baseDomain?: string;
+  /** Optional customer-vanity domain CNAMEd onto the org apex (e.g. ai.client-company.com). */
+  vanityDomain?: string;
   /** Isolation strength: shared | dedicatedNodes | dedicatedCluster. */
   tier: string;
   /** Compute placement mode: shared | dedicated. */
@@ -44,8 +44,8 @@ export interface ClusterTenantUpdateOptions extends ClusterTenantQuotaOptions
 {
   /** New human-readable customer name. */
   displayName?: string;
-  /** New customer-owned base domain (empty string clears it). */
-  baseDomain?: string;
+  /** New customer-vanity domain CNAMEd onto the org apex (empty string clears it). */
+  vanityDomain?: string;
   /** New isolation tier: shared | dedicatedNodes | dedicatedCluster. */
   tier?: string;
   /** New compute placement mode: shared | dedicated. */
