@@ -93,6 +93,10 @@ importers:
       vitest:
         specifier: ^3.1.0
         version: 3.2.4(@types/node@22.15.31)(jiti@2.6.1)(sass@1.97.1)(tsx@4.21.0)
+    optionalDependencies:
+      '@google-cloud/dns':
+        specifier: ^4.0.0
+        version: 4.0.0(encoding@0.1.13)
 
   apps/harvesting-agent:
     dependencies:
@@ -684,6 +688,14 @@ packages:
 
   '@floating-ui/vue@1.1.11':
     resolution: {integrity: sha512-HzHKCNVxnGS35r9fCHBc3+uCnjw9IWIlCPL683cGgM9Kgj2BiAl8x1mS7vtvP6F9S/e/q4O6MApwSHj8hNLGfw==}
+
+  '@google-cloud/common@5.0.2':
+    resolution: {integrity: sha512-V7bmBKYQyu0eVG2BFejuUjlBt+zrya6vtsKdY+JxMM/dNntPF41vZ9+LhOshEUH01zOHEqBSvI7Dad7ZS6aUeA==}
+    engines: {node: '>=14.0.0'}
+
+  '@google-cloud/dns@4.0.0':
+    resolution: {integrity: sha512-cqwq8rNalRl7gxEVV2w2WITCq7tx4Sk4j+4qfS+ZIPn1yu0Xe4ZxyuthP1KB2IrZDSKZtzRtoYpAA8PrDVmRNw==}
+    engines: {node: '>=14.0.0'}
 
   '@google-cloud/paginator@5.0.2':
     resolution: {integrity: sha512-DJS3s0OVH4zFDB1PzjxAsHqJT6sKVbRwwML0ZBP9PbU7Yebtu/7SWMRzvO2J3nUi9pRNITCfu4LJeooM2w4pjg==}
@@ -2190,6 +2202,10 @@ packages:
   dezalgo@1.0.4:
     resolution: {integrity: sha512-rXSP0bf+5n0Qonsb+SVVfNfIsimO4HEtmnIpPHY8Q1UCzKlQrDMfdobr8nJOOsRgWCyMRqeSBQzmWUMq7zvVig==}
 
+  dns-zonefile@0.2.10:
+    resolution: {integrity: sha512-YXs0T8EjhwI3YFpL4l7n9Uy+g/ufmd3WyDSQsI4mrMNlrrdgK6aN0AbNjOkKoHyF59l/x4Y3/z64F3aJWCKWpg==}
+    hasBin: true
+
   dotenv@16.6.1:
     resolution: {integrity: sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==}
     engines: {node: '>=12'}
@@ -2650,6 +2666,9 @@ packages:
 
   lodash.camelcase@4.3.0:
     resolution: {integrity: sha512-TwuEnCnxbc3rAvhf/LbG7tJUDzhqXyFnv3dtzLOPgCG/hODL7WFnsbwktkD7yUV0RrreP/l1PALq/YSg6VvjlA==}
+
+  lodash.groupby@4.6.0:
+    resolution: {integrity: sha512-5dcWxm23+VAoz+awKmBaiBvzox8+RqMgFhi7UvX9DHZr2HdxHXM/Wrf8cfKpsW37RNrvtPn6hSwNqurSILbmJw==}
 
   long@5.3.2:
     resolution: {integrity: sha512-mNAgZ1GmyNhD7AuqnTG3/VQ26o760+ZYBPKjPvugO8+nLbYfX6TVpJPseBvopbdY+qpZ/lKUnmEc1LeZYS3QAA==}
@@ -3242,6 +3261,9 @@ packages:
 
   streamx@2.23.0:
     resolution: {integrity: sha512-kn+e44esVfn2Fa/O0CPFcex27fjIL6MkVae0Mm6q+E6f0hWv578YCERbv+4m02cjxvDsPKLnmxral/rR6lBMAg==}
+
+  string-format-obj@1.1.1:
+    resolution: {integrity: sha512-Mm+sROy+pHJmx0P/0Bs1uxIX6UhGJGj6xDGQZ5zh9v/SZRmLGevp+p0VJxV7lirrkAmQ2mvva/gHKpnF/pTb+Q==}
 
   string-width@4.2.3:
     resolution: {integrity: sha512-wKyQRQpjJ0sIp62ErSZdGsjMJWsap5oRNihHhu6G7JVO/9jIB6UyevL+tXuOqrng8j/cxKTWyWUwvSTriiZz/g==}
@@ -3988,6 +4010,36 @@ snapshots:
     transitivePeerDependencies:
       - '@vue/composition-api'
       - vue
+
+  '@google-cloud/common@5.0.2(encoding@0.1.13)':
+    dependencies:
+      '@google-cloud/projectify': 4.0.0
+      '@google-cloud/promisify': 4.0.0
+      arrify: 2.0.1
+      duplexify: 4.1.3
+      extend: 3.0.2
+      google-auth-library: 9.15.1(encoding@0.1.13)
+      html-entities: 2.6.0
+      retry-request: 7.0.2(encoding@0.1.13)
+      teeny-request: 9.0.0(encoding@0.1.13)
+    transitivePeerDependencies:
+      - encoding
+      - supports-color
+    optional: true
+
+  '@google-cloud/dns@4.0.0(encoding@0.1.13)':
+    dependencies:
+      '@google-cloud/common': 5.0.2(encoding@0.1.13)
+      '@google-cloud/paginator': 5.0.2
+      '@google-cloud/promisify': 4.0.0
+      arrify: 2.0.1
+      dns-zonefile: 0.2.10
+      lodash.groupby: 4.6.0
+      string-format-obj: 1.1.1
+    transitivePeerDependencies:
+      - encoding
+      - supports-color
+    optional: true
 
   '@google-cloud/paginator@5.0.2':
     dependencies:
@@ -5768,6 +5820,9 @@ snapshots:
       asap: 2.0.6
       wrappy: 1.0.2
 
+  dns-zonefile@0.2.10:
+    optional: true
+
   dotenv@16.6.1: {}
 
   dunder-proto@1.0.1:
@@ -6395,6 +6450,9 @@ snapshots:
     optional: true
 
   lodash.camelcase@4.3.0: {}
+
+  lodash.groupby@4.6.0:
+    optional: true
 
   long@5.3.2: {}
 
@@ -7086,6 +7144,9 @@ snapshots:
     transitivePeerDependencies:
       - bare-abort-controller
       - react-native-b4a
+
+  string-format-obj@1.1.1:
+    optional: true
 
   string-width@4.2.3:
     dependencies:

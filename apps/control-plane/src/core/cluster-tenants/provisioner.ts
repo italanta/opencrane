@@ -1,3 +1,10 @@
 export { SHARED_PROVISIONER_ID, SharedClusterProvisioner } from "./shared-cluster.provisioner.js";
 export { ExternalWebhookProvisioner } from "./external-webhook.provisioner.js";
 export { _ReadExternalWebhookConfig } from "./external-webhook.config.js";
+export { DefaultOrgDomainProvisioner } from "./org-domain.provisioner.js";
+export type { OrgDomainProvisionerConfig } from "./org-domain.provisioner.js";
+export { _BuildOrgDomainProvisioner } from "./org-domain.provisioner.factory.js";
+export { CertManagerClient } from "./cert-manager.client.js";
+export type { CertManagerOperations, CertificateReadiness } from "./cert-manager.client.js";
+export { CloudDnsClient } from "./cloud-dns.client.js";
+export type { CloudDnsOperations } from "./cloud-dns.client.js";
