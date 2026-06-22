@@ -5,8 +5,9 @@ access to **both** the control-plane API and the user's own OpenClaw pod.
 
 > **Terminology:** the per-user OpenClaw agent gateway is a **UserTenant** (the openclaw /
 > `Tenant` CRD); "UserTenant" is the canonical doc name while the CRD kind is still `Tenant`
-> in code. It is exposed at `<user>.<ClusterTenant-domain>`. The **ClusterTenant** is the
-> customer that owns that base domain. See the authoritative
+> in code. Users connect through the org host `<org>.<base>`; the identity-routing gateway
+> proxy routes each session to the right pod. The **ClusterTenant** is the customer/org that
+> owns the org host. See the authoritative
 > [Tenancy Model](https://github.com/italanta/opencrane/blob/main/docs/agents/cluster-architecture.md#tenancy-model--clustertenant-vs-usertenant).
 > Below, "tenant pod" / "tenant gateway" means a UserTenant.
 
@@ -25,7 +26,7 @@ OpenCrane has two backends a user touches, and they must not require two logins:
 | Plane | What it serves | How it is reached |
 |-------|----------------|-------------------|
 | **Control plane** | management + metadata: tenants, policies, groups, budgets, skills, audit, auth | the versioned control-plane API (OIDC session) |
-| **UserTenant pod (OpenClaw)** | the live agent session: chat, Cognee retrieval, canvas | the UserTenant's own `gatewayUrl` (`wss://<ingressHost>`, i.e. `<user>.<ClusterTenant-domain>`), via the OpenClaw Gateway v4 protocol |
+| **UserTenant pod (OpenClaw)** | the live agent session: chat, Cognee retrieval, canvas | `wss://<org>.<base>/gateway` → identity-routing proxy → the user's pod, via the OpenClaw Gateway v4 protocol |
 
 The principle is **one identity, brokered access**: the human signs in once via
 OIDC; the control plane then **brokers** the connection to the user's own pod by
@@ -235,24 +236,22 @@ pairing link for another user's pod.**
 
 ### Where the handshake runs
 
-- **Token-to-client (current).** The control plane returns the pairing link to the
-  browser, which opens the gateway WS and completes the handshake directly. Simple;
-  Option B keeps the brokered credential short-lived so a stripped credential is
-  useless within ~a minute.
-- **Proxy / BFF (deferred — Option C).** The control plane (or an Envoy/mesh
-  sidecar) proxies the WebSocket: per-session cut + per-frame audit + zero browser
-  credential, at a connection-stateful cost. Not adopted now; see the security doc
-  §6/§8 and plan `CONN.7`.
+The browser opens the gateway WS at `wss://<org>.<base>/gateway`. The
+**identity-routing gateway proxy** (the live path, cutover completed 2026-06)
+authenticates the upgrade via `GET /api/v1/auth/gateway-resolve`, then reverse-proxies
+the socket to `openclaw-<user>.<ns>.svc`, injecting `X-Forwarded-User` with the verified
+identity. The browser completes the OpenClaw connect handshake with the pod through the
+proxy tunnel. See [`connection-security.md`](/security/connection-security) §0 for the
+full proxy flow.
 
-### Security posture (Option B)
+### Security posture (proxy model)
 
-Decided 2026-06: short-lived, re-brokered credentials (no long-lived token in the
-browser) + a per-user central kill-switch (OpenClaw `device.token.revoke` /
-`device.pair.remove` + a Kubernetes force-disconnect) + transport hardening (HSTS,
-`wss://`-only, fail-closed `Secure` cookie — CONN.2). The control plane stays
-*connection*-stateless. Full trade-off, threat model (MITM/airport, the two clocks,
-K8s force-disconnect levers) and accepted compromises are in
-[`claw-security-considerations.md`](/security/connection-security).
+The identity-routing proxy is the live gateway path (cutover 2026-06): per-session
+routing, single standing auth choke point, no per-user subdomain. Combine with Option B's
+credential hardening (short single-use bootstrap, no persisted device token) for
+defence-in-depth. Full trade-off, threat model (MITM/airport, the two clocks,
+K8s force-disconnect levers), and accepted compromises are in
+[`connection-security.md`](/security/connection-security).
 
 ### Status
 

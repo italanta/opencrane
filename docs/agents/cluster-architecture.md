@@ -34,47 +34,54 @@ strength is a per-customer choice (`isolationTier`).
 │  │   · Secrets(enc-key, litellm-key) · SA · (CT) ResourceQuota+LimitRange │
 │  └─────────────────────────────────────────────────────────────────────┘ │
 │         ▲ external traffic: GCE LB (GCP) / ingress-nginx (on-prem)       │
-│  platform domain → control-plane:8080 · *.<clustertenant-domain> → UserTenant │
+│  platform.<base> → control-plane:8080 · *.<base> → identity-routing proxy → UserTenant pods │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Tenancy Model — ClusterTenant vs UserTenant
 
-OpenCrane has **two distinct tenant concepts**. Keep them straight — they live on **separate,
-independent domains** and serve different roles:
+OpenCrane has **two distinct tenant concepts**. Keep them straight:
 
 | Term | What it is | Scope | Domain |
 |------|-----------|-------|--------|
-| **ClusterTenant** | The **customer / isolation unit** — owns a namespace, a `ResourceQuota`/`LimitRange`, a compute `isolationTier`, and **its own base domain** (typically the customer's own company domain). One ClusterTenant ≈ one multi-instance OpenCrane instance. | Cluster-scoped CRD `clustertenants.opencrane.io`. | Owns its base domain (the instance's `ingress.domain`, customer-owned, e.g. `ai.client-company.com`); the wildcard `*.<clustertenant-domain>` is this customer's ingress space. |
-| **UserTenant** | A **per-user OpenClaw agent gateway** — the workload a person connects to. This is the `Tenant`/openclaw CRD; **"UserTenant" is the canonical name**, "`Tenant`" is the legacy CRD kind in code. | Namespaced CRD `tenant.opencrane.io`, runs inside its ClusterTenant's namespace. | A single host `<user>.<clustertenant-domain>`, e.g. `mike.ai.client-company.com`. |
+| **ClusterTenant** | The **customer / isolation unit** — owns a namespace, a `ResourceQuota`/`LimitRange`, a compute `isolationTier`, and its own **org host** under the platform base. One ClusterTenant ≈ one customer organisation. | Cluster-scoped CRD `clustertenants.opencrane.io`. | `<org>.<base>` — one label under the platform base (e.g. `acme.weownai.eu`), covered by the platform `*.<base>` wildcard cert. |
+| **UserTenant** | A **per-user OpenClaw agent gateway** — the workload a person connects to. This is the `Tenant`/openclaw CRD; **"UserTenant" is the canonical name**, "`Tenant`" is the legacy CRD kind in code. | Namespaced CRD `tenant.opencrane.io`, runs inside its ClusterTenant's namespace. | No dedicated host — all users in an org connect through the **same org host** (`<org>.<base>`). The identity-routing gateway proxy routes each session to the right pod. |
+
+### Single-per-org-host model
+
+There are **no per-user subdomains**. Every user in an org connects to the single org
+host (`<org>.<base>`). The in-cluster identity-routing gateway proxy authenticates the
+WebSocket upgrade (via `GET /api/v1/auth/gateway-resolve` on the control plane), then
+reverse-proxies the socket to `openclaw-<user>.<ns>.svc`, injecting `X-Forwarded-User`
+with the verified identity. The app UI, `/api/*`, and the gateway WS are same-origin
+under `<org>.<base>`.
 
 ### DNS hierarchy
 
-These are **three independent domains**, not one nested DNS tree — the platform and each customer bring
-their own domains:
+The platform owns one base domain; each org gets one host under it:
 
 ```
-example.com                  → control plane (platform management API)   [platform's own domain]
-ai.client-company.com        → ClusterTenant "client-company" base domain [per-customer, customer-owned]
-  mike.ai.client-company.com → UserTenant "mike" gateway   (wildcard      [per-user]
-  sara.ai.client-company.com → UserTenant "sara" gateway    *.ai.client-company.com)
+platform.<base>           → control-plane management API   [fixed; set at install]
+*.<base>           (wildcard DNS + TLS, set once at install)
+  <org>.<base>            → org host, served via identity-routing proxy
+    ↳ all users in the org connect here; proxy routes to their pod
+ai.client-co.com          → optional vanity CNAME → <org>.<base>
+                             (per-org HTTP-01 cert, customer owns the CNAME)
 ```
 
-- **Control plane** → runs on the **platform's own domain** (e.g. `example.com`), separate from any
-  customer. It is one management API above every customer — logically, not as a DNS parent.
-- **ClusterTenant base domain** → **customer-owned and independent** (e.g. `ai.client-company.com`); each
-  instance sets its own `ingress.domain`. The wildcard cert + ingress live at this level.
-- **UserTenant host** → a single OpenClaw gateway; the operator builds **one `Ingress` per UserTenant** at
-  `<name>.<ingress.domain>`, i.e. a subdomain of that ClusterTenant's base domain.
+- **Control plane** → `platform.<base>`, the management API above every org.
+- **Org host** → `<org>.<base>`; one label under the platform base, covered by `*.<base>`.
+  No per-org DNS record, no per-org wildcard cert. The operator creates no `DNSEndpoint`
+  and no per-org cert-manager resource for the canonical host.
+- **Vanity domain** → a customer CNAMEs their own host onto `<org>.<base>`, then sets
+  `spec.vanityDomain` on the `ClusterTenant`. The operator issues one per-org cert whose
+  SAN is the vanity host (HTTP-01, no DNS-01 needed).
 
-> **Validated against the tree (June 2026):** the operator builds the UserTenant ingress at
-> `<name>.<ingress.domain>` (`apps/operator/.../5-ingress.ts`) and cert-manager issues
-> `*.<ingress.domain>` + that base domain's own apex (`cluster-issuer.yaml`). `ingress.domain` is already
-> per-instance, so it **is** the ClusterTenant base domain — set it to the customer's domain. Two things
-> to keep straight: (1) the wildcard `*.<domain>` maps to **UserTenant** gateways, *not* the
-> ClusterTenant — the ClusterTenant owns the domain, its UserTenants get the hosts; (2) the **control
-> plane's own domain is not wired by an Ingress in the chart** — its cert/SAN may be covered but routing
-> the platform domain to the control-plane Service is currently an installer/out-of-chart step.
+> **Validated against the tree (June 2026):** `apps/operator/src/cluster-tenants/internal/org-domain.provisioner.ts`
+> (`DefaultOrgDomainProvisioner`) confirms: the canonical `<org>.<base>` host needs nothing
+> per-org (covered by `*.<base>`); only a vanity domain triggers a per-org Certificate CR.
+> The gateway proxy in `apps/gateway-proxy/src/proxy.ts` is the live routing path; there are
+> no per-UserTenant Ingresses.
 
 ## Physical Cluster
 
@@ -123,10 +130,10 @@ All planes are **ClusterIP-only** (no external LB) — external traffic arrives 
 
 ## Network Topology
 
-- **Ingress:** GCE Ingress (GCP) or ingress-nginx (on-prem). The **control plane** is reached on the **platform's own domain** (e.g. `example.com`); each **UserTenant** (OpenClaw gateway) is exposed at `<user>.<clustertenant-domain>` → its Service, under the customer-owned wildcard `*.<clustertenant-domain>`. See [Tenancy Model](#tenancy-model--clustertenant-vs-usertenant).
+- **Ingress:** GCE Ingress (GCP) or ingress-nginx (on-prem). The **control plane** is reached at `platform.<base>`; each org (ClusterTenant) is reached at `<org>.<base>` via the platform wildcard Ingress. Traffic to `<org>.<base>` goes through the **identity-routing gateway proxy** which routes WebSocket connections to individual UserTenant pods. See [Tenancy Model](#tenancy-model--clustertenant-vs-usertenant).
 - **`networkpolicy-planes.yaml`** restricts control-plane ingress to: ingress controller, operator, mcp-gateway, skill-registry, and tenant pods (contract re-pull). The Zot OCI store accepts the control-plane only. Because `/api/internal/*` has **no auth middleware**, this policy is its only boundary — see [`k8s.md`](./k8s.md#internal-routes-without-auth-middleware).
 - **Tenant egress** is default-DNS + the CIDR/FQDN allow-lists compiled from the tenant's AccessPolicy (standard NetworkPolicy always; optional CiliumNetworkPolicy for FQDN filtering).
-- **TLS:** cert-manager issues a wildcard cert for the **ClusterTenant base domain** (`*.<clustertenant-domain>` + that base domain's own apex `<clustertenant-domain>`; ACME DNS-01 in prod, selfSigned in dev), so every UserTenant host under it is covered without per-UserTenant issuance. Issuance is driven API-first via control-plane `/api/v1/platform/dns`, not raw `kubectl`.
+- **TLS:** cert-manager issues one **platform wildcard cert** (`*.<base>`; ACME DNS-01 in prod, selfSigned in dev). This single cert covers every `<org>.<base>` host. There are no per-org wildcard certs and no per-UserTenant certs. Vanity domains get a per-org HTTP-01 cert (one SAN = the vanity host). Issuance is driven API-first via control-plane `/api/v1/platform/dns`, not raw `kubectl`.
 
 ## Isolation Tiers
 

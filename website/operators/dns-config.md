@@ -5,45 +5,73 @@ walks an admin through the happy path; this page documents the model, the full A
 surface, the cert-manager resources OpenCrane creates, and the per-provider and
 multi-instance options.
 
-## The model: delegate once, manage from the platform
+## The model: one wildcard, set once
 
-OpenCrane is designed so DNS is a **one-time delegation** at your provider, after which
-every assistant is reachable with no further record changes:
+OpenCrane is designed so DNS is a **one-time setup** at install, after which every org
+and every user is reachable with no further record changes:
 
 | Step | Where | How often |
 |------|-------|-----------|
 | Apex `A`/`CNAME` → ingress address | your DNS provider | once |
-| Wildcard `*.<zone>` `A`/`CNAME` → ingress address | your DNS provider | once |
+| Platform wildcard `*.<base>` `A`/`CNAME` → ingress address | your DNS provider | once |
 | `oc platform dns set …` (provider token for DNS-01) | the platform | once |
-| New assistant `alice.<zone>` resolves **and** gets HTTPS | automatic | every assistant, zero touch |
+| New org `<org>.<base>` resolves **and** gets HTTPS | automatic (covered by `*.<base>`) | every org, zero touch |
 
-Two records and one token, set once. The provider stays the source of truth for the
-*delegation*; the platform owns everything underneath it.
+Two records and one token, set once. No per-org DNS records. No per-org certificates.
+No external-dns integration.
 
-### Why a wildcard
+### One host per org, every user inside it
 
-A wildcard record (`*.<zone>`) resolves **every** name at that level to the cluster
-ingress address, so `alice.<zone>`, `bob.<zone>` and any future assistant resolve the
-moment they are created — without adding a record per assistant. All names land on the
-same ingress; the ingress controller then routes by the HTTP `Host:` header to the right
-tenant. DNS gets the request to the cluster; the ingress decides *which* assistant.
+Under the new model each org (ClusterTenant) is served at a single host
+`<org>.<base>` — for example `acme.weownai.eu`. There are **no per-user subdomains**.
+Every user in the org connects to that one org host; the in-cluster
+**identity-routing gateway proxy** authenticates the session (via the control plane's
+`GET /api/v1/auth/gateway-resolve` endpoint) and routes each user's gateway WebSocket
+to their own OpenClaw pod (`openclaw-<user>.<ns>.svc`). The app UI, `/api/*`, and the
+gateway WS are same-origin under `<org>.<base>`, so the OIDC session cookie is
+host-scoped to it and shared across all three surfaces.
 
-### Why a provider token is still needed
+```
+Browser  ──wss://<org>.<base>/gateway──▶  wildcard Ingress
+                                               │
+                                               ▼
+                                     identity-routing gateway proxy
+                                       │
+                                       ├─ 1. Origin allowlist (CSWSH guard)
+                                       ├─ 2. GET /api/v1/auth/gateway-resolve
+                                       │       (replay session cookie → control plane
+                                       │        returns { user, tenant, podService })
+                                       ├─ 3. Per-identity rate limit
+                                       └─ 4. WS reverse-proxy to
+                                              openclaw-<user>.<ns>.svc:<port>
+                                              (injects X-Forwarded-User; strips
+                                               any client-supplied value first)
+```
 
-The wildcard solves **routing**, but HTTPS needs a certificate valid for the name in the
-browser. OpenCrane issues a single wildcard certificate (`*.<zone>`) via Let's Encrypt,
-and a wildcard certificate can only be validated with the **ACME DNS-01 challenge** —
-cert-manager must briefly create a `_acme-challenge.<zone>` `TXT` record. The provider
-token you supply is used for **exactly that, and only that**: writing and removing that
-temporary validation record. cert-manager then auto-renews the certificate (~every 60
-days) using the same token. Per-assistant Ingresses reference the shared wildcard cert
-Secret, so adding an assistant needs no new issuance.
+The proxy is the **live gateway path**; per-user Ingresses and the old
+nginx `auth_request` hook are retired.
 
-::: tip This page is about the wildcard model
-Programmatic, record-level management (real per-host `A`/`CNAME` records, custom/vanity
-domains, dropping the wildcard) is an `external-dns` extension that reuses the same
-provider token. It is an open decision — see the DNS-ownership item in
-[Hosting & deployment](/operators/hosting).
+### Why a single wildcard is enough
+
+`*.<base>` matches any **one-label** subdomain of the base domain — that is, exactly
+the `<org>.<base>` names the platform uses. A single DNS record and a single platform
+wildcard certificate issued once at install covers every org host, past and future.
+
+### Why DNS-01 is still needed (for the platform wildcard)
+
+HTTPS needs a certificate valid for the name in the browser. OpenCrane issues one
+platform wildcard certificate (`*.<base>`) via Let's Encrypt. A wildcard certificate
+can only be validated with the **ACME DNS-01 challenge** — cert-manager must briefly
+create a `_acme-challenge.<base>` `TXT` record. The provider token you supply is used
+for **exactly that, and only that**: writing and removing that temporary validation
+record. cert-manager then auto-renews the certificate (~every 60 days) using the same
+token.
+
+::: tip The platform wildcard covers everything
+Because every org host is one label under `<base>`, the single `*.<base>` certificate
+covers every `<org>.<base>` without any per-org issuance. The DNS-01 challenge and
+provider token are **only needed for this one platform wildcard** — you do not need
+to hand the platform DNS credentials to each org's provisioning step.
 :::
 
 ## Configure it
@@ -53,7 +81,7 @@ provider token. It is an open decision — see the DNS-ownership item in
 ```bash
 oc platform dns set \
   --provider cloudflare \
-  --zone ai.example.com \
+  --zone weownai.eu \
   --email you@example.com \
   --token-file ./cloudflare-token.txt
 ```
@@ -61,7 +89,7 @@ oc platform dns set \
 | Flag | Required | Meaning |
 |------|----------|---------|
 | `--provider` | yes | DNS-01 solver provider key (`cloudflare`, `digitalocean`, `route53`, `rfc2136`, …) |
-| `--zone` | yes | Base/delegated zone the wildcard cert covers (e.g. `ai.example.com`) |
+| `--zone` | yes | Platform base domain the wildcard cert covers (e.g. `weownai.eu`) |
 | `--email` | yes | ACME account contact address (renewal notices) |
 | `--server` | no | ACME directory URL (defaults to Let's Encrypt production) |
 | `--issuer-name` | no | Issuer name to create/update (defaults to `opencrane-issuer`) |
@@ -100,8 +128,8 @@ solver references. Any other provider supplies its solver block verbatim via
 }
 ```
 
-The token must be scoped to **edit the delegated zone only** — DNS-01 needs nothing more
-than creating and removing `TXT` records in that zone.
+The token must be scoped to **edit the platform base zone only** — DNS-01 needs nothing
+more than creating and removing `TXT` records in that zone.
 
 ## API surface
 
@@ -116,7 +144,7 @@ Capture a provider config and apply the cert-manager issuer (+ credentials Secre
 ```json
 {
   "provider": "cloudflare",
-  "zone": "ai.example.com",
+  "zone": "weownai.eu",
   "email": "you@example.com",
   "server": null,
   "issuerName": "opencrane-issuer",
@@ -134,7 +162,7 @@ Capture a provider config and apply the cert-manager issuer (+ credentials Secre
   "issuerKind": "ClusterIssuer",
   "issuerNamespace": null,
   "provider": "cloudflare",
-  "zone": "ai.example.com",
+  "zone": "weownai.eu",
   "secretName": "opencrane-dns01-cloudflare"
 }
 ```
@@ -173,12 +201,36 @@ token takes effect on re-apply):
 1. **A credentials Secret** — `opencrane-dns01-<provider>` (token-based providers only),
    holding the provider token under the `api-token` key.
 2. **A cert-manager issuer** — an ACME DNS-01 issuer referencing that Secret (or the raw
-   solver block). cert-manager then issues/renews the wildcard `*.<zone>` certificate
-   into the Secret that per-tenant Ingresses reference (`ingress.tls.secretName`,
-   default `opencrane-wildcard-tls`).
+   solver block). cert-manager then issues/renews the platform wildcard `*.<base>`
+   certificate into the Secret that the wildcard Ingress references
+   (`ingress.tls.secretName`, default `opencrane-wildcard-tls`).
 
 The certificate appearing in the wildcard Secret happens on a live cluster with real DNS;
 this endpoint's job is to author and apply the two resources correctly.
+
+## Customer vanity domains
+
+A customer may CNAME their own host onto their org host:
+
+```
+ai.client-co.com  CNAME  acme.weownai.eu
+```
+
+Then set the vanity domain on the org:
+
+```bash
+oc cluster-tenant update acme --vanity-domain ai.client-co.com
+```
+
+The operator issues a **per-org certificate** whose only SAN is the vanity host, via the
+platform issuer. Because the CNAME resolves through the ingress, the ACME **HTTP-01**
+challenge succeeds — no DNS provider access is needed on the platform's side, and no
+DNS-01. The customer owns the CNAME; the platform owns the certificate.
+
+::: info No per-org wildcard
+The per-org vanity certificate covers **only** the vanity host itself. There are no
+per-user subdomains, so a wildcard SAN for `*.ai.client-co.com` is not issued.
+:::
 
 ## Issuer kind: single vs multi-instance
 
@@ -202,6 +254,7 @@ certificates, and dev uses `sslip.io`-style hosts that resolve without a provide
 ## See also
 
 - [Set up your domain](/guide/dns) — the step-by-step admin walkthrough
-- [Hosting & deployment](/operators/hosting) — ingress class, providers, the external-dns decision
+- [Hosting & deployment](/operators/hosting) — ingress class and providers
+- [Connection security](/security/connection-security) — the identity-routing gateway proxy
 - [Running multiple instances](/advanced/multi-instance) — namespaced issuers
 - [CLI reference](/reference/cli) · [API overview](/reference/api-overview)

@@ -1,49 +1,70 @@
 # OpenClaw connection — security considerations
 
-**Status:** **decided — Option B** (2026-06); see [Decision](#decision-2026-06--option-b).
-This document records the connection/auth posture between the **SaaS operator**
-(browser) and a tenant's **OpenClaw pod**, brokered by the **OpenCrane control
-plane**. The concern lives in the control plane (issuance, revocation, and the
-Kubernetes substrate), hence this doc is here rather than in the frontend repo.
+**Status:** **proxy model live** (cutover completed 2026-06). The identity-routing
+gateway proxy is the current gateway path. This document records the connection/auth
+posture between the browser and a user's **OpenClaw pod**, brokered by the **OpenCrane
+control plane**.
 
 All protocol claims are grounded in the published docs
 ([gateway/protocol](https://docs.openclaw.ai/gateway/protocol),
 [channels/pairing](https://docs.openclaw.ai/channels/pairing)); items we could
-not confirm are flagged **[unconfirmed]**. The SaaS Operator-side implementation +
-roadmap is tracked in that repo's `plan.md` (slices S1–S6, blockers B1–B5).
+not confirm are flagged **[unconfirmed]**.
 
 ---
 
-## Decision (2026-06) — Option B
+## 0. Current model — identity-routing gateway proxy
 
-**Chosen: Option B** — short-lived, re-brokered credentials (no long-lived token in
-the browser) + a per-user central kill-switch (OpenClaw revoke + Kubernetes
-force-disconnect), plus the transport hardening in §11. The control plane stays
-**connection-stateless**. This covers credential theft, replay, hostile-network,
-and per-user incident response with no new stateful infra and small effort, and it
-is a strict prerequisite to the proxy anyway.
+The gateway cutover is done. The proxy is the live path; per-user Ingresses and the
+nginx `auth_request → /auth/gateway-verify` hook are retired.
 
-**Trade-offs we accepted:**
-- Live-session cut is **per-user, not per-session** — incident response cuts *all*
-  of an account's sessions (fine given the one-pod-per-tenant topology), not one
-  device while leaving the user's others up.
-- **No standing per-frame audit/policy choke point** — auditing is at issuance (the
-  broker) plus OpenClaw/K8s events, not on the live message stream.
-- Per-user cut via NetworkPolicy is **CNI-dependent**; pod-delete is the
-  CNI-independent fallback.
-- These are acceptable because the data/availability fears do **not** apply:
-  transcripts live in the pod (no loss on a CP outage), and Postgres covers all
-  durable data — what B preserves is *connection*-statelessness.
+### 0.1 How it works
 
-**Proxy (Option C) — long-term vision, not adopted now.** Revisit **only if** a hard
-requirement emerges for per-session cutting or a standing per-frame audit/policy
-point, **and** the computational/operational cost is judged worth it (a
-connection-stateful app tier: LB affinity, reconnect storms on every deploy;
-message content transiting the CP; ~days of build). If that day comes, prefer an
-**Envoy/mesh sidecar** over a bespoke control-plane proxy. Option B is a strict
-prerequisite, so nothing built for B is wasted.
+Every user in an org connects to the **single org host** `<org>.<base>`. The app UI,
+`/api/*`, and the gateway WebSocket are same-origin under that host. A dedicated
+**identity-routing gateway proxy** sits between the wildcard Ingress and each user's
+OpenClaw pod:
 
-Build slices: frontend repo `plan.md` — **S5** (Option B) and **S6** (proxy vision).
+```
+Browser
+  │
+  │  wss://<org>.<base>/gateway
+  ▼
+Wildcard Ingress  (<org>.<base>, covered by *.<base> cert)
+  │
+  ▼
+Identity-routing gateway proxy
+  │
+  ├─ 1. Origin allowlist (CSWSH guard)
+  │      Fail closed on missing or non-allowlisted Origin.
+  │
+  ├─ 2. GET /api/v1/auth/gateway-resolve  (delegated auth)
+  │      Replay session cookie → control plane
+  │      Returns: { user: { email, sub },
+  │                 tenant: { name, clusterTenantRef },
+  │                 podService: { name, namespace } }
+  │      401/403 → refuse. Any other non-200 → 502 (fail closed).
+  │
+  ├─ 3. Per-identity rate limit
+  │      Keyed on the resolved email; abuse backstop.
+  │
+  └─ 4. WS reverse-proxy to  ws://openclaw-<user>.<ns>.svc:<port>
+         Strip any client-supplied X-Forwarded-User first (header hygiene),
+         then inject X-Forwarded-User: <verified email>
+         so the pod trusts only the control-plane-resolved identity.
+         The pod also self-enforces via its allowUsers list (CONN.10, §0.2).
+```
+
+The proxy holds **no session state**. It replays only the upgrade request's `Cookie`
+header to the control plane and is the sole authority for routing decisions. The
+control plane is stateless with respect to live WebSocket connections.
+
+### 0.2 Pod-level owner pinning (CONN.10)
+
+Even with the proxy's trusted header in place, each OpenClaw pod enforces its own
+`allowUsers` list — it only accepts sessions for the user(s) it was provisioned for.
+This means a misconfigured or compromised proxy cannot route one user's socket into
+another user's pod. The control plane and the pod are two independent enforcement
+points, defence-in-depth.
 
 ---
 
@@ -51,22 +72,26 @@ Build slices: frontend repo `plan.md` — **S5** (Option B) and **S6** (proxy vi
 
 ```
 SaaS ──OpenAPI (OIDC session)──▶ OpenCrane  POST /auth/pod-token
-   │                                   └─ { gatewayUrl, bootstrapToken, tenant }   (the pairing link, brokered)
-   └──Gateway v4 WS: connect handshake + device pairing──▶ tenant OpenClaw pod
+   │                                   └─ { gatewayUrl, bootstrapToken, tenant }
+   └──wss://<org>.<base>/gateway──▶ Wildcard Ingress
+                                      └──▶ Gateway proxy (auth → route)
+                                            └──▶ tenant OpenClaw pod
 ```
 
 1. The browser, authenticated by its OIDC session, asks OpenCrane for the pod's
    **pairing link** (`{ url, bootstrapToken }`). OpenCrane resolves it for the
    caller's own tenant only (fail-closed on an ambiguous email→tenant mapping).
-2. The browser opens the gateway WebSocket and runs the **`connect` handshake**:
-   answers a `connect.challenge` by signing the nonce with a persistent device
-   key, sends `connect` with the bootstrap (or persisted device) token, and on
-   `hello-ok` receives a **device token** it persists for reconnects.
+2. The browser opens the gateway WebSocket (at `<org>.<base>/gateway`). The proxy
+   authenticates the upgrade via `gateway-resolve`, then reverse-proxies the socket
+   to `openclaw-<user>.<ns>.svc`, injecting the verified `X-Forwarded-User` header.
+3. The OpenClaw pod runs the **`connect` handshake** with the client: answers a
+   `connect.challenge` nonce, receives `connect` with the bootstrap (or persisted
+   device) token, and on `hello-ok` sends a **device token** the client persists for
+   reconnects.
 
-**Topology that matters for everything below:** there is **one OpenClaw pod per
-tenant** (`openclaw-<tenant>`), and tenants resolve 1:1 from a user's verified
-email. So "the tenant's pod" ≈ "one user's pod" — per-tenant actions are
-effectively per-user.
+**Topology:** there is **one OpenClaw pod per tenant** (`openclaw-<tenant>`), and
+tenants resolve 1:1 from a user's verified email. Every user in an org connects
+through the single org host; the proxy routes them to the right pod.
 
 ---
 
@@ -142,136 +167,80 @@ the missing force-disconnect. Options, coarse → surgical:
 | Lever | Granularity | Cuts live sockets? | Notes |
 |---|---|---|---|
 | **Delete/restart the tenant pod** (`kubectl delete pod` / scale 0) | **Per-tenant** (= per-user) | ✅ immediately | No new infra; OpenCrane already has pod-management RBAC. Pod restarts (or stays down). Because pods are per-tenant, this is **not** fleet-wide — it severs exactly that user's sessions. |
-| **NetworkPolicy deny-ingress on the pod** | Per-tenant | ⚠️ **CNI-dependent** | Calico/Cilium evaluate existing flows via conntrack/eBPF and *can* drop established connections on policy change; some CNIs only affect new connections. Faster than a restart and preserves pod state. Source cannot be one browser (traffic arrives via ingress), so it's all-or-nothing for that pod. |
+| **NetworkPolicy deny-ingress on the pod** | Per-tenant | ⚠️ **CNI-dependent** | Calico/Cilium evaluate existing flows via conntrack/eBPF and *can* drop established connections on policy change; some CNIs only affect new connections. Faster than a restart and preserves pod state. Source cannot be one browser (traffic arrives via the proxy), so it's all-or-nothing for that pod. |
 | **Cilium / eBPF policy** | Per-tenant / per-identity | ✅ (drops established flows) | Most reliable at terminating in-flight connections; identity-aware. Still per-pod, not per-WS-session. |
 | **conntrack delete** (`conntrack -D`) on the node + drop rule | Per-flow (5-tuple) | ✅ | Node-level, needs the 5-tuple; operationally hairy, not a clean API. |
-| **Service-mesh / Envoy sidecar in front of the pod** | **Per-connection** | ✅ via xDS/admin drain | A standing L7 cut-point without building an app proxy; can also re-check auth (ext_authz). This is the "proxy" benefit at the infra layer. |
+| **Proxy connection drain** | **Per-session** | ✅ via proxy admin | The gateway proxy holds the live socket; draining the proxy connection severs the session surgically without touching the pod. |
 
-### The deployable play **without** a proxy
-Because pods are per-tenant, OpenCrane can deliver a **per-user instant cut today**
-by combining its two existing capabilities:
+### The deployable play with the proxy
+The proxy model already sits between the client and the pod. For a per-user instant
+cut:
 
 1. **Revoke** — call `device.token.revoke` + `device.pair.remove` (blocks re-auth).
-2. **Force-disconnect** — delete the tenant pod *or* apply a deny NetworkPolicy
-   (Cilium/Calico) to drop the live socket(s).
+2. **Force-disconnect** — drain the proxy connection for that session, or delete the
+   tenant pod / apply a deny NetworkPolicy (Cilium/Calico) to drop the live socket.
 3. Attacker's socket dies and **cannot be re-opened** (revoked; no bootstrap
    issued). A short `tickIntervalMs` (§4) makes any half-open client give up fast.
 
 This needs only modest additions to OpenCrane: `networkpolicies` + `pods/delete`
-RBAC, a small "cut tenant" admin action, and the `operator.pairing`-scoped
-identity to call revoke. **[unconfirmed]:** whether the cluster CNI drops
-established connections on NetworkPolicy change — verify against the deployed CNI;
+RBAC, a small "cut tenant" admin action, and the `operator.pairing`-scoped identity
+to call revoke. **[unconfirmed]:** whether the cluster CNI drops established
+connections on NetworkPolicy change — verify against the deployed CNI;
 pod-delete is the CNI-independent fallback.
-
-**Granularity ceiling:** L3/L4 levers act **per-pod (= per-tenant/user)**, not per
-WebSocket session. Cutting *one* of a user's several tabs/devices while leaving the
-others up requires session awareness — i.e., the proxy or a mesh sidecar.
 
 ---
 
 ## 6. The options
 
-### Option A — Direct connect, persisted device token *(current impl)*
+### Option A — Direct connect, persisted device token *(superseded)*
 - ➖ Long-lived stealable credential in the browser; live-cut only via §5.
 - ➕ Simplest; control plane stateless.
-- **Verdict:** stepping stone only; remove the persisted credential.
+- **Verdict:** stepping stone only; superseded.
 
-### Option B — Direct connect, short single-use tokens, no browser persistence *(plan.md S5-1)*
+### Option B — Direct connect, short single-use tokens, no browser persistence
 - ➕ Removes the credential-theft prize; zero new stateful infra.
 - ➕ **With §5 (revoke + K8s cut), gains a per-tenant instant live-cut.**
 - ➖ Live-cut granularity is per-tenant, not per-session; CNI-dependent unless using
   pod-delete; no standing per-frame audit/choke point.
-- **Verdict:** strong, cheap; meets incident-response needs **if per-user (not
-  per-session) cutting is acceptable.**
+- **Verdict:** strong, cheap; meets incident-response needs if per-user cutting is
+  acceptable. The credential hardening (short single-use bootstrap, no persisted
+  device token) should be adopted regardless of which routing model is in use.
 
-### Option C — Control-plane WebSocket proxy *(plan.md S6)*
-- ➕ No browser-held pod credential at all; **per-session** surgical instant cut;
-  single standing point to defend / audit / rate-limit; pod lockable to CP-only.
-- ➖ The app tier stops being **connection-stateless**: a live WebSocket is a
-  process-bound socket — it **cannot** be offloaded to Postgres, so replicas are no
-  longer fungible (LB affinity required, no drain/autoscale without dropping
-  sockets, a deploy drops every socket it holds → reconnect storm). *Durable data*
-  (registry/audit) is unaffected — that's just rows in Postgres, which the CP
-  already has.
-- ➖ **Availability, not durability:** if the proxy is down, chat is unavailable
-  *during* the outage, but nothing is lost — transcripts live in the pod and the
-  client re-fetches on reconnect. Worst case is an interrupted in-flight turn to
-  re-issue (**[unconfirmed]** whether OpenClaw keeps the agent run going detached
-  from the socket; if it does, even that survives). Cost is uptime during
-  outages/deploys, recoverable.
-- ➖ Message content **transits** the CP; ~days of build (WS server + Node
-  handshake; cross-repo/AGPL boundary → reimplement or extract a shared MIT package).
-- **Verdict:** strongest posture; warranted for per-session control or a standing
-  audited choke point. A **mesh/Envoy sidecar (§5)** delivers much of this without
-  app code if a mesh is already in play.
+### Option C — Identity-routing gateway proxy *(current model)*
+- ➕ No browser-held pod credential needed at connection time; **per-session** routing
+  is possible; single standing point to defend / audit / rate-limit; pod lockable to
+  proxy-only.
+- ➕ **Implemented and live** — the proxy is the current gateway path.
+- ➖ The app tier is **connection-aware** at the proxy: a live WebSocket is a
+  process-bound socket — replicas require care around draining on deploy.
+- ➖ Message content transits the proxy (the control plane's cluster-internal network).
+- **Verdict:** adopted. Combine with Option B's credential hardening for defence-in-depth.
 
 ---
 
 ## 7. Comparison
 
-| Property | A: persisted token | B: short tokens + §5 | C: proxy / mesh |
+| Property | A: persisted token | B: short tokens + §5 | C: proxy (current) |
 |---|---|---|---|
 | Long-lived browser credential | ❌ yes | ✅ none | ✅ none |
 | Bounds credential replay window | ❌ no | ✅ ~60s | ✅ n/a |
-| Instant live-session cut | ⚠️ pod-restart only | ✅ per-tenant (revoke + K8s) | ✅ per-session |
+| Instant live-session cut | ⚠️ pod-restart only | ✅ per-tenant (revoke + K8s) | ✅ per-session via proxy drain |
 | Cut one of a user's many sessions | ❌ | ❌ | ✅ |
 | Standing choke point / per-frame audit | ❌ | ❌ | ✅ |
-| App tier stays *connection*-stateless ¹ | ✅ | ✅ | ❌ holds process-bound sockets |
-| Chat available during a CP outage ² | ✅ | ✅ | ⚠️ down during outage, no data loss |
-| Message content avoids our servers | ✅ | ✅ | ➖ transits |
-| Build effort | — (built) | small (+ RBAC/admin action) | moderate (~days) |
-
-¹ *Durable data state is a non-issue for all three — the CP already has Postgres,
-and a device registry/audit is just rows. "Connection-stateless" is the distinct
-property the proxy gives up: an open WebSocket is bound to one process and can't be
-offloaded to the DB, so replicas stop being fungible (LB affinity, no clean
-drain/autoscale, deploy = reconnect storm).*
-
-² *A CP outage with the proxy is an availability gap, not data loss — transcripts
-live in the pod and resume on reconnect; at worst an in-flight turn is re-issued
-(**[unconfirmed]** whether OpenClaw continues a detached agent run). "Repair later"
-is accurate; the cost is uptime during outages/deploys.*
+| App tier stays *connection*-stateless | ✅ | ✅ | ➖ proxy holds process-bound sockets |
+| Chat available during a proxy outage | ✅ | ✅ | ⚠️ down during outage, no data loss |
+| Message content avoids our servers | ✅ | ✅ | ➖ transits proxy |
 
 ---
 
-## 8. The deciding question
-
-> **What live-cut granularity does incident response require?**
-
-- **Per-user is enough** ("this account is compromised — cut all its sessions") →
-  **Option B + §5.** Keep the control plane stateless; cut via revoke + pod-delete
-  (CNI-independent) or NetworkPolicy. This is the recommended default given the
-  per-tenant pod topology.
-- **Per-session, or a standing audited choke point, is required** → **Option C**
-  (control-plane proxy, or a mesh/Envoy sidecar if already on a mesh). Accept the
-  stateful-CP weight.
-
-**Do regardless:** Option B's hardening (drop browser persistence, short single-use
-tokens) — strictly better than A and a prerequisite to either path. And add the
-§5 capability (revoke + K8s cut) since it's cheap and turns "pod restart" into a
-deliberate, scriptable kill-switch.
-
----
-
-## 9. Open dependencies / unknowns
-
-- **B1** — device-signature scheme (algorithm/encoding/signed-bytes) unconfirmed.
-- **B2** — provisioning path for the pairing link, and whether bootstrap-token TTL
-  and `tickIntervalMs` are configurable by OpenCrane per pod.
-- **CNI behaviour** — does the deployed CNI drop *established* connections on a
-  NetworkPolicy change? Verify; else use pod-delete.
-- **RBAC** — to enable §5, OpenCrane needs `networkpolicies` (create/delete) and
-  `pods` (delete), plus an `operator.pairing`-scoped device per pod for revoke.
-- **Force-disconnect** — no gateway API to drop one live socket; only `shutdown`
-  (all), §5 (per-pod), or a proxy/mesh (per-session).
-
-## 10. Man-in-the-middle on a hostile network (e.g. airport WiFi)
+## 8. Man-in-the-middle on a hostile network (e.g. airport WiFi)
 
 Every leg rests on **TLS + the browser's certificate validation**: browser ⇄
-OpenCrane (`POST /auth/pod-token`, OIDC session), browser ⇄ OpenClaw pod gateway
-(WSS), browser ⇄ IdP (OIDC login). A vanilla airport attacker (no certificate the
-browser trusts) **cannot** read or alter any leg — TLS defeats them and the
-browser rejects forged certs.
+OpenCrane (`POST /auth/pod-token`, OIDC session), browser ⇄ org gateway WS
+(`wss://<org>.<base>/gateway`, covered by the `*.<base>` wildcard cert), browser ⇄
+IdP (OIDC login). A vanilla airport attacker (no certificate the browser trusts)
+**cannot** read or alter any leg — TLS defeats them and the browser rejects forged
+certs.
 
 Note the device nonce-signing in the `connect` handshake is **authentication, not
 channel binding**: it stops replay of a captured signature against a *different*
@@ -281,7 +250,7 @@ whole ballgame, and the realistic attacks are the ones that remove it:
 - **(a) SSL-strip / downgrade — the airport classic.** The attacker keeps the
   victim on `http://` and proxies plaintext, harvesting the OIDC **session cookie**
   and any **bootstrap token** in flight. Defense: **HSTS** (browser refuses
-  `http://` and refuses cert-error bypass) + never serving HTTP. **Gap — §11: the
+  `http://` and refuses cert-error bypass) + never serving HTTP. **Gap — §9: the
   app does not set HSTS.**
 - **(b) Cert-warning click-through.** HSTS removes the "accept anyway" option for
   known hosts. A managed device with an attacker/corporate **root CA installed**
@@ -295,14 +264,11 @@ whole ballgame, and the realistic attacks are the ones that remove it:
 
 **Blast radius if TLS is broken on a leg:** browser⇄OpenCrane → session cookie +
 bootstrap token exposed → attacker pairs a device or impersonates the user (worst
-case); browser⇄pod → message content + any handshake token exposed.
+case); browser⇄proxy → message content + any handshake token exposed.
 
-**What bounds the damage regardless of transport fixes:** the Option-B posture —
-single-use ~60s bootstrap token and **no long-lived device token in the browser** —
-makes a stripped credential near-useless within a minute, and revoke + K8s cut
-(§5) closes the session. Another reason to adopt B's hardening regardless of A/C.
+---
 
-## 11. Transport hardening — current posture & gaps
+## 9. Transport hardening — current posture & gaps
 
 OpenCrane terminates TLS at the **ingress** (`app.set("trust proxy", 1)`; the app
 runs HTTP behind it). From the code:
@@ -325,9 +291,23 @@ Recommended (cheap, high-value for the hostile-network case):
    consider a `__Host-` cookie prefix.
 3. **App- or ingress-level HTTP→HTTPS redirect.**
 4. **Reject non-`wss://`** gateway URLs in the broker and the client.
-5. Adopt the Option-B credential posture so a momentary TLS failure leaks nothing
-   long-lived.
+5. Adopt Option B's credential hardening (short single-use bootstrap, no persisted
+   device token) in addition to the proxy.
+
+## Open dependencies / unknowns
+
+- **B1** — device-signature scheme (algorithm/encoding/signed-bytes) unconfirmed.
+- **B2** — whether bootstrap-token TTL and `tickIntervalMs` are configurable by
+  OpenCrane per pod.
+- **CNI behaviour** — does the deployed CNI drop *established* connections on a
+  NetworkPolicy change? Verify; else use pod-delete.
+- **RBAC** — to enable the §5 force-disconnect, OpenCrane needs `networkpolicies`
+  (create/delete) and `pods` (delete), plus an `operator.pairing`-scoped device per
+  pod for revoke.
+- **Force-disconnect** — no gateway API to drop one live socket individually; proxy
+  drain (§5) or pod-level levers are the current options.
 
 ## Sources
 - OpenClaw Gateway protocol — https://docs.openclaw.ai/gateway/protocol
 - OpenClaw device pairing — https://docs.openclaw.ai/channels/pairing
+- Gateway proxy source — `apps/gateway-proxy/src/proxy.ts`, `apps/gateway-proxy/src/auth-client.ts`

@@ -8,8 +8,9 @@
 > per-UserTenant ingress is being wired via cert-manager (§6.3, plan CONN.8).
 >
 > **Tenancy terms:** "tenant" below means a **UserTenant** — the per-user OpenClaw gateway
-> (the openclaw / `Tenant` CRD), exposed at `<user>.<ClusterTenant-domain>`. The
-> **ClusterTenant** is the customer that owns the base domain. See the authoritative
+> pod (the openclaw / `Tenant` CRD). Users connect through the org host `<org>.<base>`;
+> the **identity-routing gateway proxy** routes each session to the right pod. The
+> **ClusterTenant** is the customer/org that owns the org host. See the authoritative
 > [Tenancy Model](https://github.com/italanta/opencrane/blob/main/docs/agents/cluster-architecture.md#tenancy-model--clustertenant-vs-usertenant).
 
 ## 1. Goals & Principles
@@ -388,7 +389,7 @@ Explicit, not implied. A blank cell means "not implemented" — the provider is 
 | Ingress class | nginx | gce | azure/application-gateway | alb |
 | Ingress TLS | cert-manager wildcard (§6.3) | cert-manager wildcard (§6.3) | cert-manager wildcard | cert-manager wildcard |
 | Secrets backing | in-cluster Secret | in-cluster Secret (ESO optional) | in-cluster Secret (ESO optional) | in-cluster Secret (ESO optional) |
-| DNS | external-dns / manual | Cloud DNS (infra layer) | Azure DNS | Route 53 |
+| DNS | manual (base wildcard; set once) | Cloud DNS (infra layer) | Azure DNS | Route 53 |
 
 TLS is provider-agnostic on purpose: a single k8s-native mechanism (cert-manager
 issuing a wildcard cert via ACME DNS-01) works the same on every substrate, rather
@@ -451,39 +452,28 @@ cluster-wide and each per-instance release is installed with `--skip-crds`. See
 [`docs/multi-instance.md`](/advanced/multi-instance) for the procedure and the CRD-version
 compatibility contract.
 
-### 6.3 Ingress TLS (cert-manager wildcard — plan CONN.8)
+### 6.3 Ingress TLS (cert-manager platform wildcard)
 
 TLS is deliberately **k8s-native and provider-agnostic** rather than per-cloud managed
-certs, so the same mechanism works on-prem and on any cloud. `ingress.domain` is
-per-instance, so it **is** the **ClusterTenant base domain** — the customer's own domain
-(e.g. `ai.client-company.com`); the wildcard `*.<domain>` covers that customer's **UserTenant**
-gateway hosts (`<user>.<domain>`, e.g. `mike.ai.client-company.com`), not the ClusterTenant itself.
-The control plane runs on the platform's own separate domain (e.g. `example.com`).
+certs, so the same mechanism works on-prem and on any cloud.
 
-- **cert-manager** issues one **wildcard `*.<ingress.domain>` (+ apex) certificate** via
-  ACME **DNS-01** (wildcards require DNS-01) into the `ingress.tls.secretName` Secret
-  (default `opencrane-wildcard-tls`). One cert covers every `<user>.<domain>` UserTenant
-  gateway, so adding a UserTenant needs no new issuance.
+The platform owns one base domain (`<base>`, e.g. `weownai.eu`). cert-manager issues a
+single **platform wildcard certificate** (`*.<base>`) via ACME **DNS-01** (wildcards
+require DNS-01) into the `ingress.tls.secretName` Secret (default
+`opencrane-wildcard-tls`). This one cert covers every org host `<org>.<base>` — adding
+a new org needs no new issuance. There are **no per-org wildcard certs** and no
+per-UserTenant Ingresses.
+
 - The chart renders a `ClusterIssuer` + wildcard `Certificate`
   (`platform/helm/templates/cluster-issuer.yaml`) when `certManager.enabled=true` —
   `mode: selfSigned` for dev/local, `mode: acme` with a DNS-01 solver for production.
-- The operator adds a `tls:` block to each **UserTenant** Ingress (one Ingress per
-  UserTenant at `<name>.<ingress.domain>`, referencing the shared wildcard Secret) when
-  `ingress.tls.enabled=true`, driven by `INGRESS_TLS_ENABLED` / `INGRESS_TLS_SECRET_NAME`
-  env. Default off → no behaviour change.
-- **Apex / control-plane gap.** The wildcard cert *covers* the apex (`<domain>`) as a SAN,
-  and the intended model routes the apex to the control-plane management API. But the
-  **apex→control-plane Ingress is not shipped in the chart today** — only the per-UserTenant
-  Ingresses are operator-built. Routing the (cert-covered) apex to the control-plane Service
-  is currently an installer/out-of-chart step.
+- The DNS-01 provider token is configured via `oc platform dns set` (or
+  `PUT /api/v1/platform/dns`) — API-first, not raw `kubectl`.
+- **Vanity domains** are the only per-org TLS side effect: when a ClusterTenant has
+  `spec.vanityDomain`, the operator issues a single-SAN cert for that host via HTTP-01
+  (no DNS-01 needed, because the customer CNAMEs the vanity onto the org host).
 - **Constraint:** TLS Secrets are namespace-scoped, so `certManager.certificateNamespace`
-  must equal the namespace UserTenant Ingresses run in (the operator `watchNamespace`). The
-  one-label-per-UserTenant, apex-as-SAN, host-only-cookie, and delegated-DNS-subzone rules
-  live in plan CONN.8.
-
-Remaining CONN.8 follow-ups: a DNS-provider onboarding CLI/API (`oc platform dns set`),
-cross-namespace cert distribution if tenants ever split across namespaces, dev wildcard
-hostnames via `sslip.io`/`nip.io`, and a live ACME end-to-end check.
+  must equal the install namespace. Dev wildcard hostnames can use `sslip.io`/`nip.io`.
 
 ## 7. Configuration Model
 
@@ -536,7 +526,7 @@ are **done**; step 6 (Azure/AWS) remains a future extension that needs no core c
 
 - [ ] Bucket retention on tenant deletion: retain (current) vs. policy-driven delete — affects `deprovisionTenantStorage`.
 - [ ] Secrets backing: keep in-cluster Secrets as the cross-provider default, or add an optional External Secrets Operator capability to the adapter interface.
-- [ ] DNS ownership: external-dns (works on-prem + cloud uniformly) vs. per-cloud DNS modules in the infra layer.
+- [ ] DNS record management for the platform base domain: manual setup at install vs. automation via cloud DNS APIs.
 - [ ] Whether `IngressBinding.ingressClassName` defaults belong in config (so on-prem can pick traefik/nginx) rather than hard-coded in the adapter.
 - [ ] ESLint import-boundary tooling choice for enforcing §4.1 rules in CI.
 ```
