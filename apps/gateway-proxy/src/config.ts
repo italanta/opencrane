@@ -12,14 +12,26 @@ export interface GatewayProxyConfig
   controlPlaneUrl: string;
   /** The OpenClaw pod gateway port the proxy forwards to (cluster-internal). */
   gatewayPort: number;
+  /**
+   * Header the verified identity is injected into for the pod's trusted-proxy auth
+   * (must match the operator's `GATEWAY_TRUSTED_PROXY_USER_HEADER`). The proxy strips
+   * any client-supplied value and sets this from the control-plane resolution.
+   */
+  userHeader: string;
   /** In-cluster DNS suffix for the pod Service FQDN (e.g. `svc.cluster.local`). */
   clusterDomain: string;
   /**
-   * Exact `Origin` values allowed on a gateway WS upgrade (CSWSH guard). Empty =
-   * fail closed: every browser upgrade is refused until the operator configures the
-   * org host(s). CORS does NOT cover WebSockets, so this is the only Origin defence.
+   * Exact `Origin` values allowed on a gateway WS upgrade (CSWSH guard) — for
+   * customer-vanity hosts. CORS does NOT cover WebSockets, so this allowlist plus
+   * {@link allowedOriginBaseDomains} are the only Origin defence.
    */
   allowedOrigins: string[];
+  /**
+   * Platform base domains; any `https://<label>.<base>` org host (or the base apex)
+   * is allowed without enumerating every org. Empty AND no exact origins = fail
+   * closed: every browser upgrade is refused.
+   */
+  allowedOriginBaseDomains: string[];
   /** Max gateway sockets one identity may open per minute (per replica). */
   rateLimitPerMinute: number;
 }
@@ -45,12 +57,11 @@ export function _LoadConfig(): GatewayProxyConfig
 
   const gatewayPort = _parsePort(process.env["GATEWAY_PORT"] ?? "8080", "GATEWAY_PORT");
   const clusterDomain = (process.env["CLUSTER_DOMAIN"] ?? "svc.cluster.local").trim();
+  const userHeader = (process.env["GATEWAY_USER_HEADER"] ?? "X-Forwarded-User").trim();
 
-  // Comma-separated exact origins; blank entries dropped. Empty list = fail closed.
-  const allowedOrigins = (process.env["ALLOWED_ORIGINS"] ?? "")
-    .split(",")
-    .map(o => o.trim())
-    .filter(o => o.length > 0);
+  // Comma-separated exact origins (vanity) + base domains (every-org). Empty both = fail closed.
+  const allowedOrigins = _splitList(process.env["ALLOWED_ORIGINS"]);
+  const allowedOriginBaseDomains = _splitList(process.env["ALLOWED_ORIGIN_BASE_DOMAINS"]);
 
   const rateLimitPerMinute = parseInt(process.env["RATE_LIMIT_PER_MINUTE"] ?? "60", 10);
   if (!Number.isFinite(rateLimitPerMinute) || rateLimitPerMinute <= 0)
@@ -58,7 +69,13 @@ export function _LoadConfig(): GatewayProxyConfig
     throw new Error("RATE_LIMIT_PER_MINUTE must be a positive number");
   }
 
-  return { port, controlPlaneUrl, gatewayPort, clusterDomain, allowedOrigins, rateLimitPerMinute };
+  return { port, controlPlaneUrl, gatewayPort, clusterDomain, userHeader, allowedOrigins, allowedOriginBaseDomains, rateLimitPerMinute };
+}
+
+/** Split a comma-separated env var into trimmed, non-empty entries. */
+function _splitList(raw: string | undefined): string[]
+{
+  return (raw ?? "").split(",").map(s => s.trim()).filter(s => s.length > 0);
 }
 
 /** Parse a TCP port env var, validating the 1–65535 range. */

@@ -12,7 +12,7 @@ import type { ResolveOutcome } from "./auth-client.js";
 /** Minimal WS reverse-proxy surface the handler needs (satisfied by `http-proxy`). */
 export interface WsProxy
 {
-  ws(req: IncomingMessage, socket: Duplex, head: Buffer, options: { target: string }, callback: (err: Error) => void): void;
+  ws(req: IncomingMessage, socket: Duplex, head: Buffer, options: { target: string; headers?: Record<string, string> }, callback: (err: Error) => void): void;
 }
 
 /** Dependencies for {@link _HandleUpgrade}; injectable so the handler is unit-testable. */
@@ -56,7 +56,7 @@ export async function _HandleUpgrade(deps: UpgradeDeps, req: IncomingMessage, so
 
   // 1. CSWSH guard — fail closed on a missing or non-allowlisted Origin.
   const origin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
-  if (!_OriginAllowed(origin, config.allowedOrigins))
+  if (!_OriginAllowed(origin, config.allowedOrigins, config.allowedOriginBaseDomains))
   {
     reqLog.warn({ origin }, "gateway upgrade refused: origin not allowlisted");
     _refuse(socket, 403);
@@ -93,10 +93,14 @@ export async function _HandleUpgrade(deps: UpgradeDeps, req: IncomingMessage, so
     return;
   }
 
-  // 4. Reverse-proxy to the resolved pod's cluster-internal gateway Service.
+  // 4. Reverse-proxy to the resolved pod's cluster-internal gateway Service, injecting the
+  //    verified identity as the trusted-proxy user header. Strip any client-supplied value
+  //    first (header hygiene) so the pod trusts ONLY the identity the control plane resolved
+  //    — this is the same contract nginx's auth_request honoured before the proxy existed.
+  delete req.headers[config.userHeader.toLowerCase()];
   const target = `ws://${podService.name}.${podService.namespace}.${config.clusterDomain}:${config.gatewayPort}`;
   reqLog.info({ email: user.email, tenant: tenant.name, target }, "gateway upgrade authorised; proxying");
-  proxy.ws(req, socket, head, { target }, function _onProxyError(err: Error)
+  proxy.ws(req, socket, head, { target, headers: { [config.userHeader]: user.email } }, function _onProxyError(err: Error)
   {
     reqLog.error({ err, target }, "gateway proxy transport error");
     if (!socket.destroyed)

@@ -30,13 +30,17 @@ function _fakeSocket(): Duplex & { written: string[]; destroyed: boolean }
   return socket as unknown as Duplex & { written: string[]; destroyed: boolean };
 }
 
-/** A fake WS proxy recording forward targets. */
-function _fakeProxy(): WsProxy & { targets: string[] }
+/** A fake WS proxy recording forward targets, injected headers, and the forwarded request. */
+function _fakeProxy(): WsProxy & { targets: string[]; headers: Array<Record<string, string> | undefined>; reqs: IncomingMessage[] }
 {
   const targets: string[] = [];
+  const headers: Array<Record<string, string> | undefined> = [];
+  const reqs: IncomingMessage[] = [];
   return {
     targets,
-    ws(_req, _socket, _head, options) { targets.push(options.target); },
+    headers,
+    reqs,
+    ws(req, _socket, _head, options) { targets.push(options.target); headers.push(options.headers); reqs.push(req); },
   };
 }
 
@@ -45,7 +49,9 @@ const baseConfig: GatewayProxyConfig = {
   controlPlaneUrl: "http://cp:8080",
   gatewayPort: 8080,
   clusterDomain: "svc.cluster.local",
+  userHeader: "X-Forwarded-User",
   allowedOrigins: ["https://acme.opencrane.ai"],
+  allowedOriginBaseDomains: [],
   rateLimitPerMinute: 60,
 };
 
@@ -59,7 +65,7 @@ const okTarget: ResolveOutcome = {
 };
 
 /** Build deps with an injected resolver and overridable config. */
-function _deps(resolve: UpgradeDeps["resolve"], overrides: Partial<GatewayProxyConfig> = {}): { deps: UpgradeDeps; proxy: WsProxy & { targets: string[] } }
+function _deps(resolve: UpgradeDeps["resolve"], overrides: Partial<GatewayProxyConfig> = {}): { deps: UpgradeDeps; proxy: ReturnType<typeof _fakeProxy> }
 {
   const proxy = _fakeProxy();
   const deps: UpgradeDeps = {
@@ -80,18 +86,23 @@ function _req(headers: Record<string, string | undefined>): IncomingMessage
 
 describe("_HandleUpgrade", () =>
 {
-  it("authorises and proxies a valid upgrade to the resolved pod Service", async () =>
+  it("authorises and proxies a valid upgrade to the resolved pod Service, injecting the trusted identity", async () =>
   {
     const resolve = vi.fn().mockResolvedValue(okTarget);
     const { deps, proxy } = _deps(resolve);
     const socket = _fakeSocket();
+    // A spoofed client-supplied header must be stripped before forwarding.
+    const req = _req({ origin: "https://acme.opencrane.ai", cookie: "sid=x", "x-forwarded-user": "attacker@evil.com" });
 
-    await _HandleUpgrade(deps, _req({ origin: "https://acme.opencrane.ai", cookie: "sid=x" }), socket, Buffer.alloc(0));
+    await _HandleUpgrade(deps, req, socket, Buffer.alloc(0));
 
     expect(proxy.targets).toEqual(["ws://openclaw-alice.opencrane-acme.svc.cluster.local:8080"]);
     expect(socket.destroyed).toBe(false);
     // Cookie was forwarded to the resolver; no route decided locally.
     expect(resolve).toHaveBeenCalledWith("http://cp:8080", "sid=x", expect.any(AbortSignal));
+    // The trusted user header is set from the control-plane resolution, NOT the client value.
+    expect(proxy.headers[0]?.["X-Forwarded-User"]).toBe("alice@example.com");
+    expect(req.headers["x-forwarded-user"]).toBeUndefined();
   });
 
   it("refuses (403) and never calls the control plane on a non-allowlisted origin (CSWSH)", async () =>

@@ -24,10 +24,10 @@ function main(): void
 {
   const config = _LoadConfig();
 
-  if (config.allowedOrigins.length === 0)
+  if (config.allowedOrigins.length === 0 && config.allowedOriginBaseDomains.length === 0)
   {
-    // Fail closed but loud: with no allowlist every browser upgrade is refused.
-    log.warn("ALLOWED_ORIGINS is empty — every gateway WS upgrade will be refused (CSWSH fail-closed). Set the org host(s).");
+    // Fail closed but loud: with no allowlist + no base domains every browser upgrade is refused.
+    log.warn("ALLOWED_ORIGINS and ALLOWED_ORIGIN_BASE_DOMAINS are both empty — every gateway WS upgrade will be refused (CSWSH fail-closed). Set the platform base domain(s).");
   }
 
   // The reverse proxy. `ws:true` enables WebSocket forwarding; no path rewriting —
