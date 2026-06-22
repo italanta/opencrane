@@ -41,6 +41,12 @@ export interface OrgDomainProvisionerConfig
  * create the resources is real, not a no-op stub. This is invoked by the
  * ClusterTenant reconciler (PR #50); the create HTTP path never calls it directly,
  * preserving the API-first posture.
+ *
+ * PRECONDITION: the org's bound namespace (`<namespacePrefix><org>`) must already
+ * exist — the reconciler fences it (the same step that binds the ClusterTenant)
+ * BEFORE calling this. A missing namespace is a precondition fault: the cert-manager
+ * client re-throws that 404 (it is NOT masked as "cert-manager absent"), so the
+ * reconciler surfaces it as an error rather than a silent not-ready.
  */
 export class DefaultOrgDomainProvisioner implements OrgDomainProvisioner
 {

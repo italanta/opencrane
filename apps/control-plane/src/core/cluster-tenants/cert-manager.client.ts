@@ -153,10 +153,20 @@ function _IsNotFound(err: unknown): boolean
 }
 
 /**
- * Detect an absent CRD — the cluster has no cert-manager. The API server answers a
- * request against an unserved group/version with 404 NotFound (and the body kind is
- * `Status` with reason `NotFound`), so a 404 on a CREATE (which can never be an
- * already-gone delete) signals the CRD is not installed.
+ * Detect an absent CRD — the cluster has no cert-manager — and ONLY that.
+ *
+ * A 404 on a CREATE is ambiguous: it can mean either (a) the resource TYPE is not
+ * served (the `certificates.cert-manager.io` CRD is not installed) OR (b) the target
+ * NAMESPACE does not exist. We must not conflate the two — reporting "cert-manager is
+ * not installed" when the real fault is a missing namespace would mislead operators.
+ *
+ * The API server discriminates them in the Status body: an unserved type returns the
+ * discovery-style message "the server could not find the requested resource" with no
+ * resource-specific `details.name`; a missing namespace returns reason `NotFound` with
+ * `details.kind == "namespaces"` (and a namespace name). So we treat a 404 as CRD-absent
+ * ONLY when it carries the unserved-type signature (group cert-manager.io, or the
+ * discovery message, or no `details.kind`/`details.name` pinning it to another object).
+ * Any other 404 returns false here and is re-thrown by the caller (fail-loud).
  */
 function _IsCrdAbsent(err: unknown): boolean
 {
@@ -164,11 +174,30 @@ function _IsCrdAbsent(err: unknown): boolean
   {
     return false;
   }
-  // A create returning 404 means the resource TYPE (CRD) is not served — there is no
-  // object to be "not found" on a create otherwise.
-  const reason = (err as { body?: { reason?: string }; reason?: string })?.body?.reason
-    ?? (err as { reason?: string })?.reason;
-  return reason === undefined || reason === "NotFound";
+
+  const body = (err as { body?: { message?: string; details?: { group?: string; kind?: string; name?: string } }; message?: string }).body
+    ?? (err as { message?: string; details?: { group?: string; kind?: string; name?: string } });
+  const message = (body as { message?: string })?.message ?? (err as { message?: string })?.message ?? "";
+  const details = (body as { details?: { group?: string; kind?: string; name?: string } })?.details;
+
+  // (a) The Status names the cert-manager group/Certificate type as the missing TYPE.
+  if (details?.group === _CM_GROUP && !details?.name)
+  {
+    return true;
+  }
+  // (b) The discovery-layer message for an unserved group/version/kind.
+  if (/could not find the requested resource/i.test(message))
+  {
+    return true;
+  }
+  // (c) The 404 is pinned to a DIFFERENT object (e.g. a missing namespace) — NOT a CRD
+  //     absence. Return false so the caller re-throws rather than misattributing it.
+  if (details?.kind && details.kind !== _CM_CERTIFICATE_PLURAL && details.kind !== "certificates")
+  {
+    return false;
+  }
+  // (d) No details at all and no discovery message → too ambiguous to claim CRD-absent.
+  return false;
 }
 
 /** Extract a Kubernetes API status code from common client error shapes. */
