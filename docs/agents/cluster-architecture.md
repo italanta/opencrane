@@ -90,7 +90,7 @@ platform.weownai.eu             → control plane (the FIXED super-operator host
 
 ## Physical Cluster
 
-- **Cloud target: GKE Autopilot** (`platform/terraform/cloud/gcp/`) — Google-managed nodes, pay-per-pod, private nodes, VPC-native with secondary IP ranges for pods/services, Cloud NAT egress, Cloud DNS wildcard pointing at a reserved static global IP. Provisioned in phases: networking → cluster → Artifact Registry → in-cluster Bitnami PostgreSQL + the chart → DNS.
+- **Cloud target: GKE Autopilot** (`platform/terraform/cloud/gcp/`) — Google-managed nodes, pay-per-pod, private nodes, VPC-native with secondary IP ranges for pods/services, Cloud NAT egress, an install-time Cloud DNS wildcard (`*.<base>`, covering org apexes `<org>.<base>` — **not** per-user UserTenant hosts `<user>.<org>.<base>`, which need a per-org `*.<org>.<base>` record) pointing at a reserved static global IP. Provisioned in phases: networking → cluster → Artifact Registry → in-cluster Bitnami PostgreSQL + the chart → DNS.
 - **Cloud-agnostic target** (`platform/terraform/core/`) — assumes a ready kubeconfig and applies only the chart; works on k3d (local dev/e2e), EKS, AKS, on-prem. `hosting.provider: onprem` makes cloud storage/identity no-ops.
 
 ## Helm Template Inventory
@@ -169,13 +169,15 @@ ClusterTenant operator/CR watcher. The interface the reconciler calls is
 (`apps/operator/src/cluster-tenants/internal/org-domain-provisioner.types.ts`), implemented by
 `DefaultOrgDomainProvisioner` (`apps/operator/src/cluster-tenants/internal/org-domain.provisioner.ts`):
 it applies the per-org wildcard `Certificate` (`*.<org>.<base>` + apex/vanity SANs) via cert-manager
-DNS-01 and, when a Cloud DNS zone is configured, ensures the `*.<org>.<base>` / `<org>.<base>` A records
-in the terraform-managed Cloud DNS zone. Both side effects are idempotent. It is **fail-closed + runtime-
-gated by real capability detection**: when the cluster has no cert-manager (the dev cluster currently does
-not) AND no DNS zone is configured, it returns `{ready:false, skipped:true}` and never crashes, while the
-resource-authoring path stays real (the Certificate manifest is genuinely built and applied). The Cloud
-DNS SDK is an optional dependency loaded lazily, so on-prem installs never pull it. The create path itself
-never mutates DNS or cert-manager — only the reconciler (in the operator) does (fail-closed, API-first).
+DNS-01 and **declares** the `*.<org>.<base>` / `<org>.<base>` A records as a namespaced external-dns
+`DNSEndpoint` custom resource (`externaldns.k8s.io/v1alpha1`); the external-dns controller reconciles
+them into whatever DNS provider the platform runs (Cloud DNS, Route53, …) — no cloud SDK in the
+operator. Both side effects are idempotent. It is **fail-closed + runtime-gated by real capability
+detection**: when the cluster has no cert-manager (the dev cluster currently does not) AND no external-dns
+is present, it returns `{ready:false, skipped:true}` and never crashes, while the resource-authoring path
+stays real (the Certificate + `DNSEndpoint` manifests are genuinely built and applied). The create path
+itself never mutates DNS or cert-manager — only the reconciler (in the operator) does (fail-closed,
+API-first).
 
 ## Isolation Tiers
 

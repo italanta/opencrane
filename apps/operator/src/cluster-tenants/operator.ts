@@ -31,9 +31,9 @@ import { _BuildOrgDomainProvisioner } from "./internal/org-domain.provisioner.fa
  *      unsupported tier).
  *   3. Fence the bound namespace (PSA `restricted`) idempotently.
  *   4. Invoke the real `OrgDomainProvisioner.provisionOrgDomain(...)` — it applies the
- *      per-org wildcard Certificate and (when a Cloud DNS zone is configured) the A
- *      records, runtime-gating to a recorded skip condition when cert-manager/DNS is
- *      genuinely absent; it never throws, so a missing backend cannot fail reconcile.
+ *      per-org wildcard Certificate and declares the A records as an external-dns
+ *      `DNSEndpoint`, runtime-gating to a recorded skip condition when cert-manager or the
+ *      DNSEndpoint CRD is genuinely absent; it never throws, so a missing backend cannot fail reconcile.
  *   5. `ready` — stamp `boundNamespace` + provisioner + domain status so
  *      `_ResolveClusterTenant` stops hard-failing and openclaws can attach.
  *
@@ -166,9 +166,9 @@ export class ClusterTenantOperator
       await __K8sApplyResource(this.coreApi, _BuildClusterTenantNamespace(boundary.boundNamespace, name), this.log);
 
       // 4. Per-org domain (DNS + wildcard TLS) — runtime-gated. The provisioner applies
-      //    the real Certificate (and A records when a DNS zone is configured), returning
-      //    ready:false, skipped:true ONLY when cert-manager and DNS are both genuinely
-      //    absent; it never throws, so a missing backend cannot fail the reconcile.
+      //    the real Certificate and declares the A records as an external-dns DNSEndpoint,
+      //    returning ready:false, skipped:true ONLY when cert-manager AND external-dns are
+      //    both genuinely absent; it never throws, so a missing backend cannot fail the reconcile.
       const domain = await this.domainProvisioner.provisionOrgDomain({
         orgName: name,
         boundNamespace: boundary.boundNamespace,
@@ -214,8 +214,8 @@ export class ClusterTenantOperator
  * Owns K8s client construction so the operator class depends only on the abstractions
  * it needs. The domain provisioner is the real `DefaultOrgDomainProvisioner`, built by
  * `_BuildOrgDomainProvisioner` from operator config: it applies the per-org Certificate
- * through cert-manager and, when a Cloud DNS zone is configured, the per-org A records.
- * It is runtime-gated — cert-manager / DNS absence is detected at apply time and
+ * through cert-manager and declares the per-org A records as an external-dns `DNSEndpoint`.
+ * It is runtime-gated — cert-manager / DNSEndpoint CRD absence is detected at apply time and
  * surfaced as a skip, never a crash — so it is safe on the dev cluster as-is.
  *
  * @param kc - Resolved KubeConfig.

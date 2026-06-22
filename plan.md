@@ -116,26 +116,27 @@ Stacked on `feat/org-admin-billing`.
 - **Per-org provisioning — IMPLEMENTED (operator-owned, PR #50):** `DefaultOrgDomainProvisioner`
   (`apps/operator/src/cluster-tenants/internal/org-domain.provisioner.ts`) behind the `OrgDomainProvisioner`
   interface. It applies the per-org wildcard `Certificate` (`*.<org>.<base>` + apex/vanity SANs) via
-  cert-manager DNS-01 (`CertManagerClient` over the custom-objects API) and, when a Cloud DNS zone is
-  configured, ensures the `*.<org>.<base>`/`<org>.<base>` A records in the terraform-managed zone
-  (`CloudDnsClient`, a thin wrapper over `@google-cloud/dns` as an **optional** dep, lazy-loaded like the
-  operator's `GcsBucketClient`). Both side effects idempotent. **Fail-closed + runtime-gated by real
-  capability detection:** an absent cert-manager CRD short-circuits fail-closed and, when DNS is also
-  unconfigured, the step reports `{ready:false, skipped:true}` — never crashes — while the resource-authoring
-  path stays real (the Certificate manifest is genuinely built and applied, not a no-op stub). Wired by
-  `_BuildOrgDomainProvisioner` from operator config; the create path never mutates DNS/cert-manager — only the
-  reconciler (in the operator) does (fail-closed, API-first).
+  cert-manager DNS-01 (`CertManagerClient` over the custom-objects API) and declares the
+  `*.<org>.<base>`/`<org>.<base>` A records as a namespaced external-dns `DNSEndpoint` CR
+  (`externaldns.k8s.io/v1alpha1`, `DnsEndpointClient` over the custom-objects API), which the external-dns
+  controller reconciles into the platform's DNS provider — no cloud SDK (see DOMAIN.T1). Both side effects
+  idempotent. **Fail-closed + runtime-gated by real capability detection:** an absent cert-manager/DNSEndpoint
+  CRD short-circuits fail-closed and reports a skip — never crashes — while the resource-authoring path stays
+  real (the manifests are genuinely built and applied, not no-op stubs). Wired by `_BuildOrgDomainProvisioner`
+  from operator config; the create path never mutates DNS/cert-manager — only the reconciler (in the operator)
+  does (fail-closed, API-first).
 - **Docs:** `docs/agents/cluster-architecture.md` + `website/operators/dns-config.md` rewritten to the new
   topology with the exact customer CNAME instruction.
 - **PR #50 (org-provision-wiring) — LANDED:** the ClusterTenant reconciler (`apps/operator/src/cluster-tenants/operator.ts`)
   now CALLS the real `provisionOrgDomain(...)` on every reconcile. The dead control-plane copies of the
   provisioner/cert/DNS clients (never invoked there) and the hardcoded always-skip `GatedOrgDomainProvisioner`
   stub were deleted; the one real provisioner is owned by the operator (the reconciler/executor). Helm wires
-  `INGRESS_IP`/`DNS_MANAGED_ZONE`/`CERT_MANAGER_ISSUER_*` + cert-manager Certificate RBAC (gated on
-  `certManager.enabled`). Live cert/DNS apply remains the batched human-authorised step (cert-manager is not
-  installed on the shared dev cluster) — prepared, not executed.
-- Validation: `helm template` (operator + RBAC) green; operator (132; +21 provisioner/cert/DNS/gating unit
-  tests), control-plane (408) suites green; touched-package build + lint clean.
+  `INGRESS_IP`/`CERT_MANAGER_ISSUER_*` + RBAC: `certManager.enabled` gates the operator's `certificates` RBAC
+  and `externalDns.enabled` gates its `dnsendpoints` RBAC (see DOMAIN.T1). Live cert/DNS apply remains the
+  batched human-authorised step (cert-manager is not installed on the shared dev cluster) — prepared, not
+  executed.
+- Validation: `helm template` (operator + RBAC) green; operator (155; +provisioner/cert/DNS/gating unit
+  tests), control-plane (407) suites green; touched-package build + lint clean.
 
 #### Follow-ups
 - **DOMAIN.T1 — k8s-native DNS instead of the direct GCP binding — DONE.** Replaced the imperative

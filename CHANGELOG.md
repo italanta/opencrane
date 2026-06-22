@@ -51,14 +51,18 @@ follows [Keep a Changelog](https://keepachangelog.com/); the project uses
   per-user `<user>.<org>.<base>` level. New users under an existing org get HTTPS automatically.
 - **Per-org domain serving + TLS is now actually provisioned, not just specified.** OpenCrane carries a
   working `OrgDomainProvisioner` that, for a given org, applies the per-org wildcard `Certificate`
-  (`*.<org>.<base>` + the org apex, plus any vanity domain) through cert-manager and ensures the
-  matching `*.<org>.<base>` / `<org>.<base>` A records in the platform's Cloud DNS zone — so every user
-  under the org both resolves and is browser-trusted with no per-user setup. It is idempotent and
-  fail-closed: on a cluster without cert-manager (and no Cloud DNS zone) it records the domain step as
-  skipped with a clear reason and lets the org still reach ready — the namespace boundary, not the cert,
-  gates attachment — instead of failing the reconcile, and the Cloud DNS integration is an optional
-  dependency that on-prem installs never load. This runs only from the operator's org reconciler —
-  creating an org over the API never touches DNS or cert-manager directly.
+  (`*.<org>.<base>` + the org apex, plus any vanity domain) through cert-manager and declares the
+  matching `*.<org>.<base>` / `<org>.<base>` A records (pointing at the cluster ingress IP) as a
+  namespaced external-dns `DNSEndpoint` custom resource (`externaldns.k8s.io/v1alpha1`) in the org's
+  bound namespace — so every user under the org both resolves and is browser-trusted with no per-user
+  setup. The operator talks to no cloud DNS API and carries no cloud SDK: the cluster's external-dns
+  controller reconciles the declared records into whatever DNS provider the platform runs (Cloud DNS,
+  Route53, Cloudflare, RFC2136, …). It is idempotent and fail-closed: on a cluster without cert-manager
+  it records the cert step as skipped with a clear reason and lets the org still reach ready — the
+  namespace boundary, not the cert, gates attachment — instead of failing the reconcile; likewise an
+  absent `DNSEndpoint` CRD (external-dns not installed) makes the DNS step report skipped rather than
+  crash, and the A-record step runs only when an ingress IP target is set. This runs only from the
+  operator's org reconciler — creating an org over the API never touches DNS or cert-manager directly.
 
 ### Changed
 
