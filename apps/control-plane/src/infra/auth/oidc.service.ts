@@ -279,7 +279,10 @@ export class OidcAuthService
     //    issuer (Mode-2 broker, no upstream Entra), but this uses nothing Zitadel-specific —
     //    it works against any spec-compliant issuer at OIDC_ISSUER_URL.
     const loginUrl = client.buildAuthorizationUrl(discoveredConfig, {
-      redirect_uri: this.config.redirectUri,
+      // Host-derived so per-org-host login works (each org is served at <org>.<base>) AND
+      // the session cookie stays host-scoped to that host; matches the origin completeLogin
+      // derives at the callback. Falls back to the configured URI when no host is present.
+      redirect_uri: _buildRedirectUri(req, this.config.redirectUri),
       scope: this.config.scopes,
       code_challenge: codeChallenge,
       code_challenge_method: "S256",
@@ -526,6 +529,26 @@ function _ReadStringArrayClaim(value: unknown): string[]
 export function ___CreateOidcAuthService(log: Logger, prisma: PrismaClient): OidcAuthService
 {
   return new OidcAuthService(log, prisma);
+}
+
+/**
+ * Build the OIDC redirect_uri for THIS request's host (DOMAIN.T4 multi-host). Each org is
+ * served at its own host `<org>.<base>`, so login/callback must happen there for the
+ * session cookie to be host-scoped to it. We take the callback PATH from the configured
+ * `OIDC_REDIRECT_URI` (operator-controlled) but derive the ORIGIN from the request — the
+ * same origin `completeLogin` sees at the callback, so the auth-request and token-exchange
+ * redirect_uri always match. The IdP must allow these per-org hosts (e.g. a wildcard
+ * redirect URI). Falls back to the configured URI when the request carries no host.
+ */
+function _buildRedirectUri(req: Request, configuredRedirect: string): string
+{
+  const forwardedProto = req.headers["x-forwarded-proto"];
+  const forwardedHost = req.headers["x-forwarded-host"];
+  const protocol = typeof forwardedProto === "string" ? forwardedProto.split(",")[0].trim() : req.protocol;
+  const host = typeof forwardedHost === "string" ? forwardedHost.split(",")[0].trim() : req.get("host");
+  if (!host) return configuredRedirect;
+  const callbackPath = new URL(configuredRedirect).pathname;
+  return `${protocol}://${host}${callbackPath}`;
 }
 
 /** Convert the current Express request into an absolute callback URL. */
