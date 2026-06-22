@@ -10,7 +10,7 @@ import { TenantPolicyResolutionState, TenantStatusPhase } from "./models/tenant-
 import { __K8sApplyResource } from "../infra/k8s.js";
 import { _RunWatchLoop, K8sWatchEventType } from "../shared/watch-runner.js";
 import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "../shared/crd-constants.js";
-import { _BuildClusterTenantLimitRange, _BuildClusterTenantNamespace, _BuildClusterTenantResourceQuota, _BuildConfigMap, _BuildDeployment, _BuildGatewayNetworkPolicy, _BuildIngress, _BuildIngressHost, _BuildService, _BuildServiceAccount, _BuildStatePvc } from "./deploy/index.js";
+import { _BuildClusterTenantLimitRange, _BuildClusterTenantNamespace, _BuildClusterTenantResourceQuota, _BuildConfigMap, _BuildDeployment, _BuildGatewayNetworkPolicy, _BuildService, _BuildServiceAccount, _BuildStatePvc } from "./deploy/index.js";
 import { TenantCleanup } from "./destroy/tenant-cleanup.js";
 
 import { TenantEncryptionKeys } from "./internal/tenant-encryption-keys.js";
@@ -285,13 +285,12 @@ export class TenantOperator
       //    on the configured gateway port.
       await __K8sApplyResource(this.coreApi, _BuildService(this.config, effectiveTenant, namespace), this.log);
 
-      // 9. Ingress — routes external HTTPS traffic for {tenant}.{domain} to the Service.
-      //    Ingress class and annotations come from the adapter (nginx on-prem, gce on GKE).
-      const ingressBinding = this.hosting.buildIngressBinding();
-      await __K8sApplyResource(this.networkingApi, _BuildIngress(this.config, ingressBinding, effectiveTenant, namespace, ingressDomain), this.log);
-
-      // 9b. NetworkPolicy — lock the gateway port to the ingress controller so the
-      //     trusted-proxy auth (CONN.4) can't be abused by other in-cluster pods.
+      // 9. NetworkPolicy — lock the gateway port to the identity-routing proxy (now folded
+      //    into the operator) so the trusted-proxy auth (CONN.4) can't be abused by other
+      //    in-cluster pods. No per-user Ingress is minted: every user reaches their pod
+      //    through the org's single host `<org>.<base>`, reverse-proxied by the operator to
+      //    this pod's Service. The org host is served by the platform wildcard Ingress +
+      //    cert and gets an explicit external-dns record (see the org-domain provisioner).
       await __K8sApplyResource(this.networkingApi, _BuildGatewayNetworkPolicy(this.config, effectiveTenant, namespace), this.log);
 
       // 10. Status — write the observed Running state back to the Tenant CR so that
@@ -299,7 +298,8 @@ export class TenantOperator
       await this.statusWriter.patchStatus(tenant, crNamespace, {
         phase: TenantStatusPhase.Running,
         podName: `openclaw-${name}`,
-        ingressHost: _BuildIngressHost(name, ingressDomain),
+        // Served at the ORG host (`<org>.<base>` or vanity) via the proxy — no per-user subdomain.
+        ingressHost: ingressDomain,
         effectivePolicyRef,
         policyResolutionSource: policyResolution.source,
         policyResolutionState: policyResolution.state,

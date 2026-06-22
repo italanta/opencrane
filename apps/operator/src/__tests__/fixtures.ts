@@ -26,6 +26,7 @@ export const defaultConfig: OpenClawTenantOperatorConfig = {
   gatewayTrustedProxies: ["10.0.0.0/8"],
   gatewayTrustNothing: false,
   gatewayTrustedProxyUserHeader: "X-Forwarded-User",
+  operatorNamespace: "default",
   gatewayProxyEnabled: false,
   gatewayProxyPort: 8090,
   clusterDomain: "svc.cluster.local",

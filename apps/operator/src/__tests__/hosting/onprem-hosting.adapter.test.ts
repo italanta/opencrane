@@ -37,12 +37,4 @@ describe("OnPremHostingAdapter", () =>
     expect(vol.volumeMount.mountPath).toBe("/data/openclaw");
     expect(vol.volume.persistentVolumeClaim?.claimName).toBe("openclaw-alice-state");
   });
-
-  it("returns nginx ingress class with no annotations", () =>
-  {
-    const binding = adapter.buildIngressBinding();
-
-    expect(binding.ingressClassName).toBe("nginx");
-    expect(binding.annotations).toEqual({});
-  });
 });

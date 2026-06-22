@@ -52,16 +52,6 @@ export interface TenantStateVolume
   requiresPvc: boolean;
 }
 
-/** Ingress class and annotations appropriate to the hosting substrate. */
-export interface IngressBinding
-{
-  /** Ingress class name (nginx on-prem, gce on GKE). */
-  ingressClassName: string;
-
-  /** Provider-specific ingress annotations (empty on-prem). */
-  annotations: Record<string, string>;
-}
-
 /**
  * The single contract the operator depends on for all hosting-substrate concerns.
  * Cloud specifics live behind concrete adapters; on-prem is the default implementation.
@@ -82,7 +72,4 @@ export interface HostingAdapter
 
   /** The tenant pod state volume + mount, plus whether a PVC must be created. */
   buildStateVolume(tenantName: string): TenantStateVolume;
-
-  /** Ingress class + annotations for the tenant ingress. */
-  buildIngressBinding(): IngressBinding;
 }

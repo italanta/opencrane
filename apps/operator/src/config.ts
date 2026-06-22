@@ -82,6 +82,9 @@ export interface OpenClawTenantOperatorConfig
 
   // -- Identity-routing gateway proxy, folded in-process into the operator (DOMAIN.T4) --
 
+  /** The operator's own namespace — the per-pod gateway NetworkPolicy admits the gateway
+   *  port from the operator (which now hosts the in-process proxy) in this namespace. */
+  operatorNamespace: string;
   /** Whether the operator runs the in-process gateway proxy server. */
   gatewayProxyEnabled: boolean;
   /** TCP port the in-operator proxy listens on (distinct from the gateway port). */
@@ -200,6 +203,7 @@ export function _LoadOperatorConfig(): OpenClawTenantOperatorConfig
     gatewayTrustedProxies: trustedProxies.cidrs,
     gatewayTrustNothing: trustedProxies.trustNothing,
     gatewayTrustedProxyUserHeader: _readEnvValue<string>("GATEWAY_TRUSTED_PROXY_USER_HEADER", "string", false, "X-Forwarded-User"),
+    operatorNamespace: ownNamespace,
     gatewayProxyEnabled: _readEnvValue<boolean>("GATEWAY_PROXY_ENABLED", "boolean", false, false),
     gatewayProxyPort: _readEnvValue<number>("GATEWAY_PROXY_PORT", "number", false, 8090),
     clusterDomain: _readEnvValue<string>("CLUSTER_DOMAIN", "string", false, "svc.cluster.local"),

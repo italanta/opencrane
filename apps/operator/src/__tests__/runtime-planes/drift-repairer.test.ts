@@ -24,6 +24,7 @@ function _buildConfig(overrides: Partial<OpenClawTenantOperatorConfig> = {}): Op
     gatewayTrustedProxies: ["10.0.0.0/8"],
     gatewayTrustNothing: false,
     gatewayTrustedProxyUserHeader: "X-Forwarded-User",
+    operatorNamespace: "opencrane",
     gatewayProxyEnabled: false,
     gatewayProxyPort: 8090,
     clusterDomain: "svc.cluster.local",
