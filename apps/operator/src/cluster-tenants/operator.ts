@@ -4,7 +4,7 @@ import type { Logger } from "pino";
 import type { OpenClawTenantOperatorConfig } from "../config.js";
 import { __K8sApplyResource } from "../infra/k8s.js";
 import { _RunWatchLoop, K8sWatchEventType } from "../shared/watch-runner.js";
-import { CLUSTER_TENANT_CRD_PLURAL, OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "../shared/crd-constants.js";
+import { CLUSTER_TENANT_CRD_PLURAL, OPENCRANE_API_GROUP, OPENCRANE_API_VERSION } from "../shared/crd-constants.js";
 import { _BuildClusterTenantNamespace } from "../tenants/deploy/index.js";
 import type { ClusterTenantResource } from "../tenants/internal/cluster-tenant-resolution.types.js";
 
@@ -13,26 +13,6 @@ import { _NamespaceForOrg, _ProvisionBoundary } from "./internal/shared-cluster.
 import { ClusterTenantReconcilePhase } from "./internal/shared-cluster.provisioner.types.js";
 import type { OrgDomainProvisioner } from "./internal/org-domain-provisioner.types.js";
 import { _BuildOrgDomainProvisioner } from "./internal/org-domain.provisioner.factory.js";
-
-/**
- * Legacy annotation the control plane used to stamp with the org owner's email,
- * before owner identity moved to the validated `spec.owner` field. Read only as a
- * fallback so CRs created by an older control plane (not yet backfilled) still seed
- * their default Tenant during rollout; new CRs carry `spec.owner` instead.
- */
-const _LEGACY_OWNER_EMAIL_ANNOTATION = "opencrane.io/owner-email";
-
-/** Suffix appended to an org's name to form its auto-seeded first workspace Tenant. */
-const _DEFAULT_TENANT_SUFFIX = "-default";
-
-/** Whether a Kubernetes API error is a 409 AlreadyExists across the common error shapes. */
-function _IsAlreadyExistsError(err: unknown): boolean
-{
-  if (typeof err !== "object" || err === null) return false;
-  const e = err as { statusCode?: unknown; code?: unknown; body?: { code?: unknown } };
-  if (e.statusCode === 409 || e.code === 409) return true;
-  return typeof e.body === "object" && e.body !== null && (e.body as { code?: unknown }).code === 409;
-}
 
 /**
  * Watches the cluster-scoped ClusterTenant custom resource and drives each org
@@ -297,11 +277,12 @@ export class ClusterTenantOperator
 
       this.log.info({ name, boundNamespace: boundary.boundNamespace }, "cluster tenant ready");
 
-      // 6. Seed the org's first workspace Tenant now that the org is ready and its
-      //    namespace exists. Idempotent + fail-soft: a re-reconcile re-applies the same
-      //    `<org>-default` Tenant (AlreadyExists is a no-op), and a seed failure is logged
-      //    but never fails the reconcile, so the org cannot be wedged out of `ready`.
-      await this.ensureDefaultTenant(clusterTenant);
+      // The org's first workspace Tenant is seeded by the control plane as a dual-write
+      // (CRD + DB row) at org-create time, with its `POST /cluster-tenants/:name/refresh`
+      // endpoint as the explicit recovery. The operator deliberately does NOT seed it here:
+      // a CRD created without the matching DB projection is invisible to the management API
+      // (the "ready org, no workspace tenant" bug). The TenantOperator reconciles whatever
+      // default Tenant the control plane declared, once this org's namespace is bound.
     }
     catch (err)
     {
@@ -311,74 +292,6 @@ export class ClusterTenantOperator
         message: err instanceof Error ? err.message : String(err),
       });
       throw err;
-    }
-  }
-
-  /**
-   * Seed the org's first workspace Tenant once it is ready, attributed to the org owner.
-   *
-   * Closes the "ready org with no workspace" gap: provisioning creates the org (+owner
-   * membership) but no pod, so a freshly-provisioned customer would land in an empty
-   * console. On the org's reconcile to `ready` — when its bound namespace exists — this
-   * applies a `<org>-default` Tenant whose `clusterTenantRef` points back at the org.
-   *
-   * Idempotent: a re-reconcile re-applies the same Tenant and treats AlreadyExists (409)
-   * as a converged no-op (it is created in the operator's watch namespace, like every
-   * other Tenant CR). Fail-soft: any other error is logged but never thrown, so a seed
-   * hiccup cannot wedge the org out of `ready`; the next reconcile retries.
-   *
-   * The owner's email arrives via the CR's `spec.owner.email` (the operator has no DB
-   * access), falling back to the legacy `opencrane.io/owner-email` annotation for CRs an
-   * older control plane created before the field existed. When it is absent — the dev-auth
-   * path carries only a subject, no email — the seed is skipped with a warning.
-   *
-   * @param clusterTenant - The ready ClusterTenant whose default Tenant is ensured.
-   */
-  private async ensureDefaultTenant(clusterTenant: ClusterTenantResource): Promise<void>
-  {
-    const orgName = clusterTenant.metadata!.name!;
-    const ownerEmail = clusterTenant.spec.owner?.email?.trim()
-      || clusterTenant.metadata?.annotations?.[_LEGACY_OWNER_EMAIL_ANNOTATION]?.trim();
-    if (!ownerEmail)
-    {
-      this.log.warn({ name: orgName }, "no owner email on cluster tenant (spec.owner.email / legacy annotation both absent); skipping default tenant seed");
-      return;
-    }
-
-    // Tenant CRs live in the operator's watch namespace (the TenantOperator watches there),
-    // falling back to the operator's own namespace when watching all namespaces.
-    const namespace = this.config.watchNamespace || this.config.operatorNamespace;
-    const tenantName = `${orgName}${_DEFAULT_TENANT_SUFFIX}`;
-    const tenantCr = {
-      apiVersion: `${OPENCRANE_API_GROUP}/${OPENCRANE_API_VERSION}`,
-      kind: "Tenant",
-      metadata: { name: tenantName, namespace },
-      spec: {
-        displayName: `${clusterTenant.spec.displayName ?? orgName} workspace`,
-        email: ownerEmail,
-        clusterTenantRef: orgName,
-      },
-    };
-
-    try
-    {
-      await this.customApi.createNamespacedCustomObject({
-        group: OPENCRANE_API_GROUP,
-        version: OPENCRANE_API_VERSION,
-        namespace,
-        plural: TENANT_CRD_PLURAL,
-        body: tenantCr,
-      });
-      this.log.info({ name: orgName, tenantName, namespace }, "seeded default tenant for org");
-    }
-    catch (err)
-    {
-      if (_IsAlreadyExistsError(err))
-      {
-        this.log.debug({ name: orgName, tenantName }, "default tenant already exists; nothing to seed");
-        return;
-      }
-      this.log.warn({ err, name: orgName, tenantName }, "failed to seed default tenant (org stays ready; will retry on next reconcile)");
     }
   }
 

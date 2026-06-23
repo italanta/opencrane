@@ -1481,6 +1481,44 @@ export const spec = {
       },
     },
 
+    "/cluster-tenants/{name}/refresh": {
+      post: {
+        operationId: "refreshClusterTenant",
+        summary: "Refresh a cluster tenant's status and reconcile its owner workspace tenant",
+        description: "Re-reads the operator's observed phase from the CR (mirroring it to the DB), then — when the org is fully `ready` but has no workspace Tenant projected — seeds the owner's `<org>-default` Tenant via the same dual-write (CRD + DB row) the create path uses. Idempotent: a ready org that already has its tenant just returns the current status.",
+        tags: ["Cluster Tenants"],
+        parameters: [{ name: "name", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          200: ok("Refreshed status, plus the default-tenant reconcile outcome (null when the org is not yet ready).", {
+            type: "object",
+            properties: {
+              status: {
+                type: "object",
+                properties: {
+                  phase: { type: "string", enum: ["pending", "provisioning", "ready", "failed"] },
+                  message: { type: "string" },
+                  boundNamespace: { type: "string" },
+                  provisioner: { type: "string" },
+                },
+              },
+              defaultTenant: {
+                type: "object",
+                nullable: true,
+                properties: {
+                  tenantName: { type: "string" },
+                  created: { type: "boolean" },
+                  skippedReason: { type: "string" },
+                },
+              },
+            },
+          }),
+          401: unauthorized("No authenticated session (real-auth deployments)."),
+          403: forbidden("Caller is neither a platform operator nor an owner/admin of this org."),
+          404: notFound("Cluster tenant not found."),
+        },
+      },
+    },
+
     // ------------------------------------------------------------------
     // Billing accounts — the prerequisite for creating an organisation
     // ------------------------------------------------------------------

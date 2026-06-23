@@ -283,13 +283,18 @@ describe("ClusterTenantOperator.reconcile", () =>
   });
 });
 
-describe("ClusterTenantOperator default-tenant seed (owner resolution)", () =>
+describe("ClusterTenantOperator default-tenant seed (owned by the control plane)", () =>
 {
   beforeEach(() => vi.clearAllMocks());
 
-  it("seeds the default Tenant from spec.owner.email when the org reaches ready", async () =>
+  it("does NOT seed a default Tenant on reconcile — the control plane dual-writes it", async () =>
   {
-    const { api: customApi, seeds } = _makeStubCustomApi();
+    // The org's first workspace Tenant is created by the control plane as a dual-write
+    // (CRD + DB row) at org-create time, with POST /cluster-tenants/:name/refresh as the
+    // explicit recovery. The operator must never create a Tenant CRD here: a CRD without
+    // the matching DB projection row is invisible to the management API (the "ready org,
+    // no workspace tenant" bug). This guards against re-introducing operator-side seeding.
+    const { api: customApi, seeds, patches } = _makeStubCustomApi();
     const { api: coreApi } = _makeStubCoreApi();
     const { provisioner } = _makeDomainProvisioner({ skipped: true, ready: false });
     const operator = _buildOperator(customApi, coreApi, provisioner);
@@ -298,55 +303,8 @@ describe("ClusterTenantOperator default-tenant seed (owner resolution)", () =>
     ct.spec.owner = { subject: "auth0|abc", email: "owner@acme.example" };
     await operator.reconcile(ct);
 
-    expect(seeds).toHaveLength(1);
-    expect(seeds[0].name).toBe("acme-default");
-    expect(seeds[0].email).toBe("owner@acme.example");
-    expect(seeds[0].clusterTenantRef).toBe("acme");
-  });
-
-  it("falls back to the legacy owner-email annotation for a CR with no spec.owner (rollout safety)", async () =>
-  {
-    const { api: customApi, seeds } = _makeStubCustomApi();
-    const { api: coreApi } = _makeStubCoreApi();
-    const { provisioner } = _makeDomainProvisioner({ skipped: true, ready: false });
-    const operator = _buildOperator(customApi, coreApi, provisioner);
-
-    const ct = _makeClusterTenant("legacy");
-    ct.metadata!.annotations = { "opencrane.io/owner-email": "legacy@acme.example" };
-    await operator.reconcile(ct);
-
-    expect(seeds).toHaveLength(1);
-    expect(seeds[0].email).toBe("legacy@acme.example");
-  });
-
-  it("prefers spec.owner.email over the legacy annotation when both are present", async () =>
-  {
-    const { api: customApi, seeds } = _makeStubCustomApi();
-    const { api: coreApi } = _makeStubCoreApi();
-    const { provisioner } = _makeDomainProvisioner({ skipped: true, ready: false });
-    const operator = _buildOperator(customApi, coreApi, provisioner);
-
-    const ct = _makeClusterTenant("acme");
-    ct.spec.owner = { subject: "auth0|abc", email: "spec@acme.example" };
-    ct.metadata!.annotations = { "opencrane.io/owner-email": "annotation@acme.example" };
-    await operator.reconcile(ct);
-
-    expect(seeds[0].email).toBe("spec@acme.example");
-  });
-
-  it("skips the seed (org still ready) when no owner email is resolvable — dev-auth path", async () =>
-  {
-    const { api: customApi, seeds, patches } = _makeStubCustomApi();
-    const { api: coreApi } = _makeStubCoreApi();
-    const { provisioner } = _makeDomainProvisioner({ skipped: true, ready: false });
-    const operator = _buildOperator(customApi, coreApi, provisioner);
-
-    const ct = _makeClusterTenant("devorg");
-    ct.spec.owner = { subject: "dev-local-subject" }; // subject only, no email
-    await operator.reconcile(ct);
-
-    expect(seeds).toHaveLength(0);                 // nothing seeded without an email
-    expect(patches.at(-1)!.phase).toBe("ready");   // but the org is not wedged out of ready
+    expect(seeds).toHaveLength(0);                 // operator creates no Tenant CRD
+    expect(patches.at(-1)!.phase).toBe("ready");   // org still reconciles to ready
   });
 });
 

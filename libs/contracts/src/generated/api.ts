@@ -398,6 +398,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cluster-tenants/{name}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh a cluster tenant's status and reconcile its owner workspace tenant
+         * @description Re-reads the operator's observed phase from the CR (mirroring it to the DB), then — when the org is fully `ready` but has no workspace Tenant projected — seeds the owner's `<org>-default` Tenant via the same dual-write (CRD + DB row) the create path uses. Idempotent: a ready org that already has its tenant just returns the current status.
+         */
+        post: operations["refreshClusterTenant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/billing-accounts": {
         parameters: {
             query?: never;
@@ -3605,6 +3625,68 @@ export interface operations {
                         message?: string;
                         boundNamespace?: string;
                         provisioner?: string;
+                    };
+                };
+            };
+            /** @description No authenticated session (real-auth deployments). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Caller is neither a platform operator nor an owner/admin of this org. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Cluster tenant not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    refreshClusterTenant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Refreshed status, plus the default-tenant reconcile outcome (null when the org is not yet ready). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status?: {
+                            /** @enum {string} */
+                            phase?: "pending" | "provisioning" | "ready" | "failed";
+                            message?: string;
+                            boundNamespace?: string;
+                            provisioner?: string;
+                        };
+                        defaultTenant?: {
+                            tenantName?: string;
+                            created?: boolean;
+                            skippedReason?: string;
+                        } | null;
                     };
                 };
             };

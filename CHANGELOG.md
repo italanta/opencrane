@@ -13,6 +13,10 @@ follows [Keep a Changelog](https://keepachangelog.com/); the project uses
 
 ## [Unreleased]
 
+## [0.5.3] — 2026-06-23
+
+Tenant operator stability: eliminates the status-write hot-loop that inflated ResourceQuota usage and blocked workspace provisioning under high tenant counts.
+
 ### Added
 
 - **Signing out via the API now ends the IdP session, not just the local cookie.** `POST /auth/logout` calls Zitadel's `end_session_endpoint` so the user's token is invalidated at the identity provider — a subsequent sign-in requires a fresh Zitadel authentication rather than silently reusing the existing IdP session.

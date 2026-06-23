@@ -49,7 +49,7 @@ export function _RegisterClusterTenants(parent: Command, getConfig: () => CliCon
 {
   const clusterTenant = parent
     .command("cluster-tenant")
-    .description("Manage cluster tenants — the first-class customer / isolation unit (create, list, show, update, delete, status)");
+    .description("Manage cluster tenants — the first-class customer / isolation unit (create, list, show, update, delete, status, refresh)");
 
   clusterTenant
     .command("list")
@@ -84,6 +84,18 @@ export function _RegisterClusterTenants(parent: Command, getConfig: () => CliCon
       const client = _MakeClient(getConfig());
       const { data, error } = await client.GET("/cluster-tenants/{name}/status", { params: { path: { name } } });
       if (error) _PrintApiError("cluster-tenant status", error);
+      _Print(data, opts.output);
+    });
+
+  clusterTenant
+    .command("refresh <name>")
+    .description("Refresh a cluster tenant's status and seed its owner workspace tenant if the org is ready but has none")
+    .option("-o, --output <format>", "Output format: table|json", "table")
+    .action(async function _refresh(name: string, opts: { output: OutputFormat })
+    {
+      const client = _MakeClient(getConfig());
+      const { data, error } = await client.POST("/cluster-tenants/{name}/refresh", { params: { path: { name } } });
+      if (error) _PrintApiError("cluster-tenant refresh", error);
       _Print(data, opts.output);
     });
 

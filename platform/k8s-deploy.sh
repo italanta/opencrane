@@ -107,6 +107,7 @@ TENANT_TAG=""           # empty → falls back to IMAGE_TAG
 BASE_DOMAIN="${OPENCRANE_BASE_DOMAIN:-}"
 STORAGE_CLASS=""        # empty → cluster default StorageClass
 VALUES_FILE=""
+REUSE_VALUES=""      # "--reuse-values" mode: inherit current helm values; add only overrides
 EXTRA_SET=()
 
 # OIDC + per-cluster operator bootstrap. All default empty (OIDC stays disabled and the
@@ -220,6 +221,7 @@ while [[ $# -gt 0 ]]; do
     --dns01-credentials) DNS01_CREDENTIALS="$2"; shift 2 ;;
     --dns01-project)     DNS01_PROJECT="$2"; shift 2 ;;
     --values)        VALUES_FILE="$2"; shift 2 ;;
+    --reuse-values)  REUSE_VALUES="1"; shift ;;
     --set)           EXTRA_SET+=(--set "$2"); shift 2 ;;
     -h|--help)       grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *)               err "Unknown flag: $1"; exit 1 ;;
@@ -774,6 +776,9 @@ _DB_CKSUM="$(printf '%s' "$DB_PASSWORD" | sha256sum | cut -c1-8)"
 helm_args+=(--set "litellm.podAnnotations.db-checksum=$_DB_CKSUM")
 helm_args+=(--set "mcpGateway.podAnnotations.db-checksum=$_DB_CKSUM")
 helm_args+=("${EXTRA_SET[@]}")
+# When --reuse-values is set, inherit all previously-supplied values from the live release
+# and apply only the overrides passed on this invocation (e.g. a pure image-tag rollout).
+[[ -n "$REUSE_VALUES" ]] && helm_args+=(--reuse-values)
 helm "${helm_args[@]}"
 
 # 4. Wait for the core workloads.
