@@ -233,7 +233,13 @@ litellm:
   # -- Default spend path template for control-plane to query tenant spend from LiteLLM (tenant_id placeholder: {tenant})
   spendPathTemplate: "/spend/tenant/{tenant}"
   image:
-    repository: ghcr.io/berriai/litellm
+    # -- non_root variant: ships PRE-GENERATED Prisma engine binaries (baked at
+    #    build) and runs as a non-root user. The default `litellm` image generates
+    #    Prisma at runtime, which fails on its Chainguard/wolfi base in restricted/
+    #    non-root k8s with `NotConnectedError: Not connected to the query engine`
+    #    (wolfi ships OpenSSL 3 only; the runtime-fetched debian-openssl-1.1.x query
+    #    engine can't load libssl.so.1.1). Confirmed fix per BerriAI/litellm#11864.
+    repository: ghcr.io/berriai/litellm-non_root
     # -- Pinned to the audited stable tag (matches the k3d overlays) for
     #    supply-chain integrity + reproducible deploys. Do NOT use a rolling
     #    `main-latest` tag in production — bump deliberately after re-auditing.

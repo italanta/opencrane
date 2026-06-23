@@ -27,24 +27,6 @@ spec:
     spec:
       securityContext:
         {{- toYaml .Values.litellm.podSecurityContext | nindent 8 }}
-      initContainers:
-        {{- /* Wolfi has no openssl CLI; Prisma falls back to debian-openssl-1.1.x binary which
-               needs libssl.so.1.1 (absent on wolfi). Shim makes `openssl version` return 3.0.x
-               so Prisma downloads debian-openssl-3.0.x (links libssl.so.3, present on wolfi). */}}
-        - name: prisma-openssl-shim
-          image: busybox:1.36
-          securityContext:
-            runAsUser: {{ .Values.litellm.securityContext.runAsUser | default 10001 }}
-            runAsGroup: {{ .Values.litellm.securityContext.runAsGroup | default 10001 }}
-          command:
-            - /bin/sh
-            - -c
-            - |
-              printf '#!/bin/sh\necho "OpenSSL 3.0.7 30 Oct 2022"\n' > /tmp/openssl
-              chmod 755 /tmp/openssl
-          volumeMounts:
-            - name: temp-dir
-              mountPath: /tmp
       containers:
         - name: litellm
           image: "{{ .Values.litellm.image.repository }}:{{ .Values.litellm.image.tag }}"
@@ -163,8 +145,6 @@ spec:
               value: "/tmp"
             - name: NPM_CONFIG_CACHE
               value: "/tmp/.npm"
-            - name: PATH
-              value: "/tmp:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
           volumeMounts:
             - name: temp-dir
               mountPath: /tmp

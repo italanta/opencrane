@@ -358,6 +358,13 @@ if [[ -z "${LITELLM_MASTER_KEY:-}" ]]; then
   LITELLM_MASTER_KEY="$(_read_secret opencrane-litellm LITELLM_MASTER_KEY)"
   LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY:-sk-$(_gen_secret)}"
 fi
+# LiteLLM salt encrypts provider keys stored in the DB (STORE_MODEL_IN_DB). It MUST stay
+# constant once set, or already-stored keys become unreadable — so always re-use the
+# existing value and only generate a fresh one when the secret has none.
+if [[ -z "${LITELLM_SALT_KEY:-}" ]]; then
+  LITELLM_SALT_KEY="$(_read_secret opencrane-litellm LITELLM_SALT_KEY)"
+  LITELLM_SALT_KEY="${LITELLM_SALT_KEY:-sk-$(_gen_secret)}"
+fi
 
 log "Target cluster: $(kubectl config current-context)"
 log "Namespace: $NAMESPACE   Release: $RELEASE   Image tag: $IMAGE_TAG"
@@ -379,8 +386,11 @@ if kubectl get cluster "$DB_CLUSTER" -n "$NAMESPACE" >/dev/null 2>&1; then
     kubectl delete secret "${DB_CLUSTER}" "opencrane-obot" "opencrane-litellm-db" "opencrane-litellm" \
       -n "$NAMESPACE" --ignore-not-found
     # Fresh secrets — regenerate so cluster + secrets are in sync from scratch.
+    # The litellm DB is wiped with the PVCs, so a fresh salt is correct (no stored
+    # provider keys survive to be decrypted).
     DB_PASSWORD="$(_gen_secret)"
     LITELLM_MASTER_KEY="sk-$(_gen_secret)"
+    LITELLM_SALT_KEY="sk-$(_gen_secret)"
   fi
 fi
 
@@ -436,7 +446,9 @@ kubectl create secret generic opencrane-litellm-db -n "$NAMESPACE" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl create secret generic opencrane-litellm -n "$NAMESPACE" \
-  --from-literal=LITELLM_MASTER_KEY="$LITELLM_MASTER_KEY" --dry-run=client -o yaml | kubectl apply -f -
+  --from-literal=LITELLM_MASTER_KEY="$LITELLM_MASTER_KEY" \
+  --from-literal=LITELLM_SALT_KEY="$LITELLM_SALT_KEY" \
+  --dry-run=client -o yaml | kubectl apply -f -
 
 # OIDC secret. The chart references controlPlane.oidc.existingSecret for the client + session
 # secrets; previously this installer set only the issuer/clientId/redirect and ASSUMED the
@@ -700,15 +712,15 @@ fi
 
 # 3. The OpenCrane chart.
 log "Installing the OpenCrane Helm release '$RELEASE'…"
-# litellm.existingDatabaseSecret is NOT passed: the Python Prisma engine binary crashes on
-# Chainguard wolfi (libssl.so.1.1 absent; engine links debian-openssl-1.1.x). Without
-# DATABASE_URL LiteLLM skips Prisma entirely and runs as a stateless proxy — storeModelInDb=false
-# so no DB-backed features are lost. Re-enable once a wolfi-compatible Prisma binary is
-# available (PRISMA_QUERY_ENGINE_BINARY_PATH pointing to a pre-built openssl-3.0.x binary, or
-# switch to a python:slim-based LiteLLM image that ships the correct debian binary).
+# LiteLLM is wired to its own `litellm` database (DATABASE_URL via opencrane-litellm-db) with
+# STORE_MODEL_IN_DB on, so models/keys are stored and seeded at runtime via the admin API. The
+# Prisma query-engine crash on the Chainguard/wolfi base is fixed by the non_root image variant
+# (pre-baked engine binaries), set in the chart — see values.yaml litellm.image.
 helm_args=(upgrade --install "$RELEASE" "$CHART_DIR" --namespace "$NAMESPACE" --create-namespace
   --set "controlPlane.database.existingSecret=$DB_SECRET"
-  --set "litellm.existingSecret=opencrane-litellm")
+  --set "litellm.existingDatabaseSecret=opencrane-litellm-db"
+  --set "litellm.existingSecret=opencrane-litellm"
+  --set "litellm.storeModelInDb=true")
 # Per-component tags override the unified --image-tag so a single component can be
 # rolled through Helm (which keeps Helm the sole owner of the image field). Each
 # falls back to IMAGE_TAG when its flag is unset, preserving the all-same default.
