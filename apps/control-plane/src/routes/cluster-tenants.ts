@@ -11,6 +11,7 @@ import { _IsDevAuthMode } from "../infra/auth/auth-mode.js";
 import { _RequireBillingAccountForOrgCreate, _RequireOrgManager } from "../infra/middleware/cluster-tenant-org-admin.js";
 import { _ApplyClusterTenantCr, _DeleteClusterTenantCr } from "../core/cluster-tenants/cr-bridge.js";
 import { _ReadClusterTenantObservedStatus } from "../core/cluster-tenants/cr-status-reader.js";
+import { _RepairTenantProjection } from "./internal/projection-repair.js";
 
 /** RFC-1123-ish DNS domain: lowercase labels, ≥1 dot, alpha TLD, ≤253 chars. */
 const _VANITY_DOMAIN_PATTERN = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/;
@@ -49,6 +50,20 @@ async function _ReadObservedStatus(prisma: PrismaClient, customApi: k8s.CustomOb
   const observed = await _ReadClusterTenantObservedStatus(customApi, row.name);
   if (!observed) return null;
   void _SyncObservedStatusToDb(prisma, row, observed).catch(() => { /* best-effort mirror */ });
+
+  // The operator seeds a default Tenant CRD directly when an org reaches ready, bypassing
+  // the control-plane API dual-write (CRD + DB). When the org is ready and the DB has no
+  // tenants yet, fire a projection repair to sync any operator-seeded CRDs into the DB.
+  // A count check before the repair avoids the CRD list call on every poll once converged.
+  // Fire-and-forget — a failure here never blocks the status read.
+  if (observed.phase === ClusterTenantPhase.Ready && customApi)
+  {
+    const tenantNamespace = process.env["NAMESPACE"] ?? "default";
+    void prisma.tenant.count({ where: { clusterTenantRef: row.name } })
+      .then((n) => n === 0 ? _RepairTenantProjection(customApi!, prisma, tenantNamespace, false) : undefined)
+      .catch(() => { /* best-effort */ });
+  }
+
   return _ObservedStatusToContract(observed);
 }
 
