@@ -1126,3 +1126,73 @@ model DocMergeProposal {
   @@index([status])
   @@map("doc_merge_proposals")
 }
+
+/// A model discovered from the LiteLLM cost map (billing spine) and enriched
+/// from models.dev.  Represents a model that *exists* (available for
+/// enablement), NOT one that is callable.  Distinct from ModelDefinition
+/// (a registered LiteLLM deployment).  Populated by the catalog-reconcile
+/// cron; never directly callable.
+///
+/// Canonical identity: `litellmKey` (the LiteLLM cost-map key).
+/// Billable pricing: re-read from the LiteLLM map on every reconcile run;
+/// changes stamp `pricingUpdatedAt` and write an AuditEntry.
+/// Enrichment: modalities + capability flags from models.dev, joined on key.
+model ModelCatalogEntry {
+  /// Surrogate key.
+  id                 String    @id @default(cuid())
+  /// Canonical identity = LiteLLM cost-map key (e.g. "gpt-4o", "claude-3-5-sonnet-20241022").
+  litellmKey         String    @unique @map("litellm_key")
+  /// LiteLLM provider string (e.g. "openai", "anthropic", "vertex_ai").
+  provider           String
+  /// Inference mode: "chat" | "embedding" | "rerank" | null when unclassified.
+  mode               String?
+
+  // --- Billable pricing — from the LiteLLM map, re-read every reconcile ---
+  /// Input cost per token in USD (billing spine).
+  inputCostPerToken  Decimal?  @map("input_cost_per_token") @db.Decimal(20, 12)
+  /// Output cost per token in USD (billing spine).
+  outputCostPerToken Decimal?  @map("output_cost_per_token") @db.Decimal(20, 12)
+  /// Maximum input context tokens.
+  maxInputTokens     Int?      @map("max_input_tokens")
+  /// Maximum output tokens.
+  maxOutputTokens    Int?      @map("max_output_tokens")
+
+  // --- Enrichment — from models.dev, joined on litellmKey ---
+  /// models.dev model id (e.g. "openai/gpt-4o"); null when unmatched.
+  modelsDevId        String?   @map("models_dev_id")
+  /// Input modalities (e.g. ["text", "image"]).
+  modalitiesIn       String[]  @map("modalities_in")
+  /// Output modalities (e.g. ["text"]).
+  modalitiesOut      String[]  @map("modalities_out")
+  /// Capability flags: {tool_call, reasoning, attachment, structured_output}.
+  capabilities       Json?
+  /// Cache-read cost per token (from models.dev, display-only).
+  cacheReadCost      Decimal?  @map("cache_read_cost") @db.Decimal(20, 12)
+  /// Cache-write cost per token (from models.dev, display-only).
+  cacheWriteCost     Decimal?  @map("cache_write_cost") @db.Decimal(20, 12)
+  /// Model release date string (e.g. "2024-10-22").
+  releaseDate        String?   @map("release_date")
+  /// Training knowledge cutoff date string.
+  knowledgeCutoff    String?   @map("knowledge_cutoff")
+  /// Whether the model weights are public/open.
+  openWeights        Boolean?  @map("open_weights")
+
+  // --- Data residency ---
+  /// Provider hosting regions for data-residency gating (e.g. ["eu-west"]).
+  /// Empty = unknown / not yet classified.
+  hostingRegions     String[]  @map("hosting_regions")
+
+  // --- Lifecycle ---
+  /// When billable rates last changed (used by the audit trail).
+  pricingUpdatedAt   DateTime? @map("pricing_updated_at")
+  /// When this entry was first discovered.
+  firstSeenAt        DateTime  @default(now()) @map("first_seen_at")
+  /// Bumped on every reconcile run; drift signals the entry may be gone.
+  lastSeenAt         DateTime  @map("last_seen_at")
+  /// Set when the key drops out of the LiteLLM map (soft-delete).
+  deprecatedAt       DateTime? @map("deprecated_at")
+
+  @@index([provider])
+  @@index([deprecatedAt])
+  @@map("model_catalog_entries")
+}

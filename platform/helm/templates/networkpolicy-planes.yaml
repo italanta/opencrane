@@ -74,6 +74,16 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.controlPlane.service.port }}
+    # Allow the catalog-reconcile CronJob pod to POST to
+    # /api/internal/catalog-reconcile (network-policy-only; no auth token).
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "opencrane.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: catalog-reconcile
+      ports:
+        - protocol: TCP
+          port: {{ .Values.controlPlane.service.port }}
 ---
 {{- end }}
 {{- if and .Values.networkPolicy.enabled .Values.mcpGateway.enabled }}

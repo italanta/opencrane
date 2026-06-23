@@ -20,6 +20,7 @@ import { prometheusMetricsRouter } from "./routes/prometheus-metrics.js";
 import { providerKeysRouter } from "./routes/provider-keys.js";
 import { providerCredentialsRouter } from "./routes/provider-credentials.js";
 import { modelRegistryRouter } from "./routes/model-registry.js";
+import { internalCatalogRouter, modelCatalogRouter } from "./routes/model-catalog.js";
 import { modelRoutingDefaultsRouter } from "./routes/model-routing-defaults.js";
 import { modelRoutingRecommendationsRouter } from "./routes/model-routing-recommendations.js";
 import { modelRoutingMetricsRouter } from "./routes/model-routing-metrics.js";
@@ -110,6 +111,7 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
   // API to gate which isolation tiers a customer may request.
   const clusterTenantRegistry = _BuildClusterTenantProvisionerRegistry();
 
+  app.use("/api/internal/catalog-reconcile", internalCatalogRouter(prisma));
   app.use("/api/internal/bundles", _RegisterInternalBundles(prisma, ociBundleStore));
   // NetworkPolicy-only (no auth/TokenReview): the operator fetches a tenant's
   // allowed model set + effective default at reconcile. Best-effort — never 404/500.
@@ -157,6 +159,7 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
   app.use("/api/v1/providers/keys", providerKeysRouter(prisma));
   app.use("/api/v1/providers/credentials", providerCredentialsRouter(prisma));
   app.use("/api/v1/models", modelRegistryRouter(prisma));
+  app.use("/api/v1/model-catalog", modelCatalogRouter(prisma));
   app.use("/api/v1/openapi.json", openapiRouter());
   app.get("/healthz", _CheckDbHealth(prisma));
   app.use("/prom", prometheusMetricsRouter(prisma, customApi));

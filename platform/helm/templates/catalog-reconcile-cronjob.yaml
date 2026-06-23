@@ -1,0 +1,65 @@
+{{- if .Values.catalogReconcile.enabled }}
+{{- /*
+  CronJob that triggers the model catalog reconcile by POSTing to the
+  control-plane's network-policy-guarded /api/internal/catalog-reconcile
+  endpoint.  No auth token is required; access is enforced at the network
+  layer (see networkpolicy-planes.yaml — the catalog-reconcile podSelector).
+
+  The job fetches the LiteLLM cost map + models.dev, upserts ModelCatalogEntry
+  rows, and audits any billable pricing changes.  Failures are logged but do
+  not affect the serving path (catalog entries are advisory; model_definitions
+  are the callable set).
+*/ -}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "opencrane.fullname" . }}-catalog-reconcile
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: catalog-reconcile
+spec:
+  schedule: {{ .Values.catalogReconcile.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 300
+      template:
+        metadata:
+          labels:
+            {{- include "opencrane.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: catalog-reconcile
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: reconcile
+              image: {{ .Values.catalogReconcile.image | quote }}
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - -c
+                - |
+                  set -e
+                  ENDPOINT="http://{{ include "opencrane.fullname" . }}-control-plane:{{ .Values.controlPlane.service.port }}/api/internal/catalog-reconcile"
+                  echo "Triggering catalog reconcile: $ENDPOINT"
+                  curl --silent --show-error --fail \
+                       --max-time 270 \
+                       -X POST "$ENDPOINT" \
+                       -H "Content-Type: application/json" | tee /dev/stderr | grep -q '"total"'
+                  echo "Catalog reconcile complete."
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                capabilities:
+                  drop: ["ALL"]
+{{- end }}
