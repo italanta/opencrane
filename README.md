@@ -157,7 +157,7 @@ Legend
 | Contracts | `libs/contracts/` | Generated TypeScript client + DTOs from `openapi.json`; consumed by CLI and external surfaces |
 | Docker | `docker/` | Container images for tenant pods, operator, and control plane |
 | Skills | `skills/shared/` | Org/team shared skill library |
-| Terraform | `terraform/` | `core/` (cloud-agnostic) + `cloud/gcp/` (GCP-specific) |
+| Terraform | `platform/terraform/` | `core/` (cloud-agnostic) + `cloud/gcp/` (GCP-specific) |
 | Docs site | `website/` | VitePress documentation site published to GitHub Pages |
 
 ## Documentation
@@ -213,7 +213,7 @@ The `strict` profile does not emulate GCP-only capabilities such as Workload Ide
 
 ```bash
 # 1. Provision infrastructure
-cd terraform/environments/dev
+cd platform/terraform/environments/dev
 cp terraform.tfvars.example terraform.tfvars  # edit with your GCP project
 terraform init && terraform apply
 

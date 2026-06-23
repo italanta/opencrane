@@ -13,6 +13,107 @@ follows [Keep a Changelog](https://keepachangelog.com/); the project uses
 
 ## [Unreleased]
 
+## [0.5.2] — 2026-06-23
+
+Operator stability and the register→provision→ready→workspace pipeline made fully operational.
+
+### Fixed
+
+- **The ClusterTenant operator no longer crash-loops under watch-reconnect storms.** On every
+  watch reconnect, the Kubernetes API replays all CRs as `ADDED` concurrently; without a guard,
+  reconcile handlers pile up faster than they drain under API-server throttling (429s), exhausting
+  memory and landing in `OOMKilled`. Two structural fixes close this permanently: a
+  generation/`observedGeneration` guard makes a watch-replay of an unchanged, already-ready org a
+  cheap no-op (no namespace re-create, no domain re-provision); and per-org reconcile coalescing
+  serialises work to one active reconcile per org with a single coalesced pending slot, so no
+  matter how many concurrent events arrive the in-flight count stays bounded. The operator memory
+  limit was also raised as a safety margin.
+
+- **The ClusterTenant reconciler can now actually provision isolation boundaries.** The operator's
+  `ClusterRole` was missing the cluster-scoped grants it needs to create each org's bound namespace
+  (`namespaces`) and to stamp quota and limit objects (`resourcequotas`, `limitranges`) inside it.
+  Without those grants every reconcile 403'd on `createNamespace` and no org ever reached `ready`.
+  The RBAC is now present and the reconciler drives the full namespace + quota + LimitRange
+  provisioning path.
+
+- **The first workspace is now seeded automatically when an org reaches ready.** The operator
+  creates the org's `<org>-default` Tenant as soon as its ClusterTenant CR transitions to `ready`,
+  attributing it to the owner identity stamped on the CR by the control plane at org-create time.
+  Owner identity is now carried as a validated `spec.owner` field (with the legacy
+  `opencrane.io/owner-email` annotation kept as a rollout fallback for CRs created by older control
+  plane versions). The seed is idempotent and fail-soft — a transient error logs and retries on the
+  next reconcile rather than wedging the org out of `ready`.
+
+- **Provisioning status now advances past `pending`.** `GET /cluster-tenants/:name` and
+  `GET /cluster-tenants/:name/status` now read the operator's observed phase directly from the
+  ClusterTenant CR and overlay it onto the response. The DB `phase` column is desired-state-only
+  and never receives the operator's write-back, so without this overlay onboarding polling was
+  stuck at `pending` regardless of what the operator had done. The CR phase is also mirrored
+  back into the DB as a best-effort read-repair (fire-and-forget, non-blocking) so fleet list
+  views converge over time.
+
+- **`POST /cluster-tenants` returns `409 CONFLICT` on a duplicate org name instead of a raw 500.**
+  A duplicate submission now receives a clean `{ code: "CONFLICT", error: "A workspace with this
+  name already exists." }` response. The global error handler is also hardened: `detail` is stripped
+  from all 500 responses in production so Prisma messages and stack traces can never reach a client,
+  and any unmapped Prisma `P2002` unique-constraint violation that escapes route-level handling is
+  caught globally and returns a clean 409 rather than a 500.
+
+- **Vanity-domain TLS now issues correctly via HTTP-01.** The cluster issuer previously had no
+  HTTP-01 solver, so per-org vanity cert requests (for a customer-CNAMEd domain the platform does
+  not control in DNS) stalled. The issuer now carries a catch-all HTTP-01 solver alongside the
+  platform DNS-01 solver, cert-manager routes each request to the appropriate solver, and the
+  platform wildcard's apex SAN is opt-in (`certManager.includeApex=true`) so installs where the
+  bare domain is served elsewhere do not stall issuance. The GCP CloudDNS provider reference is
+  also corrected (`cloudDNS:` key) so DNS-01 challenges no longer fail with an unknown-provider
+  error.
+
+- **Terraform provisions the DNS-writer service account independently of the app deploy.** The
+  shared GSA (`roles/dns.admin` + Workload-Identity bindings) that cert-manager DNS-01 and
+  external-dns use was previously gated on `enable_app_deploy`, so a cluster-only Terraform apply
+  never created it. The DNS module now provisions the zone and the GSA unconditionally (when
+  `enable_cloud_dns=true`) and defers only the install-time A-records until the ingress IP is
+  known — so cert-manager DNS-01 has its credential on the first cluster apply, before any Helm
+  deploy.
+
+- **The k3d end-to-end smoke test runs cleanly again.** The Prisma migration pre-install Hook Job
+  introduced in 0.5.1 pulls the control-plane image, which is not built or imported in the k3d
+  smoke test (that test runs the operator only, with the control-plane at `replicas: 0`). The hook
+  sat in `ImagePullBackOff`, blocking `helm install` indefinitely. The k3d values overlay now
+  disables `controlPlane.migrationJob`, matching the intent of `replicas: 0`.
+
+## [0.5.1] — 2026-06-23
+
+Dev-cluster reliability: database migrations, LiteLLM persistence, and GKE autoscaler unblocked.
+
+### Fixed
+
+- **Database schema migrations now run on every `helm upgrade`, not only on pod recreation.**
+  Previously the control plane ran migrations only from its init-container, which fires solely on
+  pod (re)creation. A `helm upgrade` with unchanged control-plane values never rolled the pod, so
+  migrations fell behind silently whenever the database was recreated under a live pod (e.g. a CNPG
+  cluster rebuild) — surfacing as "table public.tenants does not exist". A pre-install /
+  pre-upgrade Helm hook Job now runs `prisma migrate deploy` on every deploy, blocking the rollout
+  until the schema is reconciled. The init-container remains as a belt-and-suspenders guard.
+  Disable per-environment with `controlPlane.migrationJob.enabled: false`.
+
+- **LiteLLM runtime model storage works correctly on GKE.** The previous fix that disabled
+  `DATABASE_URL` broke runtime model persistence entirely. The root cause was image-specific: the
+  default `ghcr.io/berriai/litellm` image (Chainguard/wolfi base) generates its Prisma query engine
+  at runtime, fetches the wrong OpenSSL variant on wolfi, and crashes with `NotConnectedError`. The
+  chart now uses `ghcr.io/berriai/litellm-non_root`, which ships pre-generated engine binaries and
+  runs as non-root — resolving the crash without disabling the database.
+
+- **GKE cluster-autoscaler can now scale down database nodes.** CNPG manages its instance pods
+  as bare Pods (not a controller-backed workload), which the GKE autoscaler refuses to evict by
+  default. The CNPG Cluster spec now sets
+  `cluster-autoscaler.kubernetes.io/safe-to-evict: "true"` via `inheritedMetadata.annotations`,
+  propagating onto the managed pods so the autoscaler can drain underutilised nodes.
+
+## [0.5.0] — 2026-06-22
+
+Per-org domain serving, the full multi-tenant deploy pipeline, and the identity-routing gateway proxy.
+
 ### Added
 
 - **Identity-routing gateway proxy: serve a whole org's users from one host, with auth and
@@ -28,21 +129,6 @@ follows [Keep a Changelog](https://keepachangelog.com/); the project uses
   per identity; then (4) forwards to that user's pod. The proxy holds no session state or secrets —
   the control plane stays the sole auth authority. Combined with per-pod owner pinning (CONN.10),
   cross-tenant safety now has two independent layers (routing + pod), either of which is sufficient.
-
-### Changed
-
-- **Deleting an organisation now tears down its per-org domain.** When a ClusterTenant is deleted
-  the operator deprovisions the org's wildcard TLS `Certificate` and external-dns `DNSEndpoint`, so
-  external-dns reaps the org's DNS records instead of leaving them dangling on namespace
-  garbage-collection ordering. Idempotent and fail-soft — a teardown error is logged, never wedges
-  the operator, with namespace GC as the backstop.
-
-- **Cluster-tenant provisioner registry slimmed to a pure tier-availability gate.** Now the operator
-  owns all org provisioning, the control plane's dead provisioner lifecycle code (the
-  `provision`/`getStatus`/`deprovision` paths of the shared and external-webhook provisioners) was
-  removed. The management API still gates which isolation tiers it accepts — `dedicatedCluster`
-  remains unavailable unless an external webhook backend is configured over HTTPS — with no change to
-  externally observable behaviour.
 
 - **Seed the first platform operator of a fresh cluster by email — no IdP group mapping
   required yet.** Set the per-cluster install parameter
@@ -120,6 +206,19 @@ follows [Keep a Changelog](https://keepachangelog.com/); the project uses
   crash-looped. Supply the client secret via `--oidc-client-secret` (or `OPENCRANE_OIDC_CLIENT_SECRET`).
 
 ### Changed
+
+- **Deleting an organisation now tears down its per-org domain.** When a ClusterTenant is deleted
+  the operator deprovisions the org's wildcard TLS `Certificate` and external-dns `DNSEndpoint`, so
+  external-dns reaps the org's DNS records instead of leaving them dangling on namespace
+  garbage-collection ordering. Idempotent and fail-soft — a teardown error is logged, never wedges
+  the operator, with namespace GC as the backstop.
+
+- **Cluster-tenant provisioner registry slimmed to a pure tier-availability gate.** Now the operator
+  owns all org provisioning, the control plane's dead provisioner lifecycle code (the
+  `provision`/`getStatus`/`deprovision` paths of the shared and external-webhook provisioners) was
+  removed. The management API still gates which isolation tiers it accepts — `dedicatedCluster`
+  remains unavailable unless an external webhook backend is configured over HTTPS — with no change to
+  externally observable behaviour.
 
 - **A ClusterTenant's `baseDomain` is replaced by `vanityDomain`.** Under the fixed-wildcard topology an
   org no longer brings its own base domain (its serving domain is derived as `<org>.<base>`); the field is
@@ -335,6 +434,10 @@ First tagged release — a working multi-tenant OpenClaw platform you can deploy
 - Initial scaffold of the multi-tenant OpenClaw platform (operator, control-plane, Angular app,
   launch script). Folded into the 0.2.0 tag.
 
-[Unreleased]: https://github.com/italanta/opencrane/compare/0.3.0...HEAD
+[Unreleased]: https://github.com/italanta/opencrane/compare/0.5.2...HEAD
+[0.5.2]: https://github.com/italanta/opencrane/compare/0.5.1...0.5.2
+[0.5.1]: https://github.com/italanta/opencrane/compare/0.5.0...0.5.1
+[0.5.0]: https://github.com/italanta/opencrane/compare/0.4.0...0.5.0
+[0.4.0]: https://github.com/italanta/opencrane/releases/tag/0.4.0
 [0.3.0]: https://github.com/italanta/opencrane/releases/tag/0.3.0
 [0.2.0]: https://github.com/italanta/opencrane/releases/tag/0.2.0
