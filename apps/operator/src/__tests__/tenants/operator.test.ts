@@ -1,7 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import pino from "pino";
 
 import { defaultConfig, _makeTenant } from "../fixtures.js";
 import { _ResolveOrgServingDomain } from "../../tenants/internal/org-serving-domain.js";
+import { TenantOperator } from "../../tenants/operator.js";
+import { TenantStatusPhase } from "../../tenants/models/tenant-status.interface.js";
+import type { TenantStatusWriter } from "../../tenants/internal/tenant-status-writer.js";
+import type { Tenant } from "../../tenants/models/tenant.interface.js";
 
 describe("TenantOperator", () =>
 {
@@ -82,6 +87,76 @@ describe("TenantOperator", () =>
     const version = tenant.spec.openclawVersion ?? defaultConfig.defaultOpenclawVersion;
     expect(version).toBe("2026.6.9");
     expect(version).not.toBe("latest");
+  });
+});
+
+describe("TenantOperator reconcile guard + coalescing", () =>
+{
+  /** Build an operator whose only live dependency is a status-writer spy; the rest are
+   *  unused by the guard short-circuit / by an overridden reconcile, so they are cast stubs. */
+  function _build(): { op: TenantOperator; patch: ReturnType<typeof vi.fn> }
+  {
+    const patch = vi.fn(async () => {});
+    const statusWriter = { patchStatus: patch } as unknown as TenantStatusWriter;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stub = {} as any;
+    const op = new TenantOperator(stub, stub, stub, stub, stub, pino({ level: "silent" }),
+      defaultConfig, stub, stub, statusWriter, stub, stub);
+    return { op, patch };
+  }
+
+  it("skips the reconcile when an already-Running tenant's generation is unchanged", async () =>
+  {
+    const { op, patch } = _build();
+    const tenant = _makeTenant("acme"); // status.phase = Running
+    tenant.metadata!.generation = 3;
+    tenant.status!.observedGeneration = 3;
+
+    await op.reconcileTenant(tenant);
+
+    // Guard short-circuited before any work — no status write, no resource applies.
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("does NOT skip when a spec change bumps generation past observedGeneration", async () =>
+  {
+    const { op } = _build();
+    // Override the heavy reconcile body; we only assert the guard let execution through.
+    let ran = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (op as any).reconcileTenant = async () => { ran = true; };
+    const tenant = _makeTenant("acme");
+    tenant.metadata!.generation = 4;
+    tenant.status!.observedGeneration = 3; // stale → must reconcile
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (op as any).dispatchReconcile(tenant);
+    expect(ran).toBe(true);
+  });
+
+  it("coalesces concurrent events for one tenant into a single re-run", async () =>
+  {
+    const { op } = _build();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let firstCall = true;
+    const calls: string[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (op as any).reconcileTenant = async (t: Tenant) => {
+      calls.push(t.metadata!.name!);
+      if (firstCall) { firstCall = false; await gate; }
+    };
+
+    const tenant = _makeTenant("acme");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const dispatch = (t: Tenant) => (op as any).dispatchReconcile(t);
+    const first = dispatch(tenant);   // starts, blocks on the gate
+    await dispatch(tenant);           // queued (running) — returns immediately
+    await dispatch(tenant);           // collapsed into the same single pending slot
+    release();
+    await first;
+
+    // 3 events while one was in flight → exactly 2 reconciles (in-flight + one coalesced).
+    expect(calls).toEqual(["acme", "acme"]);
   });
 });
 

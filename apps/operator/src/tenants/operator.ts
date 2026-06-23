@@ -69,6 +69,21 @@ export class TenantOperator
   private liteLlmKeys: TenantLiteLlmKeys;
 
   /**
+   * Per-tenant reconcile coalescing. The watch runner dispatches handlers fire-and-forget,
+   * so a watch reconnect replays every Tenant as `ADDED` at once, and a persistently failing
+   * reconcile (e.g. a quota 403) re-triggers itself via its own `Error` status write. Without
+   * a guard those reconciles run concurrently and unbounded — hammering the API and churning
+   * downstream accounting (ResourceQuota `used`). `running` holds names with a drain loop in
+   * progress; `pending` holds the latest Tenant awaiting reconcile per name. An event for a
+   * name already running only updates `pending` (coalesced — reconcile is idempotent), so
+   * in-flight work is bounded to one reconcile per tenant. Mirrors ClusterTenantOperator.
+   */
+  private readonly running = new Set<string>();
+
+  /** Latest Tenant awaiting reconcile per name (see {@link running}). */
+  private readonly pending = new Map<string, Tenant>();
+
+  /**
    * Create a new TenantOperator with pre-wired dependencies.
    * Prefer {@link _CreateTenantOperator} in production entry-points.
    */
@@ -137,18 +152,56 @@ export class TenantOperator
     {
       case K8sWatchEventType.Added:
       case K8sWatchEventType.Modified:
-        if (tenant.spec.suspended)
+        await this.dispatchReconcile(tenant);
+        break;
+      case K8sWatchEventType.Deleted:
+        // Drop any queued reconcile first so a coalesced event cannot re-create what we tear down.
+        this.pending.delete(name);
+        await this.cleanupTenant(tenant);
+        break;
+    }
+  }
+
+  /**
+   * Dispatch a Tenant event through the per-tenant coalescing guard (see {@link running}).
+   *
+   * Records the Tenant as the latest desired state, then — unless a drain loop is already
+   * running for that name — drains `pending` to convergence one reconcile at a time. This
+   * serialises reconciles per tenant and bounds concurrent work to one-per-tenant, so a
+   * watch-reconnect storm or a self-retriggering failed reconcile can never accumulate
+   * fire-and-forget handlers (which would hammer the API and churn ResourceQuota accounting).
+   * The suspended/active branch is re-evaluated against the newest pending state each drain.
+   *
+   * @param tenant - The Tenant from the watch event.
+   */
+  private async dispatchReconcile(tenant: Tenant): Promise<void>
+  {
+    const name = tenant.metadata?.name;
+    if (!name) return;
+
+    this.pending.set(name, tenant);
+    if (this.running.has(name)) return;
+
+    this.running.add(name);
+    try
+    {
+      while (this.pending.has(name))
+      {
+        const next = this.pending.get(name)!;
+        this.pending.delete(name);
+        if (next.spec.suspended)
         {
-          await this.suspendTenant(tenant);
+          await this.suspendTenant(next);
         }
         else
         {
-          await this.reconcileTenant(tenant);
+          await this.reconcileTenant(next);
         }
-        break;
-      case K8sWatchEventType.Deleted:
-        await this.cleanupTenant(tenant);
-        break;
+      }
+    }
+    finally
+    {
+      this.running.delete(name);
     }
   }
 
@@ -176,6 +229,21 @@ export class TenantOperator
     // The Tenant CR itself always lives in its own namespace; status patches must
     // target that namespace regardless of where child resources are deployed.
     const crNamespace = tenant.metadata!.namespace ?? "default";
+
+    // Skip the full redeploy when an already-Running Tenant's spec is unchanged — the
+    // watch-replay case. `metadata.generation` bumps only on a spec change (status writes
+    // do not), so a converged Tenant has `observedGeneration === generation`. Without this,
+    // every watch event (including the operator's OWN status writes) re-runs the entire
+    // reconcile, and a persistently failing one (e.g. a quota 403) self-loops via its Error
+    // status write. A Tenant with no generation still reconciles, then stamps it below.
+    const generation = tenant.metadata?.generation;
+    if (tenant.status?.phase === TenantStatusPhase.Running
+        && typeof generation === "number"
+        && tenant.status?.observedGeneration === generation)
+    {
+      this.log.debug({ name, generation }, "tenant already reconciled at this generation; skipping");
+      return;
+    }
 
     this.log.info({ name, provider: this.hosting.provider }, "reconciling tenant");
 
@@ -304,6 +372,10 @@ export class TenantOperator
         policyResolutionSource: policyResolution.source,
         policyResolutionState: policyResolution.state,
         lastReconciled: new Date().toISOString(),
+        // Record the generation we converged so the guard at the top of reconcileTenant
+        // skips the next watch replay of this unchanged Tenant. A spec edit bumps generation
+        // and re-arms a full reconcile.
+        observedGeneration: tenant.metadata?.generation,
       });
     }
     catch (err)

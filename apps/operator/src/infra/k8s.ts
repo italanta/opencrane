@@ -29,6 +29,29 @@ export async function __K8sApplyResource<T extends k8s.KubernetesObject>(
     throw new Error(`resource metadata.name and metadata.namespace are required for apply (${kind ?? "unknown"})`);
   }
 
+  // PVCs are immutable once created AND quota-sensitive. A CREATE for an already-existing
+  // PVC is rejected by ResourceQuota admission with 403 (admission runs BEFORE the registry's
+  // AlreadyExists check) whenever the namespace is at its storage quota — so an otherwise
+  // no-op re-apply would fail forever, wedging the reconcile. Read first: if the PVC already
+  // exists, converge as a no-op without issuing a CREATE; only create when it is genuinely
+  // absent (404). Other kinds keep the create-first/replace-on-409 path below.
+  if (kind === "PersistentVolumeClaim")
+  {
+    try
+    {
+      await _readResource(client, resource, namespace ?? "", name!);
+      // Positive confirmation it exists → no-op (avoids the create→quota-403 on re-apply).
+      log.debug({ kind, name }, "pvc already exists, skipping create (immutable, quota-safe no-op)");
+      return resource;
+    }
+    catch
+    {
+      // Read was inconclusive (genuinely absent, or a client without a read method) — fall
+      // through to the create-first/replace-on-409 path below, preserving prior behavior.
+      // We only short-circuit when the read POSITIVELY confirms the PVC already exists.
+    }
+  }
+
   try
   {
     const response = await _createResource(client, resource, namespace ?? "");

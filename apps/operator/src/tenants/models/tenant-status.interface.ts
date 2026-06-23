@@ -68,4 +68,13 @@ export interface TenantStatus
 
   /** ISO-8601 timestamp of the last successful reconciliation. */
   lastReconciled?: string;
+
+  /**
+   * `metadata.generation` the operator last drove to `Running`. The API server bumps
+   * `generation` only on a spec change (status writes do not), so a watch replay of an
+   * unchanged, already-running Tenant has `observedGeneration === metadata.generation`
+   * and is skipped — the controller guard that stops redundant re-reconciles (and the
+   * status-write→watch-event churn they trigger) on every watch cycle.
+   */
+  observedGeneration?: number;
 }
