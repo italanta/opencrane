@@ -193,6 +193,58 @@ export async function _DeleteClusterTenantCr(customApi: k8s.CustomObjectsApi | n
   }
 }
 
+/** Observed-state fields the operator stamps on the ClusterTenant CR status subresource. */
+export interface ClusterTenantObservedStatus
+{
+  /** Current lifecycle phase the operator observed (pending|provisioning|ready|failed). */
+  phase?: string;
+  /** Human-readable detail, set on failure or transitional states. */
+  message?: string;
+  /** Namespace the operator bound to this org once provisioned. */
+  boundNamespace?: string;
+  /** Identifier of the provisioner that owns this org's boundary. */
+  provisioner?: string;
+}
+
+/**
+ * Read the OBSERVED status the operator stamped on the cluster-scoped ClusterTenant CR.
+ *
+ * The control plane persists DESIRED state to Postgres and never writes status back; the
+ * operator advances `status.phase` (pending→provisioning→ready) on the CR's status
+ * subresource. The DB `phase` column therefore stays at its seeded `pending` forever, so
+ * the read path must consult the CR to report real provisioning progress (the
+ * onboarding poll otherwise never leaves `pending`).
+ *
+ * Returns null when no cluster is wired (`customApi` null), the CRD/CR is absent, or any
+ * read error — callers then fall back to the DB-derived status, preserving behaviour in
+ * non-cluster (dev/test) environments and never hard-failing the status endpoint on a
+ * transient cluster blip.
+ *
+ * @param customApi - Kubernetes custom-objects client, or null when no cluster is wired.
+ * @param name - The org (ClusterTenant) name whose observed status to read.
+ */
+export async function _ReadClusterTenantObservedStatus(customApi: k8s.CustomObjectsApi | null, name: string): Promise<ClusterTenantObservedStatus | null>
+{
+  if (!customApi) return null;
+
+  try
+  {
+    const cr = await customApi.getClusterCustomObject({
+      group: OPENCRANE_API_GROUP,
+      version: OPENCRANE_API_VERSION,
+      plural: CLUSTER_TENANT_CRD_PLURAL,
+      name,
+    });
+    const status = (cr as { status?: ClusterTenantObservedStatus } | undefined)?.status;
+    return status && typeof status === "object" ? status : null;
+  }
+  catch
+  {
+    // No CRD / CR not found / cluster unreachable → caller falls back to the DB status.
+    return null;
+  }
+}
+
 /** Whether a Kubernetes API error carries a given numeric status code (common shapes). */
 function _HasK8sStatus(err: unknown, code: number): boolean
 {

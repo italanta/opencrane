@@ -6,10 +6,10 @@ import type { ClusterTenantProvisionerRegistry } from "@opencrane/contracts";
 import { Prisma, type PrismaClient } from "@prisma/client";
 
 import type { ClusterTenantCreateRequest, ClusterTenantUpdateRequest } from "./cluster-tenants.models.js";
-import { _IsIsolationTier, _ToContract, _ToPrismaCompute, _ToPrismaTier, _ValidateCompute, _ValidateResources } from "./cluster-tenants.service.js";
+import { _IsIsolationTier, _ObservedStatusToContract, _SyncObservedStatusToDb, _ToContract, _ToPrismaCompute, _ToPrismaTier, _ValidateCompute, _ValidateResources } from "./cluster-tenants.service.js";
 import { _IsDevAuthMode } from "../infra/auth/auth-mode.js";
 import { _RequireBillingAccountForOrgCreate, _RequireOrgManager } from "../infra/middleware/cluster-tenant-org-admin.js";
-import { _ApplyClusterTenantCr, _DeleteClusterTenantCr } from "../core/cluster-tenants/cr-bridge.js";
+import { _ApplyClusterTenantCr, _DeleteClusterTenantCr, _ReadClusterTenantObservedStatus } from "../core/cluster-tenants/cr-bridge.js";
 
 /** RFC-1123-ish DNS domain: lowercase labels, ≥1 dot, alpha TLD, ≤253 chars. */
 const _VANITY_DOMAIN_PATTERN = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/;
@@ -61,7 +61,18 @@ export function clusterTenantsRouter(prisma: PrismaClient, registry: ClusterTena
       res.status(404).json({ error: "Cluster tenant not found", code: "CLUSTER_TENANT_NOT_FOUND" });
       return;
     }
-    res.json(_ToContract(row));
+    const contract = _ToContract(row);
+    // Overlay the operator's OBSERVED phase from the CR: the DB column is desired-only and
+    // never receives the operator's status write-back, so it stays `pending`. Falls back to
+    // the DB-derived status when no cluster/CR is available. Mirror it back to the DB
+    // (read-repair) so the fleet list and other DB readers converge too.
+    const observed = await _ReadClusterTenantObservedStatus(customApi, req.params.name);
+    if (observed)
+    {
+      await _SyncObservedStatusToDb(prisma, row, observed);
+      contract.status = _ObservedStatusToContract(observed);
+    }
+    res.json(contract);
   });
 
   /** Get just the observed status of a cluster tenant (operator OR owner/admin of that org). */
@@ -71,6 +82,17 @@ export function clusterTenantsRouter(prisma: PrismaClient, registry: ClusterTena
     if (!row)
     {
       res.status(404).json({ error: "Cluster tenant not found", code: "CLUSTER_TENANT_NOT_FOUND" });
+      return;
+    }
+    // Read the operator's observed phase from the CR (the source of truth for provisioning
+    // progress); fall back to the DB-derived status when no cluster/CR is available. Without
+    // this the onboarding poll never advances past the seeded `pending`. Mirror the observed
+    // status back to the DB (read-repair) so the fleet list and other DB readers converge.
+    const observed = await _ReadClusterTenantObservedStatus(customApi, req.params.name);
+    if (observed)
+    {
+      await _SyncObservedStatusToDb(prisma, row, observed);
+      res.json(_ObservedStatusToContract(observed));
       return;
     }
     res.json(_ToContract(row).status);
