@@ -817,3 +817,16 @@ clusterTenant:
     existingSecret: ""
     # -- Key within that Secret holding the token.
     secretKey: CLUSTER_TENANT_PROVISIONER_WEBHOOK_TOKEN
+
+# -- Model catalog reconcile CronJob.
+# Periodically syncs ModelCatalogEntry rows from the LiteLLM cost map
+# (billing spine) and models.dev (enrichment) via a POST to the control-plane's
+# /api/internal/catalog-reconcile endpoint.  The CronJob pod is allowed through
+# the NetworkPolicy by the catalog-reconcile podSelector rule.
+catalogReconcile:
+  # -- Enable the CronJob. Set to false to disable automatic catalog sync.
+  enabled: true
+  # -- Cron schedule (UTC). Default: daily at 03:00.
+  schedule: "0 3 * * *"
+  # -- Minimal curl image used by the reconcile Job pod.
+  image: curlimages/curl:8.6.0

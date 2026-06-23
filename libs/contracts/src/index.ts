@@ -47,6 +47,7 @@ export {
   type RoutingProposal,
   type SavingsRecommendation,
 } from "./model-routing.types.js";
+export { type CatalogReconcileResult, type ModelCatalogEntry } from "./model-catalog.types.js";
 export { SkillBundleStatus, SkillPromotionStatus, type SkillBundle, type SkillPromotion } from "./skill-bundle.types.js";
 export {
   ThirdPartySourceItemKind,
