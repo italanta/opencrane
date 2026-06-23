@@ -20,6 +20,10 @@ spec:
       labels:
         {{- include "opencrane.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: mcp-gateway
+      {{- with .Values.mcpGateway.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       serviceAccountName: {{ include "opencrane.fullname" . }}-mcp-gateway
       automountServiceAccountToken: true

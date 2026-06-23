@@ -346,13 +346,44 @@ if [[ "$PREFLIGHT" == "1" ]]; then
 fi
 
 _gen_secret() { openssl rand -hex 16 2>/dev/null || head -c 24 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32; }
-DB_PASSWORD="${DB_PASSWORD:-$(_gen_secret)}"
-LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY:-sk-$(_gen_secret)}"
+# Re-use existing passwords when secrets already exist so that re-runs don't
+# rotate credentials without also updating postgres (which only reads the
+# bootstrap secret once at initdb time).
+_read_secret() { kubectl get secret "$1" -n "$NAMESPACE" -o jsonpath="{.data.$2}" 2>/dev/null | base64 -d; }
+if [[ -z "${DB_PASSWORD:-}" ]]; then
+  DB_PASSWORD="$(_read_secret "${DB_CLUSTER}-creds" password)"
+  DB_PASSWORD="${DB_PASSWORD:-$(_gen_secret)}"
+fi
+if [[ -z "${LITELLM_MASTER_KEY:-}" ]]; then
+  LITELLM_MASTER_KEY="$(_read_secret opencrane-litellm LITELLM_MASTER_KEY)"
+  LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY:-sk-$(_gen_secret)}"
+fi
 
 log "Target cluster: $(kubectl config current-context)"
 log "Namespace: $NAMESPACE   Release: $RELEASE   Image tag: $IMAGE_TAG"
 
 # 1. In-cluster PostgreSQL via the CloudNativePG operator.
+# If the CNPG cluster already exists but authentication fails (password rotated
+# out of sync with the bootstrap secret), wipe and re-bootstrap so all secrets
+# and the live DB stay consistent. Runs a throwaway psql pod inside the cluster.
+_db_auth_ok() {
+  local url="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_CLUSTER}-rw.${NAMESPACE}.svc.cluster.local:5432/${DB_NAME}"
+  kubectl run "db-auth-check-$$" --image=postgres:16 --restart=Never --rm -i \
+    -n "$NAMESPACE" --quiet -- psql "$url" -c '\q' >/dev/null 2>&1
+}
+if kubectl get cluster "$DB_CLUSTER" -n "$NAMESPACE" >/dev/null 2>&1; then
+  if ! _db_auth_ok; then
+    warn "DB credential mismatch detected (password drifted from bootstrap). Resetting PostgreSQL cluster…"
+    kubectl delete cluster "$DB_CLUSTER" -n "$NAMESPACE" --wait=true
+    kubectl delete pvc -n "$NAMESPACE" -l cnpg.io/cluster="$DB_CLUSTER" --ignore-not-found
+    kubectl delete secret "${DB_CLUSTER}" "opencrane-obot" "opencrane-litellm-db" "opencrane-litellm" \
+      -n "$NAMESPACE" --ignore-not-found
+    # Fresh secrets — regenerate so cluster + secrets are in sync from scratch.
+    DB_PASSWORD="$(_gen_secret)"
+    LITELLM_MASTER_KEY="sk-$(_gen_secret)"
+  fi
+fi
+
 log "Installing CloudNativePG operator…"
 helm repo add cnpg https://cloudnative-pg.github.io/charts --force-update >/dev/null
 helm upgrade --install cnpg cnpg/cloudnative-pg \
@@ -669,9 +700,14 @@ fi
 
 # 3. The OpenCrane chart.
 log "Installing the OpenCrane Helm release '$RELEASE'…"
+# litellm.existingDatabaseSecret is NOT passed: the Python Prisma engine binary crashes on
+# Chainguard wolfi (libssl.so.1.1 absent; engine links debian-openssl-1.1.x). Without
+# DATABASE_URL LiteLLM skips Prisma entirely and runs as a stateless proxy — storeModelInDb=false
+# so no DB-backed features are lost. Re-enable once a wolfi-compatible Prisma binary is
+# available (PRISMA_QUERY_ENGINE_BINARY_PATH pointing to a pre-built openssl-3.0.x binary, or
+# switch to a python:slim-based LiteLLM image that ships the correct debian binary).
 helm_args=(upgrade --install "$RELEASE" "$CHART_DIR" --namespace "$NAMESPACE" --create-namespace
   --set "controlPlane.database.existingSecret=$DB_SECRET"
-  --set "litellm.existingDatabaseSecret=opencrane-litellm-db"
   --set "litellm.existingSecret=opencrane-litellm")
 # Per-component tags override the unified --image-tag so a single component can be
 # rolled through Helm (which keeps Helm the sole owner of the image field). Each
@@ -704,10 +740,17 @@ fi
 [[ -n "$VALUES_FILE" ]] && helm_args+=(--values "$VALUES_FILE")
 # cert-manager flags resolved in Step 2.5 (empty in mode=off). Placed before --set
 # overrides so an operator can still override individual issuer fields on the CLI.
-helm_args+=("${CERT_MANAGER_HELM_FLAGS[@]}")
+[ ${#CERT_MANAGER_HELM_FLAGS[@]} -gt 0 ] && helm_args+=("${CERT_MANAGER_HELM_FLAGS[@]}")
 # external-dns wiring resolved above (empty unless a controller is in place). Placed before
 # --set overrides so an operator can still override externalDns.* on the CLI.
-helm_args+=("${EXTERNAL_DNS_HELM_FLAGS[@]}")
+[ ${#EXTERNAL_DNS_HELM_FLAGS[@]} -gt 0 ] && helm_args+=("${EXTERNAL_DNS_HELM_FLAGS[@]}")
+# DB-checksum annotation: a short hash of the DB password injected into the
+# litellm (and mcp-gateway/obot) pod templates. When the password rotates the
+# annotation changes → Kubernetes triggers an automatic rollout so pods never
+# hold stale credentials across a deploy.
+_DB_CKSUM="$(printf '%s' "$DB_PASSWORD" | sha256sum | cut -c1-8)"
+helm_args+=(--set "litellm.podAnnotations.db-checksum=$_DB_CKSUM")
+helm_args+=(--set "mcpGateway.podAnnotations.db-checksum=$_DB_CKSUM")
 helm_args+=("${EXTRA_SET[@]}")
 helm "${helm_args[@]}"
 

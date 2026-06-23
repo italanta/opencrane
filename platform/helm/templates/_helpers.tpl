@@ -51,10 +51,15 @@ Operator RBAC rules — shared by the cluster-scoped (legacy) and namespaced
 All resources here are namespaced, so the same rule list is valid in a Role.
 */}}
 {{- define "opencrane.operatorRbacRules" -}}
-# Tenant and AccessPolicy CRDs
+# Tenant, ClusterTenant, and AccessPolicy CRDs
 - apiGroups: ["opencrane.io"]
   resources: ["tenants", "tenants/status", "accesspolicies"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+{{- if .Values.clusterTenantManager.enabled }}
+- apiGroups: ["opencrane.io"]
+  resources: ["clustertenants", "clustertenants/status"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+{{- end }}
 # Per-tenant resources the operator manages
 - apiGroups: ["apps"]
   resources: ["deployments"]

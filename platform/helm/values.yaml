@@ -164,7 +164,7 @@ controlPlane:
       repository: cognee/cognee
       # -- Pinned to an audited stable tag for supply-chain integrity + reproducible
       #    deploys. Bump deliberately after re-auditing; never use a rolling `latest`.
-      tag: "0.1.43"
+      tag: "1.2.1"
       pullPolicy: IfNotPresent
     service:
       port: 8000
@@ -264,6 +264,7 @@ litellm:
     enabled: false
     host: ""
     port: 6379
+  podAnnotations: {}
   podSecurityContext:
     runAsNonRoot: true
     runAsUser: 10001
@@ -584,10 +585,12 @@ mcpGateway:
     # Secret holding the encryption key (operator-provisioned; not templated here).
     secretName: opencrane-obot-enc
     secretKey: encryption-key
+  podAnnotations: {}
   podSecurityContext:
     runAsNonRoot: false
     seccompProfile:
       type: RuntimeDefault
+
   securityContext:
     allowPrivilegeEscalation: false
     capabilities:
