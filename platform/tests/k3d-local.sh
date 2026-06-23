@@ -155,6 +155,7 @@ metadata:
   namespace: ${NAMESPACE}
 spec:
   instances: 1
+  enablePDB: false
   imageName: ghcr.io/cloudnative-pg/postgresql:16
   storage:
     size: 10Gi

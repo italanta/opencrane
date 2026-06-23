@@ -414,6 +414,7 @@ metadata:
   namespace: ${NAMESPACE}
 spec:
   instances: 1
+  enablePDB: false
   imageName: ghcr.io/cloudnative-pg/postgresql:16
   # CNPG manages instance pods as bare Pods (not a Deployment/StatefulSet), so the
   # GKE cluster-autoscaler treats them as "not backed by a controller" and refuses to

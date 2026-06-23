@@ -59,6 +59,18 @@ All resources here are namespaced, so the same rule list is valid in a Role.
 - apiGroups: ["opencrane.io"]
   resources: ["clustertenants", "clustertenants/status"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# The ClusterTenant reconciler provisions each org's isolation boundary: it creates the
+# bound namespace `opencrane-<org>` with Pod Security Admission labels, and stamps a
+# ResourceQuota + LimitRange into it. `namespaces` is CLUSTER-scoped, so this grant is only
+# effective via the legacy ClusterRole; in namespaced multi-instance mode a Role cannot
+# grant it and cluster-tenant provisioning requires the cluster-scoped operator. Without
+# this the reconcile 403s on createNamespace and never reaches `ready`.
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: [""]
+  resources: ["resourcequotas", "limitranges"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 {{- end }}
 # Per-tenant resources the operator manages
 - apiGroups: ["apps"]
