@@ -1,9 +1,8 @@
 import { ClusterTenantComputeMode, ClusterTenantIsolationTier, ClusterTenantPhase } from "@opencrane/contracts";
-import type { ClusterTenant, ClusterTenantResourceQuota } from "@opencrane/contracts";
+import type { ClusterTenant, ClusterTenantObservedStatus, ClusterTenantResourceQuota, ClusterTenantStatus } from "@opencrane/contracts";
 import type { Prisma, PrismaClient } from "@prisma/client";
 
 import type { ClusterTenantComputeInput, ClusterTenantResourcesInput } from "./cluster-tenants.models.js";
-import type { ClusterTenantObservedStatus } from "../core/cluster-tenants/cr-bridge.js";
 
 /** A cluster_tenants row as read back from Prisma (subset consumed here). */
 type ClusterTenantRow = Prisma.ClusterTenantGetPayload<Record<string, never>>;
@@ -65,7 +64,7 @@ export function _FromPrismaPhase(value: string): ClusterTenantPhase
  * @param observed - The status subresource read from the ClusterTenant CR.
  * @returns The contract status reflecting real provisioning progress.
  */
-export function _ObservedStatusToContract(observed: ClusterTenantObservedStatus): ClusterTenant["status"]
+export function _ObservedStatusToContract(observed: ClusterTenantObservedStatus): ClusterTenantStatus
 {
   return {
     phase: _FromPrismaPhase(observed.phase ?? "pending"),

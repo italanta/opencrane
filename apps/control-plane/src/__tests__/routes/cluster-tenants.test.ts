@@ -2,7 +2,7 @@ import express from "express";
 import type { Express } from "express";
 import { ClusterTenantIsolationTier } from "@opencrane/contracts";
 import type { ClusterTenantProvisionerRegistry } from "@opencrane/contracts";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
@@ -21,6 +21,12 @@ function _mockPrisma(store: Map<string, Row>): PrismaClient
       findUnique: vi.fn(async function _findUnique(args: { where: { name: string } }) { return store.get(args.where.name) ?? null; }),
       create: vi.fn(async function _create(args: { data: Row })
       {
+        // Faithful to the DB unique constraint on `name`: a duplicate throws Prisma P2002,
+        // which the route maps to 409 CONFLICT.
+        if (store.has(args.data.name as string))
+        {
+          throw new Prisma.PrismaClientKnownRequestError("Unique constraint failed on the fields: (`name`)", { code: "P2002", clientVersion: "test" });
+        }
         const row = { nodePool: null, message: null, boundNamespace: null, provisioner: null, ...args.data };
         store.set(args.data.name as string, row);
         return row;
@@ -163,6 +169,20 @@ describe("clusterTenantsRouter (CT.2 management API)", function _suite()
     const clrRes = await request(app).put("/api/v1/cluster-tenants/acme").send({ vanityDomain: "" });
     expect(clrRes.status).toBe(200);
     expect(clrRes.body.vanityDomain).toBeUndefined();
+  });
+
+  it("returns 409 CONFLICT on a duplicate workspace name (Prisma P2002 → domain message)", async function _duplicateName()
+  {
+    const app = _buildApp(_mockPrisma(new Map()), _mockRegistry(false));
+
+    const first = await request(app).post("/api/v1/cluster-tenants").send(_sharedBody());
+    expect(first.status).toBe(201);
+
+    const dup = await request(app).post("/api/v1/cluster-tenants").send(_sharedBody());
+    expect(dup.status).toBe(409);
+    expect(dup.body.code).toBe("CONFLICT");
+    // The raw Prisma message must never leak to the client.
+    expect(JSON.stringify(dup.body)).not.toMatch(/Unique constraint|P2002/);
   });
 
   it("returns 404 for an unknown cluster tenant", async function _notFound()

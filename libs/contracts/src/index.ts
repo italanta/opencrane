@@ -10,6 +10,7 @@ export {
   type ClusterTenantProvisionResult,
   type ClusterTenantProvisionerCapability,
   type ClusterTenantProvisionerRegistry,
+  type ClusterTenantObservedStatus,
   type ClusterTenantResourceQuota,
   type ClusterTenantResources,
   type ClusterTenantStatus,

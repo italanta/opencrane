@@ -78,6 +78,28 @@ export interface ClusterTenantStatus
 }
 
 /**
+ * Raw observed status as read straight off the ClusterTenant CR's status subresource —
+ * the canonical shape the operator stamps and the control plane reads back.
+ *
+ * Distinct from {@link ClusterTenantStatus}: `phase` is the raw CR string (not yet mapped
+ * to the {@link ClusterTenantPhase} enum) and every field is optional, because a CR may be
+ * observed mid-reconcile with only a partial status. The control-plane read path maps this
+ * into {@link ClusterTenantStatus} for the API response. Defined once here so the operator
+ * writer and the control-plane reader cannot drift apart.
+ */
+export interface ClusterTenantObservedStatus
+{
+  /** Current lifecycle phase the operator observed (pending|provisioning|ready|failed). */
+  phase?: string;
+  /** Human-readable detail, set on failure or transitional states. */
+  message?: string;
+  /** Namespace the operator bound to this customer once provisioned. */
+  boundNamespace?: string;
+  /** Identifier of the provisioner that owns this customer's boundary. */
+  provisioner?: string;
+}
+
+/**
  * Shared API contract for a cluster tenant — the first-class customer / isolation
  * unit that sits above the `Tenant`/openclaw CRD. The control plane emits this
  * shape; the operator reconciles attached openclaws into the bound namespace.

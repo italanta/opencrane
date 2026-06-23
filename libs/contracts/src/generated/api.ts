@@ -3390,6 +3390,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description A workspace with this name already exists (code CONFLICT). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description Requested isolation tier is not served by any registered provisioner (code TIER_UNAVAILABLE). */
             422: {
                 headers: {

@@ -36,7 +36,32 @@ export interface ClusterTenantOwner
   subject?: string;
 }
 
-/** The cluster-scoped ClusterTenant custom resource shape the control plane emits. */
+/**
+ * Desired-state spec projected from the persisted org row (never status), EXCLUDING the
+ * owner. This is the shape sent on a merge-patch (update path): omitting `owner` means a
+ * JSON merge-patch leaves the existing `spec.owner` untouched, so an update by a non-owner
+ * admin (who has no owner identity to re-assert) can never drop it.
+ */
+interface ClusterTenantCrSpecPatch
+{
+  /** Human-readable org display name. */
+  displayName: string;
+  /** Optional customer-vanity domain CNAMEd onto the org apex. */
+  vanityDomain?: string;
+  /** Isolation tier driving the operator's boundary provisioner selection. */
+  isolationTier: string;
+  /** Compute placement: shared cluster or a dedicated node pool. */
+  compute: { mode: string; nodePool?: string };
+  /** Resource governance for the org's bound namespace (quota map). */
+  resources: { quota: Record<string, unknown> };
+}
+
+/**
+ * The full cluster-scoped ClusterTenant custom resource the control plane emits on create.
+ * `spec.owner` is MANDATORY: every org has a single owner (the control plane records it
+ * transactionally and 401s a create with no resolvable subject), so a CR can never be born
+ * without one. Updates use {@link ClusterTenantCrSpecPatch}, which preserves the owner.
+ */
 interface ClusterTenantCr
 {
   /** API group/version of the ClusterTenant CRD (`opencrane.io/<version>`). */
@@ -46,19 +71,9 @@ interface ClusterTenantCr
   /** Object metadata; the org name is the cluster-scoped CR name. */
   metadata: { name: string };
   /** Desired-state spec projected from the persisted org row (never status). */
-  spec: {
-    /** Human-readable org display name. */
-    displayName: string;
-    /** Optional customer-vanity domain CNAMEd onto the org apex. */
-    vanityDomain?: string;
-    /** Isolation tier driving the operator's boundary provisioner selection. */
-    isolationTier: string;
-    /** Compute placement: shared cluster or a dedicated node pool. */
-    compute: { mode: string; nodePool?: string };
-    /** Resource governance for the org's bound namespace (quota map). */
-    resources: { quota: Record<string, unknown> };
+  spec: ClusterTenantCrSpecPatch & {
     /** Org owner identity, so the operator can attribute the org's default Tenant. */
-    owner?: { subject: string; email?: string };
+    owner: { subject: string; email?: string };
   };
 }
 
@@ -78,36 +93,26 @@ function _BuildOwnerSpec(owner?: ClusterTenantOwner): { subject: string; email?:
 }
 
 /**
- * Project a {@link ClusterTenant} contract object into the cluster-scoped CR spec.
- * Only desired-state fields are carried; status is the operator's to write. The
- * owner's identity, when supplied, is projected into `spec.owner` (first-class,
- * schema-validated desired state) so the operator can seed the org's default Tenant
- * once it is ready.
+ * Project a {@link ClusterTenant} contract object into the owner-free desired-state spec.
+ * Only desired-state fields are carried; status is the operator's to write, and `owner` is
+ * added by the create path (never on update — see {@link ClusterTenantCrSpecPatch}).
  *
- * @param org   - The org contract object (as returned by `_ToContract`).
- * @param owner - The org owner's identity, projected into `spec.owner` when present.
- * @returns The ClusterTenant CR body ready for server-side apply.
+ * @param org - The org contract object (as returned by `_ToContract`).
+ * @returns The owner-free spec, ready as a create-body fragment or a merge-patch body.
  */
-function _BuildClusterTenantCr(org: ClusterTenant, owner?: ClusterTenantOwner): ClusterTenantCr
+function _BuildSpecPatch(org: ClusterTenant): ClusterTenantCrSpecPatch
 {
-  const ownerSpec = _BuildOwnerSpec(owner);
   return {
-    apiVersion: `${OPENCRANE_API_GROUP}/${OPENCRANE_API_VERSION}`,
-    kind: "ClusterTenant",
-    metadata: { name: org.name },
-    spec: {
-      displayName: org.displayName,
-      ...(org.vanityDomain ? { vanityDomain: org.vanityDomain } : {}),
-      isolationTier: org.isolationTier,
-      compute: {
-        mode: org.compute.mode,
-        ...(org.compute.mode === ClusterTenantComputeMode.Dedicated && org.compute.nodePool
-          ? { nodePool: org.compute.nodePool }
-          : {}),
-      },
-      resources: { quota: (org.resources.quota as Record<string, unknown>) ?? {} },
-      ...(ownerSpec ? { owner: ownerSpec } : {}),
+    displayName: org.displayName,
+    ...(org.vanityDomain ? { vanityDomain: org.vanityDomain } : {}),
+    isolationTier: org.isolationTier,
+    compute: {
+      mode: org.compute.mode,
+      ...(org.compute.mode === ClusterTenantComputeMode.Dedicated && org.compute.nodePool
+        ? { nodePool: org.compute.nodePool }
+        : {}),
     },
+    resources: { quota: (org.resources.quota as Record<string, unknown>) ?? {} },
   };
 }
 
@@ -122,13 +127,50 @@ function _BuildClusterTenantCr(org: ClusterTenant, owner?: ClusterTenantOwner): 
  *
  * @param customApi - Kubernetes custom-objects client, or null when no cluster is wired.
  * @param org - The org contract object to project into the CR.
- * @param owner - The org owner's identity, projected into `spec.owner` on create (and merged on update).
+ * @param owner - The org owner's identity. Present on create (projected into the mandatory
+ *                `spec.owner`); omitted on update, where the spec is merge-patched and the
+ *                existing `spec.owner` is preserved.
  */
 export async function _ApplyClusterTenantCr(customApi: k8s.CustomObjectsApi | null, org: ClusterTenant, owner?: ClusterTenantOwner): Promise<void>
 {
   if (!customApi) return;
 
-  const body = _BuildClusterTenantCr(org, owner);
+  const specPatch = _BuildSpecPatch(org);
+  const ownerSpec = _BuildOwnerSpec(owner);
+
+  // Update path: no resolvable owner to assert → merge-patch the spec only. A JSON
+  // merge-patch leaves keys it omits (here, `owner`) untouched, so the owner the create
+  // stamped is preserved. Tolerates a 404 the way the delete bridge does: the CR cannot
+  // be (re)created without an owner, and a missing CR on update is an out-of-band anomaly,
+  // not something this write-back can resolve.
+  if (!ownerSpec)
+  {
+    try
+    {
+      await customApi.patchClusterCustomObject({
+        group: OPENCRANE_API_GROUP,
+        version: OPENCRANE_API_VERSION,
+        plural: CLUSTER_TENANT_CRD_PLURAL,
+        name: org.name,
+        body: { spec: specPatch },
+      });
+    }
+    catch (err: unknown)
+    {
+      if (_IsNotFound(err)) return;
+      throw err;
+    }
+    return;
+  }
+
+  // Create path: full CR including the mandatory `spec.owner`. Idempotent — on 409 the CR
+  // already exists, so fall back to the same owner-free spec merge-patch (preserving owner).
+  const body: ClusterTenantCr = {
+    apiVersion: `${OPENCRANE_API_GROUP}/${OPENCRANE_API_VERSION}`,
+    kind: "ClusterTenant",
+    metadata: { name: org.name },
+    spec: { ...specPatch, owner: ownerSpec },
+  };
 
   try
   {
@@ -143,16 +185,12 @@ export async function _ApplyClusterTenantCr(customApi: k8s.CustomObjectsApi | nu
   {
     if (_IsAlreadyExists(err))
     {
-      // Merge-patch the spec (owner included when present) so the operator's status
-      // subresource is untouched. Merge-patch never drops keys the patch omits, so an
-      // update with no resolvable owner (e.g. the PUT path) preserves the existing
-      // spec.owner the create stamped.
       await customApi.patchClusterCustomObject({
         group: OPENCRANE_API_GROUP,
         version: OPENCRANE_API_VERSION,
         plural: CLUSTER_TENANT_CRD_PLURAL,
         name: org.name,
-        body: { spec: body.spec },
+        body: { spec: specPatch },
       });
       return;
     }
@@ -183,58 +221,6 @@ export async function _DeleteClusterTenantCr(customApi: k8s.CustomObjectsApi | n
   {
     if (_IsNotFound(err)) return;
     throw err;
-  }
-}
-
-/** Observed-state fields the operator stamps on the ClusterTenant CR status subresource. */
-export interface ClusterTenantObservedStatus
-{
-  /** Current lifecycle phase the operator observed (pending|provisioning|ready|failed). */
-  phase?: string;
-  /** Human-readable detail, set on failure or transitional states. */
-  message?: string;
-  /** Namespace the operator bound to this org once provisioned. */
-  boundNamespace?: string;
-  /** Identifier of the provisioner that owns this org's boundary. */
-  provisioner?: string;
-}
-
-/**
- * Read the OBSERVED status the operator stamped on the cluster-scoped ClusterTenant CR.
- *
- * The control plane persists DESIRED state to Postgres and never writes status back; the
- * operator advances `status.phase` (pending→provisioning→ready) on the CR's status
- * subresource. The DB `phase` column therefore stays at its seeded `pending` forever, so
- * the read path must consult the CR to report real provisioning progress (the
- * onboarding poll otherwise never leaves `pending`).
- *
- * Returns null when no cluster is wired (`customApi` null), the CRD/CR is absent, or any
- * read error — callers then fall back to the DB-derived status, preserving behaviour in
- * non-cluster (dev/test) environments and never hard-failing the status endpoint on a
- * transient cluster blip.
- *
- * @param customApi - Kubernetes custom-objects client, or null when no cluster is wired.
- * @param name - The org (ClusterTenant) name whose observed status to read.
- */
-export async function _ReadClusterTenantObservedStatus(customApi: k8s.CustomObjectsApi | null, name: string): Promise<ClusterTenantObservedStatus | null>
-{
-  if (!customApi) return null;
-
-  try
-  {
-    const cr = await customApi.getClusterCustomObject({
-      group: OPENCRANE_API_GROUP,
-      version: OPENCRANE_API_VERSION,
-      plural: CLUSTER_TENANT_CRD_PLURAL,
-      name,
-    });
-    const status = (cr as { status?: ClusterTenantObservedStatus } | undefined)?.status;
-    return status && typeof status === "object" ? status : null;
-  }
-  catch
-  {
-    // No CRD / CR not found / cluster unreachable → caller falls back to the DB status.
-    return null;
   }
 }
 

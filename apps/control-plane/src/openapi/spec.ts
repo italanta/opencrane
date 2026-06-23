@@ -1407,6 +1407,7 @@ export const spec = {
           400: badRequest("Request body failed validation."),
           401: unauthorized("No authenticated session (real-auth deployments)."),
           403: forbidden("Caller has no billing account (code BILLING_ACCOUNT_REQUIRED)."),
+          409: conflict("A workspace with this name already exists (code CONFLICT)."),
           422: unprocessable("Requested isolation tier is not served by any registered provisioner (code TIER_UNAVAILABLE)."),
         },
       },
