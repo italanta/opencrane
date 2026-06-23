@@ -104,7 +104,13 @@ spec:
   # against this issuer's HTTP-01 solver (apps/operator/src/cluster-tenants/internal/org-domain.provisioner.ts).
   dnsNames:
     - {{ printf "*.%s" .Values.ingress.domain | quote }}
+    {{- /* Apex SAN is opt-in: many installs use the bare domain as a marketing site
+           hosted elsewhere and cannot serve `_acme-challenge.<domain>` from the
+           platform's DNS-01 zone, which would stall issuance. Set
+           certManager.includeApex=true only when the platform serves the apex. */}}
+    {{- if .Values.certManager.includeApex }}
     - {{ .Values.ingress.domain | quote }}
+    {{- end }}
     {{- $cpHost := .Values.ingress.controlPlaneHost | default (printf "platform.%s" .Values.ingress.domain) -}}
     {{- if and (ne $cpHost .Values.ingress.domain) (not (hasSuffix (printf ".%s" .Values.ingress.domain) $cpHost)) }}
     - {{ $cpHost | quote }}
@@ -180,7 +186,10 @@ spec:
   # a per-org cert, issued by the operator against this issuer's HTTP-01 solver.
   dnsNames:
     - {{ printf "*.%s" $.Values.ingress.domain | quote }}
+    {{- /* Apex SAN opt-in (see legacy block above for rationale). */}}
+    {{- if $.Values.certManager.includeApex }}
     - {{ $.Values.ingress.domain | quote }}
+    {{- end }}
     {{- $cpHost := $.Values.ingress.controlPlaneHost | default (printf "platform.%s" $.Values.ingress.domain) -}}
     {{- if and (ne $cpHost $.Values.ingress.domain) (not (hasSuffix (printf ".%s" $.Values.ingress.domain) $cpHost)) }}
     - {{ $cpHost | quote }}
