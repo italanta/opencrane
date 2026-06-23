@@ -225,18 +225,23 @@ EOF
 
 _wait_for_tenant_running
 
-# 8. Assert core reconciled resources exist.
+# 8. Assert core reconciled resources exist. No per-user Ingress is asserted: the
+#    operator retired per-user Ingresses (apps/operator/src/tenants/operator.ts) — every
+#    user reaches the pod through the org host, reverse-proxied to this pod's Service, so
+#    only the SA/ConfigMap/Deployment/Service/encryption-key Secret are minted per tenant.
 kubectl get serviceaccount openclaw-e2e -n "$NAMESPACE" >/dev/null
 kubectl get configmap openclaw-e2e-config -n "$NAMESPACE" >/dev/null
 kubectl get deployment openclaw-e2e -n "$NAMESPACE" >/dev/null
 kubectl get service openclaw-e2e -n "$NAMESPACE" >/dev/null
-kubectl get ingress openclaw-e2e -n "$NAMESPACE" >/dev/null
 kubectl get secret openclaw-e2e-encryption-key -n "$NAMESPACE" >/dev/null
 
-# 9. Assert status fields were written by the operator.
+# 9. Assert status fields were written by the operator. This Tenant has no
+#    clusterTenantRef, so its serving host is the bare platform base domain
+#    (_ResolveOrgServingDomain → platformBaseDomain); a tenant under an org would be
+#    served at `<org>.<base>`. ingress.domain is set to opencrane.local in the e2e values.
 INGRESS_HOST="$(kubectl get tenant e2e -n "$NAMESPACE" -o jsonpath='{.status.ingressHost}')"
-if [[ "$INGRESS_HOST" != "e2e.opencrane.local" ]]; then
-  echo "[e2e] Unexpected ingress host: $INGRESS_HOST"
+if [[ "$INGRESS_HOST" != "opencrane.local" ]]; then
+  echo "[e2e] Unexpected ingress host: $INGRESS_HOST (expected the ref-less base domain opencrane.local)"
   exit 1
 fi
 
