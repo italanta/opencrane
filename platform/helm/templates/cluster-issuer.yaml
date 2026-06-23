@@ -52,11 +52,26 @@ spec:
     privateKeySecretRef:
       name: {{ $cm.acme.privateKeySecretName | quote }}
     solvers:
-      - dns01:
+      # DNS-01 for the platform names (wildcard `*.<domain>`, apex, control-plane host).
+      # Wildcards REQUIRE DNS-01. Scoped by dnsZones to the platform base domain so per-org
+      # VANITY hosts — which live in the CUSTOMER's own zone — do not match here and fall
+      # through to the HTTP-01 solver below.
+      - selector:
+          dnsZones:
+            - {{ $.Values.ingress.domain | quote }}
+        dns01:
           {{- if $cm.acme.dns01.config }}
           {{ $cm.acme.dns01.provider }}:
             {{- toYaml $cm.acme.dns01.config | nindent 12 }}
           {{- end }}
+      # HTTP-01 (catch-all) for per-org vanity hosts. The customer CNAMEs their host at the
+      # ingress, so cert-manager answers the challenge over HTTP through the ingress — no
+      # access to the customer's DNS zone is needed (DNS-01 there is impossible). The
+      # operator's per-org vanity Certificate references THIS issuer — see
+      # apps/operator/src/cluster-tenants/internal/org-domain.provisioner.ts.
+      - http01:
+          ingress:
+            ingressClassName: {{ $.Values.ingress.className | default "nginx" | quote }}
 {{- else }}
 {{- fail (printf "certManager.mode must be 'selfSigned' or 'acme', got %q" $cm.mode) }}
 {{- end }}
@@ -74,13 +89,14 @@ spec:
   issuerRef:
     name: {{ $cm.issuerName | quote }}
     kind: ClusterIssuer
-  # Fixed-wildcard topology. The platform wildcard `*.<domain>` covers every ORG APEX
-  # `<org>.<domain>`; the base apex `<domain>` is added for completeness, and the fixed
-  # control-plane host is added explicitly so it is browser-trusted even when set to a
-  # name OUTSIDE `<domain>`. NOTE: this cert does NOT cover the per-user level
-  # `<user>.<org>.<domain>` (a wildcard matches exactly one label) — each org gets its
-  # own `*.<org>.<domain>` cert issued at provision time by the cluster-tenants operator
-  # via DNS-01 (see docs/agents/cluster-architecture.md → "Multi-level wildcard TLS").
+  # Fixed-wildcard topology. The platform wildcard `*.<domain>` covers every org's
+  # canonical gateway host `<org>.<domain>` (one label under the base); the base apex
+  # `<domain>` is added for completeness, and the fixed control-plane host is added
+  # explicitly so it is browser-trusted even when set to a name OUTSIDE `<domain>`.
+  # There is NO per-org `*.<org>.<domain>` cert — every user in an org is served at the
+  # SINGLE host `<org>.<domain>` via the gateway proxy. The only per-org cert is for an
+  # optional customer-VANITY host, issued at provision time by the cluster-tenants operator
+  # against this issuer's HTTP-01 solver (apps/operator/src/cluster-tenants/internal/org-domain.provisioner.ts).
   dnsNames:
     - {{ printf "*.%s" .Values.ingress.domain | quote }}
     - {{ .Values.ingress.domain | quote }}
@@ -107,11 +123,26 @@ spec:
     privateKeySecretRef:
       name: {{ $cm.acme.privateKeySecretName | quote }}
     solvers:
-      - dns01:
+      # DNS-01 for the platform names (wildcard `*.<domain>`, apex, control-plane host).
+      # Wildcards REQUIRE DNS-01. Scoped by dnsZones to the platform base domain so per-org
+      # VANITY hosts — which live in the CUSTOMER's own zone — do not match here and fall
+      # through to the HTTP-01 solver below.
+      - selector:
+          dnsZones:
+            - {{ $.Values.ingress.domain | quote }}
+        dns01:
           {{- if $cm.acme.dns01.config }}
           {{ $cm.acme.dns01.provider }}:
             {{- toYaml $cm.acme.dns01.config | nindent 12 }}
           {{- end }}
+      # HTTP-01 (catch-all) for per-org vanity hosts. The customer CNAMEs their host at the
+      # ingress, so cert-manager answers the challenge over HTTP through the ingress — no
+      # access to the customer's DNS zone is needed (DNS-01 there is impossible). The
+      # operator's per-org vanity Certificate references THIS issuer — see
+      # apps/operator/src/cluster-tenants/internal/org-domain.provisioner.ts.
+      - http01:
+          ingress:
+            ingressClassName: {{ $.Values.ingress.className | default "nginx" | quote }}
 {{- else }}
 {{- fail (printf "certManager.mode must be 'selfSigned' or 'acme', got %q" $cm.mode) }}
 {{- end }}
@@ -130,10 +161,10 @@ spec:
     # Namespaced Issuer in this same namespace — never a cluster-singleton.
     name: {{ $cm.issuerName | quote }}
     kind: Issuer
-  # Fixed-wildcard topology (see the legacy block above). `*.<domain>` covers org
-  # apexes `<org>.<domain>`; the base apex + the fixed control-plane host are added.
-  # Per-user `<user>.<org>.<domain>` is covered by a per-org `*.<org>.<domain>` cert
-  # issued at provision time, NOT by this platform cert.
+  # Fixed-wildcard topology (see the legacy block above). `*.<domain>` covers each org's
+  # canonical host `<org>.<domain>`; the base apex + the fixed control-plane host are added.
+  # There is NO per-org `*.<org>.<domain>` cert — only an optional customer-vanity host gets
+  # a per-org cert, issued by the operator against this issuer's HTTP-01 solver.
   dnsNames:
     - {{ printf "*.%s" $.Values.ingress.domain | quote }}
     - {{ $.Values.ingress.domain | quote }}
