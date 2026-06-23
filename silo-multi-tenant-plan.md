@@ -193,7 +193,80 @@ or external-dns (policy=sync) may fight them.
 
 ---
 
-## 6. Done / commits
+## 6. Demo runbook — make ONE tenant serve end-to-end (Phase 0)
+
+Prereqs: `kubectl` context = `opencrane-dev`; `gcloud` authed to `weownai-proto`; on a branch
+containing `f6afafd` (the trustNothing fix).
+
+**Step 1 — Build the operator image with the crash fix.**
+Push the branch; CI (`.github/workflows/docker.yml`) builds `ghcr.io/italanta/opencrane-operator:sha-<shortsha>`.
+```bash
+git push
+echo "operator tag: sha-$(git rev-parse --short HEAD)"   # note this tag for step 2
+```
+
+**Step 2 — Redeploy (rolls operator + enables routing + trusted-proxy).**
+```bash
+./platform/deploy-multi-tenant.sh \
+  --base-domain dev.opencrane.ai \
+  --ingress-ip 34.22.213.142 \
+  --operator-tag sha-<shortsha> \
+  --reuse-values \
+  --values platform/helm/values/opencrane-dev.yaml
+```
+Enables `gatewayProxy` (creates the `*.dev.opencrane.ai` wildcard Ingress + proxy Service),
+sets `trustedProxies=[10.8.0.0/14]`, and rolls the operator to the fixed image.
+
+**Step 3 — Regenerate tenant config + confirm the pod is healthy.**
+The new operator rewrites each ConfigMap without `trustNothing`. Nudge + verify:
+```bash
+oc cluster-tenant refresh elewa-be            # re-sync (POST /cluster-tenants/elewa-be/refresh)
+kubectl -n opencrane-elewa-be rollout restart deploy/openclaw-elewa-be-default
+kubectl -n opencrane-elewa-be get pods        # expect Running, not CrashLoopBackOff
+kubectl -n opencrane-elewa-be logs deploy/openclaw-elewa-be-default | tail   # no "Invalid config"
+```
+
+**Step 4 — DNS (manual, bypasses dead external-dns).**
+```bash
+gcloud dns record-sets create '*.dev.opencrane.ai.' --type=A --ttl=300 \
+  --rrdatas=34.22.213.142 --zone=opencrane-ai-zone
+```
+The wildcard covers both `elewa-be.dev.opencrane.ai` (org host) **and**
+`platform.dev.opencrane.ai` (the OIDC redirect host — see auth note).
+
+**Step 5 — Verify.**
+```bash
+dig +short elewa-be.dev.opencrane.ai          # -> 34.22.213.142
+curl -sv https://elewa-be.dev.opencrane.ai/   # TLS via *.dev wildcard cert; reaches gateway-proxy
+```
+
+**Auth reality (dev OIDC = Zitadel, verified wired).** Connecting as a USER through the org
+host goes through the gateway-proxy's delegated OIDC auth. Two gotchas:
+1. `OIDC_REDIRECT_URI=https://platform.dev.opencrane.ai/api/v1/auth/callback` — that host only
+   routes once `gatewayProxy` is on (its wildcard Ingress sends `/api/*` → control-plane). The
+   Step-4 wildcard makes it resolve. Ensure `platform.dev.opencrane.ai/api/v1/auth/callback` is
+   a registered redirect URI in the Zitadel app.
+2. The gateway pins to the owner via `allowUsers=[<owner email>]` — log in as that owner.
+
+**Fastest "it's alive" fallback (no proxy/OIDC):** port-forward straight to the pod gateway:
+```bash
+kubectl -n opencrane-elewa-be port-forward deploy/openclaw-elewa-be-default 18789:18789
+```
+(Note: trusted-proxy mode expects the `X-Forwarded-User` header from the proxy, so a raw
+port-forward demonstrates the runtime is up rather than a fully authenticated session.)
+
+**Simplest demo of all:** the control-plane API/CLI at `dev.opencrane.ai` already works today —
+no steps needed.
+
+**Revert after the demo:** delete the manual DNS record once external-dns is healthy (Phase 1),
+or `policy=sync` will fight it:
+```bash
+gcloud dns record-sets delete '*.dev.opencrane.ai.' --type=A --zone=opencrane-ai-zone
+```
+
+---
+
+## 7. Done / commits
 - `f6afafd` fix(operator): stop rendering invalid `trustNothing` key into tenant openclaw.json
 - `818041d` chore(deploy): add `opencrane-dev` Helm overlay for the per-org hosting path
 - `5795b99` docs(website): networking & network-isolation architecture page
