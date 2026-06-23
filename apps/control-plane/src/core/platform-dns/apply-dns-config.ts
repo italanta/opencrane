@@ -1,5 +1,6 @@
 import * as k8s from "@kubernetes/client-node";
 
+import { _IsK8sConflict } from "../../shared/k8s-errors.js";
 import { _RenderDns01Issuer, _RenderDnsCredentialsSecret } from "./cluster-issuer.js";
 import type { CertIssuerKind, DnsProviderConfig } from "./cluster-issuer.types.js";
 import type { ApplyDnsConfigResult } from "./apply-dns-config.types.js";
@@ -96,7 +97,7 @@ async function _UpsertSecret(coreApi: k8s.CoreV1Api, namespace: string, name: st
   catch (err)
   {
     // 409 Conflict → the Secret exists; replace it so a rotated token takes effect.
-    if (_IsConflict(err))
+    if (_IsK8sConflict(err))
     {
       await coreApi.replaceNamespacedSecret({ name, namespace, body: manifest as unknown as k8s.V1Secret });
       return;
@@ -120,7 +121,7 @@ async function _UpsertClusterIssuer(customApi: k8s.CustomObjectsApi, name: strin
   catch (err)
   {
     // 409 Conflict → exists; fetch the live resourceVersion and replace.
-    if (_IsConflict(err))
+    if (_IsK8sConflict(err))
     {
       const existing = await customApi.getClusterCustomObject({ group: _CM_GROUP, version: _CM_VERSION, plural: _CM_CLUSTER_ISSUER_PLURAL, name });
       const resourceVersion = (existing as { metadata?: { resourceVersion?: string } }).metadata?.resourceVersion;
@@ -148,7 +149,7 @@ async function _UpsertNamespacedIssuer(customApi: k8s.CustomObjectsApi, namespac
   catch (err)
   {
     // 409 Conflict → exists; fetch the live resourceVersion and replace in-place.
-    if (_IsConflict(err))
+    if (_IsK8sConflict(err))
     {
       const existing = await customApi.getNamespacedCustomObject({ group: _CM_GROUP, version: _CM_VERSION, namespace, plural: _CM_ISSUER_PLURAL, name });
       const resourceVersion = (existing as { metadata?: { resourceVersion?: string } }).metadata?.resourceVersion;
@@ -160,12 +161,3 @@ async function _UpsertNamespacedIssuer(customApi: k8s.CustomObjectsApi, namespac
   }
 }
 
-/**
- * Detect a Kubernetes 409 Conflict (already-exists) across client error shapes.
- * @param err - The caught error.
- */
-function _IsConflict(err: unknown): boolean
-{
-  const code = (err as { code?: number; statusCode?: number; response?: { statusCode?: number } });
-  return code?.code === 409 || code?.statusCode === 409 || code?.response?.statusCode === 409;
-}

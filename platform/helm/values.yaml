@@ -512,6 +512,13 @@ certManager:
   enabled: false
   # -- Issuer mode: "acme" (production, public CA via DNS-01) or "selfSigned" (dev/local).
   mode: selfSigned
+  # -- Include the bare `<ingress.domain>` apex as a SAN on the platform wildcard
+  # Certificate. OFF by default: many installs use the apex as a marketing site
+  # hosted elsewhere (Webflow, Vercel, etc.) and the platform's DNS-01 solver
+  # cannot answer `_acme-challenge.<domain>` in that zone — adding the SAN would
+  # stall the whole cert at `pending`. Set true only when the platform actually
+  # serves the apex AND its DNS zone is wired to certManager.acme.dns01.
+  includeApex: false
   # -- Name of the ClusterIssuer this chart creates and the Certificate references.
   issuerName: opencrane-issuer
   # -- cert-manager controller namespace. The `oc platform dns set` endpoint writes
@@ -542,6 +549,11 @@ certManager:
       provider: ""
       # -- Provider-specific solver config, rendered verbatim under solvers[].dns01.
       config: {}
+      # -- Raw service-account key (JSON string) for the DNS-01 solver Secret.
+      # When non-empty the chart renders a Secret in certManager.namespace so the
+      # solver can authenticate against the DNS provider (e.g. GCP CloudDNS SA key).
+      # Stopgap — prefer GCP-SM + ESO + CMEK for production credential delivery.
+      secretData: ""
 
 # -- Obot MCP gateway plane settings.
 # Uses the upstream obot-platform/obot image. Requires a per-instance, release-prefixed

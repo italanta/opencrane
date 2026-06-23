@@ -3,13 +3,14 @@ import type { Request } from "express";
 import * as k8s from "@kubernetes/client-node";
 import { ClusterTenantPhase, ClusterTenantTierUnavailableCode } from "@opencrane/contracts";
 import type { ClusterTenantProvisionerRegistry } from "@opencrane/contracts";
-import type { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 
 import type { ClusterTenantCreateRequest, ClusterTenantUpdateRequest } from "./cluster-tenants.models.js";
-import { _IsIsolationTier, _ToContract, _ToPrismaCompute, _ToPrismaTier, _ValidateCompute, _ValidateResources } from "./cluster-tenants.service.js";
+import { _IsIsolationTier, _ObservedStatusToContract, _SyncObservedStatusToDb, _ToContract, _ToPrismaCompute, _ToPrismaTier, _ValidateCompute, _ValidateResources } from "./cluster-tenants.service.js";
 import { _IsDevAuthMode } from "../infra/auth/auth-mode.js";
 import { _RequireBillingAccountForOrgCreate, _RequireOrgManager } from "../infra/middleware/cluster-tenant-org-admin.js";
 import { _ApplyClusterTenantCr, _DeleteClusterTenantCr } from "../core/cluster-tenants/cr-bridge.js";
+import { _ReadClusterTenantObservedStatus } from "../core/cluster-tenants/cr-status-reader.js";
 
 /** RFC-1123-ish DNS domain: lowercase labels, ≥1 dot, alpha TLD, ≤253 chars. */
 const _VANITY_DOMAIN_PATTERN = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/;
@@ -18,6 +19,37 @@ const _VANITY_DOMAIN_PATTERN = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])
 function _isValidVanityDomain(value: string): boolean
 {
   return _VANITY_DOMAIN_PATTERN.test(value);
+}
+
+/** A `cluster_tenants` row as returned by Prisma `findUnique`. */
+type ClusterTenantRow = NonNullable<Awaited<ReturnType<PrismaClient["clusterTenant"]["findUnique"]>>>;
+
+/**
+ * Read the org's OBSERVED status from its CR and map it to the contract status, kicking off
+ * a best-effort read-repair of the DB row WITHOUT blocking the response.
+ *
+ * Both `GET /:name` and `GET /:name/status` need the same thing: the DB `phase` column is
+ * desired-only and never receives the operator's status write-back, so it stays `pending` —
+ * the live phase lives on the CR. This consolidates that read (DRY) and returns null when no
+ * cluster/CR is available so callers fall back to the DB-derived status.
+ *
+ * The DB mirror (`_SyncObservedStatusToDb`) is fire-and-forget: it is a convergence nicety
+ * for other DB readers (the fleet LIST), not part of answering this request — the response is
+ * built from `observed` regardless of whether the write lands. Awaiting it would tax every
+ * onboarding poll with a DB-write round-trip for no correctness gain. It swallows its own
+ * errors internally; the `.catch` is a final guard against an unhandled rejection.
+ *
+ * @param prisma - Prisma client (for the read-repair write).
+ * @param customApi - Kubernetes custom-objects client, or null when no cluster is wired.
+ * @param row - The persisted org row (diffed before any mirror write).
+ * @returns The contract status from the CR, or null to fall back to the DB-derived status.
+ */
+async function _ReadObservedStatus(prisma: PrismaClient, customApi: k8s.CustomObjectsApi | null, row: ClusterTenantRow): Promise<NonNullable<ReturnType<typeof _ObservedStatusToContract>> | null>
+{
+  const observed = await _ReadClusterTenantObservedStatus(customApi, row.name);
+  if (!observed) return null;
+  void _SyncObservedStatusToDb(prisma, row, observed).catch(() => { /* best-effort mirror */ });
+  return _ObservedStatusToContract(observed);
 }
 
 /**
@@ -61,7 +93,12 @@ export function clusterTenantsRouter(prisma: PrismaClient, registry: ClusterTena
       res.status(404).json({ error: "Cluster tenant not found", code: "CLUSTER_TENANT_NOT_FOUND" });
       return;
     }
-    res.json(_ToContract(row));
+    const contract = _ToContract(row);
+    // Overlay the operator's OBSERVED phase from the CR (the DB column stays `pending`);
+    // falls back to the DB-derived status when no cluster/CR is available.
+    const observed = await _ReadObservedStatus(prisma, customApi, row);
+    if (observed) contract.status = observed;
+    res.json(contract);
   });
 
   /** Get just the observed status of a cluster tenant (operator OR owner/admin of that org). */
@@ -73,7 +110,11 @@ export function clusterTenantsRouter(prisma: PrismaClient, registry: ClusterTena
       res.status(404).json({ error: "Cluster tenant not found", code: "CLUSTER_TENANT_NOT_FOUND" });
       return;
     }
-    res.json(_ToContract(row).status);
+    // Read the operator's observed phase from the CR (the source of truth for provisioning
+    // progress); without it the onboarding poll never advances past the seeded `pending`.
+    // Fall back to the DB-derived status when no cluster/CR is available.
+    const observed = await _ReadObservedStatus(prisma, customApi, row);
+    res.json(observed ?? _ToContract(row).status);
   });
 
   /**
@@ -145,30 +186,44 @@ export function clusterTenantsRouter(prisma: PrismaClient, registry: ClusterTena
     //    NOTE (provisioning hand-off): the ClusterTenant operator/CR watcher reconciles
     //    `pending` → `ready` and drives the domain provisioner. This handler only
     //    persists the desired state; it performs no cluster-side side effects.
-    const created = await prisma.$transaction(async function _createOrgWithOwner(tx)
+    // eslint-disable-next-line prefer-const
+    let created: Prisma.ClusterTenantGetPayload<object>;
+    try
     {
-      const org = await tx.clusterTenant.create({
-        data: {
-          name: body.name.trim(),
-          displayName: body.displayName.trim(),
-          vanityDomain: body.vanityDomain?.trim() || null,
-          isolationTier: _ToPrismaTier(body.isolationTier),
-          computeMode: _ToPrismaCompute(body.compute.mode),
-          nodePool: body.compute.nodePool?.trim() || null,
-          quota: (body.resources.quota as Prisma.InputJsonValue),
-          phase: ClusterTenantPhase.Pending,
-        },
-      });
+      created = await prisma.$transaction(async function _createOrgWithOwner(tx)
+      {
+        const org = await tx.clusterTenant.create({
+          data: {
+            name: body.name.trim(),
+            displayName: body.displayName.trim(),
+            vanityDomain: body.vanityDomain?.trim() || null,
+            isolationTier: _ToPrismaTier(body.isolationTier),
+            computeMode: _ToPrismaCompute(body.compute.mode),
+            nodePool: body.compute.nodePool?.trim() || null,
+            quota: (body.resources.quota as Prisma.InputJsonValue),
+            phase: ClusterTenantPhase.Pending,
+          },
+        });
 
-      // The creator is the org's single `owner` (one-owner-per-org is enforced by the
-      // partial unique index). Written in the same tx so an org can never exist
-      // without its owner, and vice versa.
-      await tx.orgMembership.create({
-        data: { clusterTenant: org.name, subject: ownerSubject, role: "Owner" },
-      });
+        // The creator is the org's single `owner` (one-owner-per-org is enforced by the
+        // partial unique index). Written in the same tx so an org can never exist
+        // without its owner, and vice versa.
+        await tx.orgMembership.create({
+          data: { clusterTenant: org.name, subject: ownerSubject, role: "Owner" },
+        });
 
-      return org;
-    });
+        return org;
+      });
+    }
+    catch (err)
+    {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")
+      {
+        res.status(409).json({ error: "A workspace with this name already exists.", code: "CONFLICT" });
+        return;
+      }
+      throw err;
+    }
 
     // 5. DB → K8s bridge. Project the persisted desired state into the cluster-scoped
     //    `clustertenants` CR the ClusterTenant reconciler watches. This is the seam

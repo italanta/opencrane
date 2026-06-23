@@ -3,139 +3,107 @@ import { ClusterTenantComputeMode } from "@opencrane/contracts";
 import type { ClusterTenant } from "@opencrane/contracts";
 
 import { CLUSTER_TENANT_CRD_PLURAL, OPENCRANE_API_GROUP, OPENCRANE_API_VERSION } from "../../shared/crd-constants.js";
+import { _IsK8sConflict, _IsK8sNotFound } from "../../shared/k8s-errors.js";
+import type { ClusterTenantCrSpecPatch, ClusterTenantOwner, ClusterTenantSpec } from "./cr-bridge.types.js";
 
 /**
  * DB → Kubernetes bridge for the cluster-scoped ClusterTenant CRD.
  *
  * The control plane is the system of record for an org's DESIRED state (the
  * `cluster_tenants` row); the operator owns the OBSERVED state (`status.phase`,
- * `status.boundNamespace`). Mirroring how `tenantsRouter` dual-writes the Tenant
- * CRD, the create/update/delete handlers project the persisted row into a
- * cluster-scoped `clustertenants` CR so the ClusterTenant reconciler has something
- * to watch. Without this bridge a `POST /cluster-tenants` would persist a `pending`
- * row that nothing ever reconciles ("hollow CRUD shell").
+ * `status.boundNamespace`). The bridge writes ONLY `spec` — never `status` — so
+ * a CR write can never clobber the phase/boundNamespace the operator stamps.
  *
- * The bridge writes ONLY `spec` — never `status` — so a CR write can never clobber
- * the phase/boundNamespace the operator stamps. It is idempotent: create-or-patch
- * (merge-patch the spec), so re-applying the same desired state converges.
+ * Three named steps compose the apply path:
+ *   1. {@link _BuildSpecPatch}  — project the persisted row into the owner-free spec.
+ *   2. {@link _PatchSpec}       — merge-patch the spec onto an existing CR (update).
+ *   3. {@link _CreateCr}        — create a full CR with mandatory `spec.owner` (create).
  *
- * On create it also stamps the org owner's identity as metadata annotations
- * ({@link _OWNER_EMAIL_ANNOTATION}/{@link _OWNER_SUBJECT_ANNOTATION}). The operator
- * has no database access, so this is the only channel by which the ClusterTenant
- * reconciler can learn who to attribute the org's default Tenant to once it is ready.
+ * {@link _ApplyClusterTenantCr} orchestrates: create (with owner) → on 409 fall back
+ * to patch; update (no owner) → patch only, tolerate 404.
  */
 
-/** Annotation carrying the org owner's IdP-verified email, so the operator can attribute the org's default Tenant. */
-const _OWNER_EMAIL_ANNOTATION = "opencrane.io/owner-email";
+export type { ClusterTenantOwner } from "./cr-bridge.types.js";
 
-/** Annotation carrying the org owner's OIDC subject, recorded alongside the email for traceability. */
-const _OWNER_SUBJECT_ANNOTATION = "opencrane.io/owner-subject";
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
-/** Org owner identity stamped onto the ClusterTenant CR so the operator can seed a default Tenant. */
-export interface ClusterTenantOwner
-{
-  /** The owner's IdP-verified email; becomes the default Tenant's contact email. */
-  email?: string;
-  /** The owner's OIDC subject (`sub`). */
-  subject?: string;
-}
-
-/** The cluster-scoped ClusterTenant custom resource shape the control plane emits. */
+/** Full cluster-scoped ClusterTenant custom resource emitted on create. */
 interface ClusterTenantCr
 {
-  /** API group/version of the ClusterTenant CRD (`opencrane.io/<version>`). */
   apiVersion: string;
-  /** CRD kind discriminator — always `ClusterTenant`. */
   kind: "ClusterTenant";
-  /** Object metadata; the org name is the cluster-scoped CR name, plus optional owner annotations. */
-  metadata: { name: string; annotations?: Record<string, string> };
-  /** Desired-state spec projected from the persisted org row (never status). */
-  spec: {
-    /** Human-readable org display name. */
-    displayName: string;
-    /** Optional customer-vanity domain CNAMEd onto the org apex. */
-    vanityDomain?: string;
-    /** Isolation tier driving the operator's boundary provisioner selection. */
-    isolationTier: string;
-    /** Compute placement: shared cluster or a dedicated node pool. */
-    compute: { mode: string; nodePool?: string };
-    /** Resource governance for the org's bound namespace (quota map). */
-    resources: { quota: Record<string, unknown> };
-  };
+  metadata: { name: string };
+  spec: ClusterTenantSpec;
 }
 
-/**
- * Build the owner-identity annotation map for a CR, or undefined when no owner
- * field is set (so an org create without a resolvable owner carries no annotations
- * rather than empty ones).
- *
- * @param owner - The org owner's email/subject, if known.
- */
-function _BuildOwnerAnnotations(owner?: ClusterTenantOwner): Record<string, string> | undefined
+// ---------------------------------------------------------------------------
+// Step 1 — Build
+// ---------------------------------------------------------------------------
+
+function _BuildOwnerSpec(owner?: Partial<ClusterTenantOwner>): ClusterTenantOwner | undefined
 {
-  const annotations: Record<string, string> = {};
-  if (owner?.email?.trim())
-  {
-    annotations[_OWNER_EMAIL_ANNOTATION] = owner.email.trim();
-  }
-  if (owner?.subject?.trim())
-  {
-    annotations[_OWNER_SUBJECT_ANNOTATION] = owner.subject.trim();
-  }
-  return Object.keys(annotations).length > 0 ? annotations : undefined;
+  const subject = owner?.subject?.trim();
+  if (!subject) return undefined;
+  const email = owner?.email?.trim();
+  return { subject, ...(email ? { email } : {}) };
 }
 
-/**
- * Project a {@link ClusterTenant} contract object into the cluster-scoped CR spec.
- * Only desired-state fields are carried; status is the operator's to write. The
- * owner's identity, when supplied, is stamped as metadata annotations so the
- * operator can seed the org's default Tenant once it is ready.
- *
- * @param org   - The org contract object (as returned by `_ToContract`).
- * @param owner - The org owner's identity, stamped as annotations when present.
- * @returns The ClusterTenant CR body ready for server-side apply.
- */
-function _BuildClusterTenantCr(org: ClusterTenant, owner?: ClusterTenantOwner): ClusterTenantCr
+function _BuildSpecPatch(org: ClusterTenant): ClusterTenantCrSpecPatch
 {
-  const annotations = _BuildOwnerAnnotations(owner);
   return {
-    apiVersion: `${OPENCRANE_API_GROUP}/${OPENCRANE_API_VERSION}`,
-    kind: "ClusterTenant",
-    metadata: { name: org.name, ...(annotations ? { annotations } : {}) },
-    spec: {
-      displayName: org.displayName,
-      ...(org.vanityDomain ? { vanityDomain: org.vanityDomain } : {}),
-      isolationTier: org.isolationTier,
-      compute: {
-        mode: org.compute.mode,
-        ...(org.compute.mode === ClusterTenantComputeMode.Dedicated && org.compute.nodePool
-          ? { nodePool: org.compute.nodePool }
-          : {}),
-      },
-      resources: { quota: (org.resources.quota as Record<string, unknown>) ?? {} },
+    displayName: org.displayName,
+    ...(org.vanityDomain ? { vanityDomain: org.vanityDomain } : {}),
+    isolationTier: org.isolationTier,
+    compute: {
+      mode: org.compute.mode,
+      ...(org.compute.mode === ClusterTenantComputeMode.Dedicated && org.compute.nodePool
+        ? { nodePool: org.compute.nodePool }
+        : {}),
     },
+    resources: { quota: (org.resources.quota as Record<string, unknown>) ?? {} },
   };
 }
 
+// ---------------------------------------------------------------------------
+// Step 2 — Patch (update path)
+// ---------------------------------------------------------------------------
+
 /**
- * Apply the cluster-scoped ClusterTenant CR for an org idempotently.
- *
- * Tries to create; on 409 (already exists) merge-patches the spec so an update to
- * the org's desired state propagates without touching operator-owned status. The
- * `customApi` may be null in dev/test wiring with no cluster — in that case the
- * bridge is a no-op (the DB row is still the source of truth and the reconciler is
- * not running anyway).
- *
- * @param customApi - Kubernetes custom-objects client, or null when no cluster is wired.
- * @param org - The org contract object to project into the CR.
- * @param owner - The org owner's identity, stamped as annotations on create (and merged on update).
+ * Merge-patch the owner-free spec onto an existing CR. Tolerates 404 — a missing
+ * CR on the update path is an out-of-band anomaly, not something this write-back
+ * can resolve (a re-create requires an owner).
  */
-export async function _ApplyClusterTenantCr(customApi: k8s.CustomObjectsApi | null, org: ClusterTenant, owner?: ClusterTenantOwner): Promise<void>
+async function _PatchSpec(customApi: k8s.CustomObjectsApi, name: string, specPatch: ClusterTenantCrSpecPatch): Promise<void>
 {
-  if (!customApi) return;
+  try
+  {
+    await customApi.patchClusterCustomObject({
+      group: OPENCRANE_API_GROUP,
+      version: OPENCRANE_API_VERSION,
+      plural: CLUSTER_TENANT_CRD_PLURAL,
+      name,
+      body: { spec: specPatch },
+    });
+  }
+  catch (err: unknown)
+  {
+    if (_IsK8sNotFound(err)) return;
+    throw err;
+  }
+}
 
-  const body = _BuildClusterTenantCr(org, owner);
+// ---------------------------------------------------------------------------
+// Step 3 — Create (create path)
+// ---------------------------------------------------------------------------
 
+/**
+ * Create the full CR with mandatory `spec.owner`. Returns `true` when created,
+ * `false` when the CR already existed (409).
+ */
+async function _CreateCr(customApi: k8s.CustomObjectsApi, body: ClusterTenantCr): Promise<boolean>
+{
   try
   {
     await customApi.createClusterCustomObject({
@@ -144,34 +112,54 @@ export async function _ApplyClusterTenantCr(customApi: k8s.CustomObjectsApi | nu
       plural: CLUSTER_TENANT_CRD_PLURAL,
       body,
     });
+    return true;
   }
   catch (err: unknown)
   {
-    if (_IsAlreadyExists(err))
-    {
-      // Merge-patch the spec (and owner annotations when present) so the operator's
-      // status subresource is untouched; merge-patch on annotations adds/updates the
-      // owner keys without dropping any other annotation the operator may have set.
-      await customApi.patchClusterCustomObject({
-        group: OPENCRANE_API_GROUP,
-        version: OPENCRANE_API_VERSION,
-        plural: CLUSTER_TENANT_CRD_PLURAL,
-        name: org.name,
-        body: body.metadata.annotations
-          ? { metadata: { annotations: body.metadata.annotations }, spec: body.spec }
-          : { spec: body.spec },
-      });
-      return;
-    }
+    if (_IsK8sConflict(err)) return false;
     throw err;
   }
 }
 
+// ---------------------------------------------------------------------------
+// Orchestrator
+// ---------------------------------------------------------------------------
+
 /**
- * Delete the cluster-scoped ClusterTenant CR for an org, tolerating 404.
+ * Apply the cluster-scoped ClusterTenant CR idempotently.
  *
- * @param customApi - Kubernetes custom-objects client, or null when no cluster is wired.
- * @param name - The org (ClusterTenant) name to delete.
+ * With owner (create path): build full CR → {@link _CreateCr} → on 409 fall back
+ * to {@link _PatchSpec}. Without owner (update path): {@link _PatchSpec} only.
+ */
+export async function _ApplyClusterTenantCr(customApi: k8s.CustomObjectsApi | null, org: ClusterTenant, owner?: Partial<ClusterTenantOwner>): Promise<void>
+{
+  if (!customApi) return;
+
+  const specPatch = _BuildSpecPatch(org);
+  const ownerSpec = _BuildOwnerSpec(owner);
+
+  if (!ownerSpec)
+  {
+    await _PatchSpec(customApi, org.name, specPatch);
+    return;
+  }
+
+  const body: ClusterTenantCr = {
+    apiVersion: `${OPENCRANE_API_GROUP}/${OPENCRANE_API_VERSION}`,
+    kind: "ClusterTenant",
+    metadata: { name: org.name },
+    spec: { ...specPatch, owner: ownerSpec },
+  };
+
+  const created = await _CreateCr(customApi, body);
+  if (!created)
+  {
+    await _PatchSpec(customApi, org.name, specPatch);
+  }
+}
+
+/**
+ * Delete the cluster-scoped ClusterTenant CR, tolerating 404.
  */
 export async function _DeleteClusterTenantCr(customApi: k8s.CustomObjectsApi | null, name: string): Promise<void>
 {
@@ -188,28 +176,7 @@ export async function _DeleteClusterTenantCr(customApi: k8s.CustomObjectsApi | n
   }
   catch (err: unknown)
   {
-    if (_IsNotFound(err)) return;
+    if (_IsK8sNotFound(err)) return;
     throw err;
   }
-}
-
-/** Whether a Kubernetes API error carries a given numeric status code (common shapes). */
-function _HasK8sStatus(err: unknown, code: number): boolean
-{
-  if (typeof err !== "object" || err === null) return false;
-  const e = err as { statusCode?: unknown; code?: unknown; body?: { code?: unknown } };
-  if (e.statusCode === code || e.code === code) return true;
-  return typeof e.body === "object" && e.body !== null && (e.body as { code?: unknown }).code === code;
-}
-
-/** Whether the error is a Kubernetes 409 AlreadyExists. */
-function _IsAlreadyExists(err: unknown): boolean
-{
-  return _HasK8sStatus(err, 409);
-}
-
-/** Whether the error is a Kubernetes 404 NotFound. */
-function _IsNotFound(err: unknown): boolean
-{
-  return _HasK8sStatus(err, 404);
 }

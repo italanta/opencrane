@@ -4,6 +4,7 @@ import * as k8s from "@kubernetes/client-node";
 import { _ApplyPlatformDnsConfig } from "../core/platform-dns/apply-dns-config.js";
 import { _DnsProviderConfigError } from "../core/platform-dns/cluster-issuer.js";
 import type { CertIssuerKind } from "../core/platform-dns/cluster-issuer.types.js";
+import { _IsK8sNotFound } from "../shared/k8s-errors.js";
 import type { PlatformDnsStatus } from "./platform-dns.types.js";
 
 /** Default issuer name when the request omits one. */
@@ -130,7 +131,7 @@ export function platformDnsRouter(customApi: k8s.CustomObjectsApi, coreApi: k8s.
         // Only a 404 (issuer absent / cert-manager CRD not installed) means
         // "unconfigured" — propagate auth/permission/server errors instead of
         // masking them as a clean not-configured response.
-        if (_IsNotFound(lookupErr))
+        if (_IsK8sNotFound(lookupErr))
         {
           res.json({ configured: false, issuerName, issuerKind, issuerNamespace, provider: null, email: null, server: null } satisfies PlatformDnsStatus);
           return;
@@ -149,15 +150,6 @@ export function platformDnsRouter(customApi: k8s.CustomObjectsApi, coreApi: k8s.
   return router;
 }
 
-/**
- * Detect a Kubernetes 404 Not Found across the client's error shapes.
- * @param err - The caught error.
- */
-function _IsNotFound(err: unknown): boolean
-{
-  const e = err as { code?: number; statusCode?: number; response?: { statusCode?: number } };
-  return e?.code === 404 || e?.statusCode === 404 || e?.response?.statusCode === 404;
-}
 
 /**
  * Extract a non-secret status summary from an issuer custom resource.

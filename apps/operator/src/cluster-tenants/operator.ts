@@ -15,12 +15,12 @@ import type { OrgDomainProvisioner } from "./internal/org-domain-provisioner.typ
 import { _BuildOrgDomainProvisioner } from "./internal/org-domain.provisioner.factory.js";
 
 /**
- * Annotation the control plane stamps with the org owner's IdP-verified email.
- * Mirrors `_OWNER_EMAIL_ANNOTATION` in the control plane's `cr-bridge.ts` — the
- * operator has no DB access, so the CR annotation is the only channel for the
- * owner identity the default Tenant is attributed to.
+ * Legacy annotation the control plane used to stamp with the org owner's email,
+ * before owner identity moved to the validated `spec.owner` field. Read only as a
+ * fallback so CRs created by an older control plane (not yet backfilled) still seed
+ * their default Tenant during rollout; new CRs carry `spec.owner` instead.
  */
-const _OWNER_EMAIL_ANNOTATION = "opencrane.io/owner-email";
+const _LEGACY_OWNER_EMAIL_ANNOTATION = "opencrane.io/owner-email";
 
 /** Suffix appended to an org's name to form its auto-seeded first workspace Tenant. */
 const _DEFAULT_TENANT_SUFFIX = "-default";
@@ -327,19 +327,21 @@ export class ClusterTenantOperator
    * other Tenant CR). Fail-soft: any other error is logged but never thrown, so a seed
    * hiccup cannot wedge the org out of `ready`; the next reconcile retries.
    *
-   * The owner's email arrives only via the CR's {@link _OWNER_EMAIL_ANNOTATION} (the
-   * operator has no DB access). When it is absent — an org created before the annotation
-   * existed, or via the dev-auth path with no email — the seed is skipped with a warning.
+   * The owner's email arrives via the CR's `spec.owner.email` (the operator has no DB
+   * access), falling back to the legacy `opencrane.io/owner-email` annotation for CRs an
+   * older control plane created before the field existed. When it is absent — the dev-auth
+   * path carries only a subject, no email — the seed is skipped with a warning.
    *
    * @param clusterTenant - The ready ClusterTenant whose default Tenant is ensured.
    */
   private async ensureDefaultTenant(clusterTenant: ClusterTenantResource): Promise<void>
   {
     const orgName = clusterTenant.metadata!.name!;
-    const ownerEmail = clusterTenant.metadata?.annotations?.[_OWNER_EMAIL_ANNOTATION]?.trim();
+    const ownerEmail = clusterTenant.spec.owner?.email?.trim()
+      || clusterTenant.metadata?.annotations?.[_LEGACY_OWNER_EMAIL_ANNOTATION]?.trim();
     if (!ownerEmail)
     {
-      this.log.warn({ name: orgName }, "no owner-email annotation on cluster tenant; skipping default tenant seed");
+      this.log.warn({ name: orgName }, "no owner email on cluster tenant (spec.owner.email / legacy annotation both absent); skipping default tenant seed");
       return;
     }
 

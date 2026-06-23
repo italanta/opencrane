@@ -8,6 +8,7 @@ import { compile } from "../core/grants/grant-compiler.js";
 import { GrantCompilerAccess, GrantCompilerPayloadType } from "../core/grants/grant-compiler.types.js";
 import { _CutTenant } from "../core/connections/cut-tenant.js";
 import type { OpenClawGatewayAdmin } from "../core/connections/gateway-admin.types.js";
+import { _IsK8sNotFound } from "../shared/k8s-errors.js";
 
 import type { CreateTenantRequest, TenantDatasetsResponse, TenantResponse, UpdateTenantDatasetsRequest } from "../types.js";
 import type { EffectiveContractResponse } from "./tenants.types.js";
@@ -721,25 +722,6 @@ function _IsStringArray(value: unknown[]): value is string[]
   });
 }
 
-/**
- * Check whether an unknown Kubernetes client error represents a not-found response.
- * @param error - Unknown thrown error from Kubernetes client calls.
- */
-function _IsKubernetesNotFoundError(error: unknown): boolean
-{
-  if (typeof error !== "object" || error === null)
-  {
-    return false;
-  }
-
-  const errorObject = error as {
-    statusCode?: number;
-    response?: { statusCode?: number };
-    body?: { code?: number };
-  };
-  const statusCode = errorObject.statusCode ?? errorObject.response?.statusCode ?? errorObject.body?.code;
-  return statusCode === 404;
-}
 
 /**
  * Wait until a newly-created tenant becomes observable as a Tenant CR.
@@ -775,7 +757,7 @@ async function _WaitForTenantCrAppearance(
     }
     catch (error)
     {
-      if (!_IsKubernetesNotFoundError(error))
+      if (!_IsK8sNotFound(error))
       {
         throw error;
       }

@@ -3566,6 +3566,16 @@
               }
             }
           },
+          "409": {
+            "description": "A workspace with this name already exists (code CONFLICT).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Requested isolation tier is not served by any registered provisioner (code TIER_UNAVAILABLE).",
             "content": {

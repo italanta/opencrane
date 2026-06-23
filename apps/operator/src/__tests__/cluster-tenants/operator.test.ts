@@ -13,19 +13,29 @@ const log = pino({ level: "silent" });
 /** Recorded status-patch body so a test can read what the reconciler stamped. */
 type StatusPatch = Record<string, unknown>;
 
+/** A recorded default-Tenant seed (the body passed to createNamespacedCustomObject). */
+interface SeededTenant { name: string; namespace: string; email: string; clusterTenantRef: string }
+
 /**
  * Build a stub CustomObjectsApi that records the merged status value from each
  * `patchClusterCustomObjectStatus` call (JSON Patch `add /status`), plus a spy.
+ * Also records each default-Tenant seed via `createNamespacedCustomObject` so the
+ * owner-resolution path can be asserted.
  */
-function _makeStubCustomApi(): { api: k8s.CustomObjectsApi; patches: StatusPatch[]; spy: ReturnType<typeof vi.fn> }
+function _makeStubCustomApi(): { api: k8s.CustomObjectsApi; patches: StatusPatch[]; spy: ReturnType<typeof vi.fn>; seeds: SeededTenant[] }
 {
   const patches: StatusPatch[] = [];
+  const seeds: SeededTenant[] = [];
   const spy = vi.fn(async function _patch(args: { body: Array<{ value: StatusPatch }> })
   {
     patches.push(args.body[0].value);
   });
-  const api = { patchClusterCustomObjectStatus: spy } as unknown as k8s.CustomObjectsApi;
-  return { api, patches, spy };
+  const createNamespacedCustomObject = vi.fn(async function _seed(args: { namespace: string; body: { metadata: { name: string }; spec: { email: string; clusterTenantRef: string } } })
+  {
+    seeds.push({ name: args.body.metadata.name, namespace: args.namespace, email: args.body.spec.email, clusterTenantRef: args.body.spec.clusterTenantRef });
+  });
+  const api = { patchClusterCustomObjectStatus: spy, createNamespacedCustomObject } as unknown as k8s.CustomObjectsApi;
+  return { api, patches, spy, seeds };
 }
 
 /**
@@ -270,6 +280,73 @@ describe("ClusterTenantOperator.reconcile", () =>
     // 3 events while one was in flight → exactly 2 reconciles (the in-flight one + one
     // coalesced drain), never 3. This is what bounds in-flight work and prevents the OOM.
     expect(calls).toEqual(["acme", "acme"]);
+  });
+});
+
+describe("ClusterTenantOperator default-tenant seed (owner resolution)", () =>
+{
+  beforeEach(() => vi.clearAllMocks());
+
+  it("seeds the default Tenant from spec.owner.email when the org reaches ready", async () =>
+  {
+    const { api: customApi, seeds } = _makeStubCustomApi();
+    const { api: coreApi } = _makeStubCoreApi();
+    const { provisioner } = _makeDomainProvisioner({ skipped: true, ready: false });
+    const operator = _buildOperator(customApi, coreApi, provisioner);
+
+    const ct = _makeClusterTenant("acme");
+    ct.spec.owner = { subject: "auth0|abc", email: "owner@acme.example" };
+    await operator.reconcile(ct);
+
+    expect(seeds).toHaveLength(1);
+    expect(seeds[0].name).toBe("acme-default");
+    expect(seeds[0].email).toBe("owner@acme.example");
+    expect(seeds[0].clusterTenantRef).toBe("acme");
+  });
+
+  it("falls back to the legacy owner-email annotation for a CR with no spec.owner (rollout safety)", async () =>
+  {
+    const { api: customApi, seeds } = _makeStubCustomApi();
+    const { api: coreApi } = _makeStubCoreApi();
+    const { provisioner } = _makeDomainProvisioner({ skipped: true, ready: false });
+    const operator = _buildOperator(customApi, coreApi, provisioner);
+
+    const ct = _makeClusterTenant("legacy");
+    ct.metadata!.annotations = { "opencrane.io/owner-email": "legacy@acme.example" };
+    await operator.reconcile(ct);
+
+    expect(seeds).toHaveLength(1);
+    expect(seeds[0].email).toBe("legacy@acme.example");
+  });
+
+  it("prefers spec.owner.email over the legacy annotation when both are present", async () =>
+  {
+    const { api: customApi, seeds } = _makeStubCustomApi();
+    const { api: coreApi } = _makeStubCoreApi();
+    const { provisioner } = _makeDomainProvisioner({ skipped: true, ready: false });
+    const operator = _buildOperator(customApi, coreApi, provisioner);
+
+    const ct = _makeClusterTenant("acme");
+    ct.spec.owner = { subject: "auth0|abc", email: "spec@acme.example" };
+    ct.metadata!.annotations = { "opencrane.io/owner-email": "annotation@acme.example" };
+    await operator.reconcile(ct);
+
+    expect(seeds[0].email).toBe("spec@acme.example");
+  });
+
+  it("skips the seed (org still ready) when no owner email is resolvable — dev-auth path", async () =>
+  {
+    const { api: customApi, seeds, patches } = _makeStubCustomApi();
+    const { api: coreApi } = _makeStubCoreApi();
+    const { provisioner } = _makeDomainProvisioner({ skipped: true, ready: false });
+    const operator = _buildOperator(customApi, coreApi, provisioner);
+
+    const ct = _makeClusterTenant("devorg");
+    ct.spec.owner = { subject: "dev-local-subject" }; // subject only, no email
+    await operator.reconcile(ct);
+
+    expect(seeds).toHaveLength(0);                 // nothing seeded without an email
+    expect(patches.at(-1)!.phase).toBe("ready");   // but the org is not wedged out of ready
   });
 });
 

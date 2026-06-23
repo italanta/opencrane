@@ -54,6 +54,17 @@ export interface ClusterTenantResource extends KubernetesObject
       /** Aggregate quota enforced over the customer's namespace. */
       quota?: ClusterTenantQuotaView;
     };
+    /**
+     * Org owner identity, projected by the control plane (the IAM authority) as first-class
+     * desired state. The operator attributes the org's auto-seeded default Tenant to this
+     * owner; it has no DB access, so the CR spec is the only channel for the owner identity.
+     */
+    owner?: {
+      /** The owner's OIDC subject (`sub`). */
+      subject?: string;
+      /** The owner's IdP-verified email; becomes the default Tenant's contact email. */
+      email?: string;
+    };
   };
 
   /** Observed state; absent until first reconciled by the control plane. */

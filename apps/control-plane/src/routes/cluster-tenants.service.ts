@@ -1,6 +1,6 @@
 import { ClusterTenantComputeMode, ClusterTenantIsolationTier, ClusterTenantPhase } from "@opencrane/contracts";
-import type { ClusterTenant, ClusterTenantResourceQuota } from "@opencrane/contracts";
-import type { Prisma } from "@prisma/client";
+import type { ClusterTenant, ClusterTenantObservedStatus, ClusterTenantResourceQuota, ClusterTenantStatus } from "@opencrane/contracts";
+import type { Prisma, PrismaClient } from "@prisma/client";
 
 import type { ClusterTenantComputeInput, ClusterTenantResourcesInput } from "./cluster-tenants.models.js";
 
@@ -50,6 +50,66 @@ export function _FromPrismaPhase(value: string): ClusterTenantPhase
     case "ready": return ClusterTenantPhase.Ready;
     case "failed": return ClusterTenantPhase.Failed;
     default: return ClusterTenantPhase.Pending;
+  }
+}
+
+/**
+ * Map the operator's OBSERVED CR status into the contract status shape.
+ *
+ * Used by the read path to surface the live phase the operator stamped on the CR
+ * (which the DB `phase` column never receives) instead of the seeded `pending`. The
+ * phase string uses the same tokens as the DB column, so {@link _FromPrismaPhase}
+ * maps it identically.
+ *
+ * @param observed - The status subresource read from the ClusterTenant CR.
+ * @returns The contract status reflecting real provisioning progress.
+ */
+export function _ObservedStatusToContract(observed: ClusterTenantObservedStatus): ClusterTenantStatus
+{
+  return {
+    phase: _FromPrismaPhase(observed.phase ?? "pending"),
+    ...(observed.message ? { message: observed.message } : {}),
+    ...(observed.boundNamespace ? { boundNamespace: observed.boundNamespace } : {}),
+    ...(observed.provisioner ? { provisioner: observed.provisioner } : {}),
+  };
+}
+
+/**
+ * Mirror the operator's observed CR status back into the `cluster_tenants` row (read-repair).
+ *
+ * Approach A2 reads the live phase from the CR, but the DB column stays stale, so the fleet
+ * LIST endpoint (and any other DB reader) would still show `pending`. Writing the observed
+ * status back on read converges the DB to the truth the operator stamped — without the
+ * operator needing DB access. The phase tokens match the column's, so they persist verbatim.
+ *
+ * Idempotent and side-effect-safe: skips the write when nothing changed (no write amplification
+ * once converged), and swallows write errors so a DB hiccup never fails the status read.
+ *
+ * @param prisma - Prisma client.
+ * @param row - The currently persisted row (used to diff before writing).
+ * @param observed - The observed status read from the CR.
+ */
+export async function _SyncObservedStatusToDb(prisma: PrismaClient, row: ClusterTenantRow, observed: ClusterTenantObservedStatus): Promise<void>
+{
+  const phase = observed.phase ?? "pending";
+  const message = observed.message ?? null;
+  const boundNamespace = observed.boundNamespace ?? null;
+  const provisioner = observed.provisioner ?? null;
+
+  // No delta → nothing to mirror (avoids a write on every poll once the org has converged).
+  if (row.phase === phase && row.message === message && row.boundNamespace === boundNamespace && row.provisioner === provisioner)
+  {
+    return;
+  }
+
+  try
+  {
+    await prisma.clusterTenant.update({ where: { name: row.name }, data: { phase, message, boundNamespace, provisioner } });
+  }
+  catch
+  {
+    // Best-effort mirror: the authoritative read already used the observed status, so a
+    // transient DB write failure must not fail the status endpoint.
   }
 }
 

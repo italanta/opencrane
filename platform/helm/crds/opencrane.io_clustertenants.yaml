@@ -84,6 +84,28 @@ spec:
                           type: integer
                           minimum: 0
                           description: Total GPUs the customer may request.
+                owner:
+                  type: object
+                  required: [subject]
+                  description: >-
+                    Identity of the org's root owner, resolved by the control plane (the
+                    IAM authority) at create time and projected here as first-class desired
+                    state. The operator attributes the org's auto-seeded default Tenant to
+                    this owner; it has no database access, so the CR spec is the only channel
+                    for the owner identity. Presence is enforced by the control plane (which
+                    rejects an org create with no resolvable subject), not by CRD admission,
+                    so status writes on pre-existing CRs are never blocked by this field.
+                  properties:
+                    subject:
+                      type: string
+                      minLength: 1
+                      description: The owner's OIDC subject (`sub`).
+                    email:
+                      type: string
+                      description: >-
+                        The owner's IdP-verified email; becomes the default Tenant's contact
+                        email. Absent on the dev-auth path, where only the synthetic subject
+                        is carried (the default-Tenant seed is then skipped).
             status:
               type: object
               properties:
@@ -99,6 +121,15 @@ spec:
                 lastReconciled:
                   type: string
                   format: date-time
+                observedGeneration:
+                  type: integer
+                  format: int64
+                  description: >-
+                    metadata.generation the operator last drove to ready. The reconcile-skip
+                    guard compares this against metadata.generation so an unchanged, already-
+                    ready CR is not re-provisioned on every watch replay. MUST be present in
+                    the schema or the API server prunes it from status writes, defeating the
+                    guard and re-provisioning every org on each watch reconnect.
       additionalPrinterColumns:
         - name: Display Name
           type: string
