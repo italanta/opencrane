@@ -22,7 +22,11 @@ spec:
         # Apply pending Prisma migrations before the server starts (prisma migrate
         # deploy). Runs the same image so the schema/migrations match the binary;
         # the server never boots against an un-migrated database. Idempotent — a
-        # no-op when the DB is already at the latest migration.
+        # no-op when the DB is already at the latest migration. This is a
+        # belt-and-suspenders guard for pod (re)creation BETWEEN deploys: the
+        # deploy-time migration authority is the pre-upgrade hook Job
+        # (control-plane-migration-job.yaml), which an unchanged `helm upgrade`
+        # cannot skip the way it skips an unchanged pod template.
         - name: db-migrate
           image: "{{ .Values.controlPlane.image.repository }}:{{ .Values.controlPlane.image.tag }}"
           imagePullPolicy: {{ .Values.controlPlane.image.pullPolicy }}

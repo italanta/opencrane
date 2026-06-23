@@ -712,10 +712,13 @@ helm_args+=("${EXTRA_SET[@]}")
 helm "${helm_args[@]}"
 
 # 4. Wait for the core workloads.
-# Database migrations run automatically in the control-plane's `db-migrate`
-# initContainer (prisma migrate deploy) before the server starts — so the
-# rollout below also gates on a successful migration. Any `helm upgrade` or
-# pod restart re-runs it idempotently; no separate migration Job needed.
+# Database migrations run via the control-plane's pre-upgrade hook Job
+# (prisma migrate deploy), which `helm upgrade` above blocks on before the
+# rollout — so EVERY deploy reconciles the schema, even when the control-plane
+# pod template is unchanged (a plain `helm upgrade` won't roll an unchanged pod,
+# so the db-migrate initContainer alone could leave the schema behind when the
+# database was recreated under a running pod). The initContainer remains a
+# belt-and-suspenders guard for pod (re)creation between deploys. Idempotent.
 kubectl rollout status "deployment/${RELEASE}-operator" -n "$NAMESPACE" --timeout="${TIMEOUT}s"
 kubectl rollout status "deployment/${RELEASE}-control-plane" -n "$NAMESPACE" --timeout="${TIMEOUT}s"
 

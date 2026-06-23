@@ -139,6 +139,16 @@ controlPlane:
     existingSecret: ""
     # -- Key within the Secret that holds the connection string
     secretKey: DATABASE_URL
+  # -- Prisma migration Helm hook. Runs `prisma migrate deploy` as a
+  #    pre-install/pre-upgrade Job so EVERY deploy reconciles the schema, even when
+  #    the control-plane pod template is unchanged (a plain `helm upgrade` won't roll
+  #    the pod, so the db-migrate initContainer alone can leave the schema behind when
+  #    the database is recreated under a running pod). The initContainer remains a
+  #    belt-and-suspenders guard so a pod never serves an un-migrated database.
+  migrationJob:
+    enabled: true
+    # -- Retries before the migration hook is considered failed (fails the deploy).
+    backoffLimit: 3
   # -- Cognee integration for control-plane permission synchronization
   cognee:
     # -- Install an in-cluster Cognee as part of this release. Cognee is a REQUIRED
