@@ -6,7 +6,15 @@ operator:
   watchNamespace: opencrane-system
 
 controlPlane:
+  # The control-plane is not under test in this smoke test (operator + tenant reconcile
+  # only), so it runs with no pods and no control-plane image is built/imported into k3d.
   replicas: 0
+  # The migration Job is a pre-install Helm HOOK that runs the control-plane image to apply
+  # Prisma migrations. With replicas:0 and no control-plane image in k3d, its pod would sit
+  # in ImagePullBackOff and the hook would block `helm install` until it times out. Disable
+  # it here — there is no control-plane DB schema to reconcile in this smoke test.
+  migrationJob:
+    enabled: false
 
 tenant:
   defaultImage:
