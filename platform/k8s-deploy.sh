@@ -351,7 +351,7 @@ _gen_secret() { openssl rand -hex 16 2>/dev/null || head -c 24 /dev/urandom | ba
 # Re-use existing passwords when secrets already exist so that re-runs don't
 # rotate credentials without also updating postgres (which only reads the
 # bootstrap secret once at initdb time).
-_read_secret() { kubectl get secret "$1" -n "$NAMESPACE" -o jsonpath="{.data.$2}" 2>/dev/null | base64 -d; }
+_read_secret() { kubectl get secret "$1" -n "$NAMESPACE" -o jsonpath="{.data.$2}" 2>/dev/null | base64 -d || true; }
 if [[ -z "${DB_PASSWORD:-}" ]]; then
   DB_PASSWORD="$(_read_secret "${DB_CLUSTER}-creds" password)"
   DB_PASSWORD="${DB_PASSWORD:-$(_gen_secret)}"
@@ -387,6 +387,14 @@ LANGFUSE_ADMIN_PASSWORD="${LANGFUSE_ADMIN_PASSWORD:-$(_gen_secret)}"
 # ClickHouse internal password (stable: changing it after init requires manual CH user management).
 LANGFUSE_CH_PASSWORD="$(_read_secret opencrane-langfuse CLICKHOUSE_PASSWORD)"
 LANGFUSE_CH_PASSWORD="${LANGFUSE_CH_PASSWORD:-$(_gen_secret)}"
+# Bitnami sub-subchart passwords inside the Langfuse chart. Bitnami charts require the
+# existing password to be re-supplied on every upgrade; we read-or-generate so the upgrade
+# never fails regardless of whether Langfuse is enabled. The values are stable after first
+# creation because each is read back from the cluster secret before generating a new one.
+LANGFUSE_S3_ROOT_PASSWORD="$(_read_secret opencrane-s3 root-password)"
+LANGFUSE_S3_ROOT_PASSWORD="${LANGFUSE_S3_ROOT_PASSWORD:-$(_gen_secret)}"
+LANGFUSE_REDIS_PASSWORD="$(_read_secret opencrane-redis valkey-password)"
+LANGFUSE_REDIS_PASSWORD="${LANGFUSE_REDIS_PASSWORD:-$(_gen_secret)}"
 
 log "Target cluster: $(kubectl config current-context)"
 log "Namespace: $NAMESPACE   Release: $RELEASE   Image tag: $IMAGE_TAG"
@@ -803,6 +811,15 @@ TN_TAG="${TENANT_TAG:-$IMAGE_TAG}"
 # not known at values.yaml authoring time. Harmless when langfuse.inCluster.enabled=false
 # (the subchart is disabled by condition so these values are never rendered).
 helm_args+=(--set "langfuse.postgresql.host=${DB_CLUSTER}-rw.${NAMESPACE}.svc.cluster.local")
+helm_args+=(--set "langfuse.s3.auth.rootPassword=$LANGFUSE_S3_ROOT_PASSWORD")
+helm_args+=(--set "global.valkey.password=$LANGFUSE_REDIS_PASSWORD")
+helm_args+=(--set "langfuse.clickhouse.auth.password=$LANGFUSE_CH_PASSWORD")
+# Bitnami sub-subchart conditions default to deploy:true in the Langfuse chart even
+# when langfuse.inCluster.enabled=false; pass passwords unconditionally so Bitnami's
+# upgrade password-validation templates are satisfied regardless of Langfuse state.
+# Also re-assert the condition flag so --reuse-values can never accidentally carry
+# a stale true from a previous in-cluster install.
+helm_args+=(--set "langfuse.inCluster.enabled=false")
 [[ -n "$BASE_DOMAIN" ]] && helm_args+=(--set-string "langfuse.langfuse.nextauth.url=https://langfuse.${BASE_DOMAIN}")
 # OIDC human-login (control-plane only). Rendered iff an issuer URL is given; otherwise
 # the chart emits no OIDC env and the control-plane stays in token/development mode.
