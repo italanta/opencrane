@@ -956,14 +956,19 @@ async function _ApplyTenantDatasetMembershipToCognee(
   }
 }
 
-/** Whether two memberships hold the same subjects per tier (order-independent → set compare). */
+/**
+ * Whether two memberships hold the same subjects per tier. Compares as SETS (order- AND
+ * duplicate-independent): the derived side is deduped, but the persisted projection is built
+ * in row order and could carry an accidental duplicate, so comparing distinct sets keeps the
+ * diff-gate from firing a spurious Cognee sync on a semantically-unchanged membership.
+ */
 function _DatasetMembershipEqual(a: TenantDatasetsResponse, b: TenantDatasetsResponse): boolean
 {
   return (["org", "team", "department", "project", "personal"] as const).every(function _sameTier(key)
   {
-    if (a[key].length !== b[key].length) return false;
-    const set = new Set(a[key]);
-    return b[key].every(function _has(subject) { return set.has(subject); });
+    const setA = new Set(a[key]);
+    const setB = new Set(b[key]);
+    return setA.size === setB.size && Array.from(setA).every(function _has(subject) { return setB.has(subject); });
   });
 }
 

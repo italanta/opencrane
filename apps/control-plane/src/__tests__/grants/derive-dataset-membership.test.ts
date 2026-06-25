@@ -56,6 +56,23 @@ describe("_DeriveTenantDatasetMembership — dataset scopes from group membershi
     expect(membership.team).toEqual(["alice", "bob", "zoe"]);
   });
 
+  it("populates every tier at once, including Department, across a multi-scope membership", async function _multiScope()
+  {
+    const groups: _GroupRow[] = [
+      { scope: "Department", members: ["alice", "dee"] },
+      { scope: "Team", members: ["alice", "tom"] },
+      { scope: "Project", members: ["alice", "pat"] },
+      { scope: "Personal", members: ["alice", "perry"] },
+      { scope: "Org", members: ["alice"] }, // org never enumerates members → stays the singleton
+    ];
+    const membership = await _DeriveTenantDatasetMembership(_prisma(groups), "acme-tenant", "alice");
+    expect(membership.org).toEqual(["default"]);
+    expect(membership.department).toEqual(["alice", "dee"]);
+    expect(membership.team).toEqual(["alice", "tom"]);
+    expect(membership.project).toEqual(["alice", "pat"]);
+    expect(membership.personal).toEqual(["alice", "perry"]);
+  });
+
   it("an unbound tenant (no subject) still matches groups by tenant name; otherwise empty", async function _unbound()
   {
     const groups: _GroupRow[] = [
