@@ -8,6 +8,7 @@ import { _RenderToolsMarkdown } from "../../core/contract/tools-markdown.js";
 import { _LoadAwarenessRollout } from "../../core/awareness/rollout-store.js";
 import { _ResolveAwarenessVersion } from "../../core/awareness/rollout.js";
 import { _ResolveContractSkillModels } from "../../core/model-routing/resolve-contract-skill-models.js";
+import { _log } from "../../log.js";
 
 /** Expected audience on the projected token the tenant pod uses to call this endpoint. */
 const _EXPECTED_AUDIENCE = "control-plane";
@@ -136,6 +137,9 @@ export function _RegisterInternalTenantContract(prisma: PrismaClient, authApi: k
       //    grants. A user-level Deny still beats a tenant-level Allow (Deny>Allow precedence).
       //    The subject is absent for legacy/unbound tenants, which collapses to tenant-only.
       const principals = [name, ...(tenant.subject ? [tenant.subject] : [])];
+      if (typeof tenant.subject === "string" && tenant.subject === "") {
+        _log.debug({ tenant: name }, "tenant.subject is empty string; treated as unbound (data-quality check)");
+      }
       const mcpDecisions = await compileForPrincipals(principals, GrantCompilerPayloadType.McpServer, prisma);
       const skillDecisions = await compileForPrincipals(principals, GrantCompilerPayloadType.SkillBundle, prisma);
 

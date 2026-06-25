@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { _RegisterInternalTenantContract } from "../../routes/internal/tenant-contract.js";
 import { compileForPrincipals } from "../../core/grants/grant-compiler.js";
-import { GrantCompilerAccess } from "../../core/grants/grant-compiler.types.js";
+import { GrantCompilerAccess, GrantCompilerPayloadType } from "../../core/grants/grant-compiler.types.js";
 
 // Mock the grant compiler at the module boundary so tests can drive Allow/Deny
 // decisions directly without constructing grant rows. Default: no entitlements,
@@ -276,5 +276,27 @@ describe("_RegisterInternalTenantContract GET /:name", () =>
 
     expect(res.status).toBe(200);
     expect(vi.mocked(compileForPrincipals)).toHaveBeenCalledWith(["team-alpha"], expect.anything(), expect.anything());
+  });
+
+  it("never compiles awareness grants through the principal set (awareness is always tenant-scoped)", async () =>
+  {
+    vi.mocked(compileForPrincipals).mockClear();
+    const prisma = _buildPrismaStub({ tenant: { name: "team-alpha", team: null, subject: "user-sub" } });
+    const app = _buildApp(prisma, _validAuthApi);
+
+    const res = await request(app)
+      .get("/api/internal/contract/team-alpha")
+      .set("Authorization", "Bearer valid");
+
+    expect(res.status).toBe(200);
+    // Awareness is a fleet-participation property of the Tenant itself, not the bound user.
+    // The contract route must never compile Awareness through compileForPrincipals — that
+    // would inherit the user's dataset scope into the tenant, crossing silo boundaries.
+    // Exactly two compilations run: McpServer and SkillBundle.
+    expect(vi.mocked(compileForPrincipals)).toHaveBeenCalledTimes(2);
+    const payloadTypes = vi.mocked(compileForPrincipals).mock.calls.map(function _payloadArg(c) { return c[1]; });
+    expect(payloadTypes).toContain(GrantCompilerPayloadType.McpServer);
+    expect(payloadTypes).toContain(GrantCompilerPayloadType.SkillBundle);
+    expect(payloadTypes).not.toContain(GrantCompilerPayloadType.Awareness);
   });
 });
