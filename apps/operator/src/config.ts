@@ -1,6 +1,6 @@
 import { HostingProvider } from "./hosting/hosting-adapter.types.js";
 import type { GcpHostingConfig } from "./hosting/hosting-adapter.types.js";
-import { _ParseTrustedProxies } from "./trusted-proxies.js";
+import { _ParseTrustedProxies, _DeriveTrustedProxyCidr, _AUTO_TRUSTED_PROXY_TOKEN, _DEFAULT_AUTO_TRUSTED_PROXY_MASK } from "./trusted-proxies.js";
 
 export type { GcpHostingConfig };
 export { HostingProvider };
@@ -183,8 +183,12 @@ export function _LoadOperatorConfig(): OpenClawTenantOperatorConfig
   // 2b. Parse the trusted-proxy allowlist fail-closed (OC-2 / CONN.4). An empty
   //     value resolves to trust-nothing (never trust-all); a malformed CIDR throws
   //     here so a typo crashes the operator at startup rather than silently
-  //     widening or narrowing the gateway's trust boundary.
-  const trustedProxies = _ParseTrustedProxies(_readEnvValue<string>("GATEWAY_TRUSTED_PROXIES", "string", false, ""));
+  //     widening or narrowing the gateway's trust boundary. The opt-in `auto`
+  //     token is first expanded to a pod-IP-derived CIDR (task_845dd617) — empty
+  //     stays trust-nothing, so the fail-closed default (CONN.9) is preserved.
+  const trustedProxies = _ParseTrustedProxies(_resolveTrustedProxiesInput(
+    _readEnvValue<string>("GATEWAY_TRUSTED_PROXIES", "string", false, ""),
+  ));
 
   // 3. Build the typed config from env, applying namespace-derived fallbacks for the
   //    runtime-plane URLs so no value silently points at another instance.
@@ -270,6 +274,50 @@ function _readOwnNamespace(): string
 {
   const raw = process.env["POD_NAMESPACE"]?.trim();
   return raw && raw.length > 0 ? raw : "default";
+}
+
+/**
+ * Expand the opt-in `auto` token in `GATEWAY_TRUSTED_PROXIES` into a CIDR derived
+ * from the operator's own pod IP (task_845dd617), leaving every other entry
+ * untouched for {@link _ParseTrustedProxies} to validate.
+ *
+ * `auto` is convenience, not the default: it widens the gateway's trust boundary to
+ * the whole pod range, so it activates only when explicitly listed and is logged
+ * loudly. POD_IP comes from the downward API (`status.podIP`); the mask defaults to
+ * the GKE pod-range /14 and is overridable via `GATEWAY_TRUSTED_PROXIES_AUTO_MASK`.
+ * If derivation fails (no/invalid POD_IP, bad mask) the token is dropped — so an
+ * `auto`-only config falls back to trust-nothing rather than trust-all (CONN.9).
+ *
+ * @param raw - The raw comma-separated `GATEWAY_TRUSTED_PROXIES` value.
+ * @returns The entry list with `auto` replaced by the derived CIDR (or removed).
+ */
+function _resolveTrustedProxiesInput(raw: string): string[]
+{
+  const entries = _splitCsv(raw);
+  if (!entries.some(entry => entry.toLowerCase() === _AUTO_TRUSTED_PROXY_TOKEN))
+  {
+    return entries;
+  }
+
+  const podIp = process.env["POD_IP"]?.trim() ?? "";
+  const maskRaw = process.env["GATEWAY_TRUSTED_PROXIES_AUTO_MASK"]?.trim();
+  const maskBits = maskRaw && /^\d{1,3}$/.test(maskRaw) ? Number(maskRaw) : _DEFAULT_AUTO_TRUSTED_PROXY_MASK;
+  const derived = _DeriveTrustedProxyCidr(podIp, maskBits);
+
+  return entries.flatMap(function _expandAuto(entry)
+  {
+    if (entry.toLowerCase() !== _AUTO_TRUSTED_PROXY_TOKEN)
+    {
+      return [entry];
+    }
+    if (derived === null)
+    {
+      console.error(`GATEWAY_TRUSTED_PROXIES="auto" but POD_IP "${podIp}" is missing/invalid; dropping the token (staying fail-closed)`);
+      return [];
+    }
+    console.error(`GATEWAY_TRUSTED_PROXIES="auto" derived trusted-proxy CIDR ${derived} from POD_IP ${podIp} (/${maskBits}); this trusts the whole pod range`);
+    return [derived];
+  });
 }
 
 /**
