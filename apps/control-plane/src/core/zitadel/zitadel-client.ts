@@ -1,3 +1,4 @@
+import { _log } from "../../log.js";
 import type { ProvisionOrgInput, ProvisionOrgResult, ZitadelManagementClient } from "./zitadel-client.types.js";
 
 /**
@@ -72,9 +73,10 @@ export function _BuildZitadelManagementClient(): ZitadelManagementClient
   const config = _ReadZitadelClientConfig();
   if (config)
   {
-    console.warn(
-      "[zitadel] management API is configured but the live client ships in the next S3 slice; " +
-      "org provisioning is currently a NO-OP (ClusterTenants are created without a Zitadel org).",
+    // Signal presence only — never log the SA key. Structured so it is queryable.
+    _log.warn(
+      { liveClientDeferred: true },
+      "Zitadel management API is configured but the live client ships in the next S3 slice; org provisioning is currently a NO-OP (ClusterTenants are created without a Zitadel org)",
     );
   }
   return new _NoopZitadelManagementClient();

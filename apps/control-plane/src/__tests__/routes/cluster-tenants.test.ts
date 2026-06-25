@@ -277,7 +277,7 @@ describe("clusterTenantsRouter — owner default tenant (create-time seed + refr
 
     // DB projection row written for the owner's workspace (the bit the operator-only path missed).
     const row = tenants.get("acme-default");
-    expect(row).toMatchObject({ name: "acme-default", email: "owner@acme.com", clusterTenantRef: "acme", displayName: "Acme Corp workspace" });
+    expect(row).toMatchObject({ name: "acme-default", email: "owner@acme.com", clusterTenantRef: "acme", displayName: "Acme Corp workspace", subject: "owner-sub" });
     // CRD dual-written too.
     expect(created.some((c) => (c.metadata as Row)?.name === "acme-default")).toBe(true);
   });
