@@ -153,6 +153,17 @@ export function _BuildConfigMap(config: OpenClawTenantOperatorConfig, tenant: Te
     ? { ...baseConfig, ...tenant.spec.configOverrides }
     : { ...baseConfig };
 
+  // 3b. Re-pin the platform-owned `gateway` block (CONN.10) — applied AFTER the tenant
+  //     merge so `spec.configOverrides.gateway` can never clobber it. The shallow merge
+  //     in step 3 is top-level: a tenant `gateway` override REPLACES the whole block,
+  //     which would drop the owner-pin (auth.trustedProxy.allowUsers=[owner]) and could
+  //     inject a stray key that crashes the strict gateway schema on boot. Restoring
+  //     baseConfig.gateway verbatim keeps the security-critical block under platform
+  //     control while every non-gateway override still applies. This mirrors the
+  //     agents.defaults re-application in step 4. A fresh spread (not the baseConfig
+  //     reference) keeps `merged` free of aliasing into the local baseConfig object.
+  tenantMerged["gateway"] = { ...(baseConfig["gateway"] as Record<string, unknown>) };
+
   // 4. Platform-owned agent workspace settings — applied after the tenant merge so
   //    they cannot be overridden by spec.configOverrides.  The workspace path must
   //    be pinned to the persistent volume; skipBootstrap prevents the interactive

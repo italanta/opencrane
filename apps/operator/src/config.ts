@@ -314,10 +314,16 @@ function _resolveTrustedProxiesInput(raw: string): string[]
     }
     if (derived === null)
     {
-      console.error(`GATEWAY_TRUSTED_PROXIES="auto" but POD_IP "${podIp}" is missing/invalid; dropping the token (staying fail-closed)`);
+      // Degraded-but-handled: the operator asked for `auto` but POD_IP is unusable, so the
+      // token is dropped and the gateway stays fail-closed. A warning (not an error — the
+      // process continues correctly), but one an operator must see to fix the missing POD_IP.
+      console.warn(`GATEWAY_TRUSTED_PROXIES="auto" but POD_IP "${podIp}" is missing/invalid; dropping the token (staying fail-closed)`);
       return [];
     }
-    console.error(`GATEWAY_TRUSTED_PROXIES="auto" derived trusted-proxy CIDR ${derived} from POD_IP ${podIp} (/${maskBits}); this trusts the whole pod range`);
+    // Routine on every auto-mode boot, but it widens the trust boundary to the whole pod
+    // range, so it is logged at warn (not error) — error-level would pollute the error log
+    // on normal startup while still deserving operator visibility.
+    console.warn(`GATEWAY_TRUSTED_PROXIES="auto" derived trusted-proxy CIDR ${derived} from POD_IP ${podIp} (/${maskBits}); this trusts the whole pod range`);
     return [derived];
   });
 }

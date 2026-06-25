@@ -16,7 +16,8 @@
     "@opencrane/contracts": "workspace:*",
     "@opencrane/observability": "workspace:*",
     "http-proxy": "^1.18.1",
-    "pino": "^9.6.0"
+    "pino": "^9.6.0",
+    "zod": "^3.25.0"
   },
   "optionalDependencies": {
     "@google-cloud/storage": "^7.0.0"
