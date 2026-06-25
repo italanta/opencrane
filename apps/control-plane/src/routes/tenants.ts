@@ -129,7 +129,7 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
 
     if (!membership)
     {
-      res.status(400).json({ error: "org, team, project, and personal must all be string arrays, and org may only contain 'default'", code: "VALIDATION_ERROR" });
+      res.status(400).json({ error: "org, team, department, project, and personal must all be string arrays, and org may only contain 'default'", code: "VALIDATION_ERROR" });
       return;
     }
 
@@ -692,12 +692,12 @@ export function tenantsRouter(customApi: k8s.CustomObjectsApi, prisma: PrismaCli
  */
 function _ValidateTenantDatasetUpdate(body: Partial<UpdateTenantDatasetsRequest>): UpdateTenantDatasetsRequest | null
 {
-  if (!Array.isArray(body.org) || !Array.isArray(body.team) || !Array.isArray(body.project) || !Array.isArray(body.personal))
+  if (!Array.isArray(body.org) || !Array.isArray(body.team) || !Array.isArray(body.department) || !Array.isArray(body.project) || !Array.isArray(body.personal))
   {
     return null;
   }
 
-  if (!_IsStringArray(body.org) || !_IsStringArray(body.team) || !_IsStringArray(body.project) || !_IsStringArray(body.personal))
+  if (!_IsStringArray(body.org) || !_IsStringArray(body.team) || !_IsStringArray(body.department) || !_IsStringArray(body.project) || !_IsStringArray(body.personal))
   {
     return null;
   }
@@ -711,6 +711,7 @@ function _ValidateTenantDatasetUpdate(body: Partial<UpdateTenantDatasetsRequest>
   return {
     org: ["default"],
     team: _NormalizeSubjectList(body.team),
+    department: _NormalizeSubjectList(body.department),
     project: _NormalizeSubjectList(body.project),
     personal: _NormalizeSubjectList(body.personal),
   };
@@ -807,6 +808,7 @@ function _DefaultTenantDatasetMembership(): TenantDatasetsResponse
   return {
     org: ["default"],
     team: [],
+    department: [],
     project: [],
     personal: [],
   };
@@ -835,7 +837,7 @@ function _NormalizeSubjectList(values: string[]): string[]
  */
 function _BuildTenantDatasetMembershipRows(tenant: string, membership: TenantDatasetsResponse): Array<{
   tenant: string;
-  scope: "Org" | "Team" | "Project" | "Personal";
+  scope: "Org" | "Team" | "Department" | "Project" | "Personal";
   subject: string;
 }>
 {
@@ -847,6 +849,10 @@ function _BuildTenantDatasetMembershipRows(tenant: string, membership: TenantDat
     ...membership.team.map(function _mapTeam(subject)
     {
       return { tenant, scope: "Team" as const, subject };
+    }),
+    ...membership.department.map(function _mapDepartment(subject)
+    {
+      return { tenant, scope: "Department" as const, subject };
     }),
     ...membership.project.map(function _mapProject(subject)
     {
@@ -864,7 +870,7 @@ function _BuildTenantDatasetMembershipRows(tenant: string, membership: TenantDat
  * @param memberships - SQL projection rows for a tenant.
  */
 function _BuildTenantDatasetMembershipResponse(memberships: Array<{
-  scope: "Org" | "Team" | "Project" | "Personal";
+  scope: "Org" | "Team" | "Department" | "Project" | "Personal";
   subject: string;
 }>): TenantDatasetsResponse
 {
@@ -879,6 +885,10 @@ function _BuildTenantDatasetMembershipResponse(memberships: Array<{
     else if (membership.scope === "Team")
     {
       response.team.push(membership.subject);
+    }
+    else if (membership.scope === "Department")
+    {
+      response.department.push(membership.subject);
     }
     else if (membership.scope === "Project")
     {
@@ -921,6 +931,10 @@ async function _ApplyTenantDatasetMembershipToCognee(
         ...membership.team.map(function _mapTeam(subject)
         {
           return { scope: "team", subject };
+        }),
+        ...membership.department.map(function _mapDepartment(subject)
+        {
+          return { scope: "department", subject };
         }),
         ...membership.project.map(function _mapProject(subject)
         {

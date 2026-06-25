@@ -9,6 +9,8 @@ export interface TenantDatasetMembership
   org: string[];
   /** Team-scoped datasets a tenant can query. */
   team: string[];
+  /** Department-scoped datasets a tenant can query (S4c — mirrors the group/grant `department` tier). */
+  department: string[];
   /** Project-scoped datasets a tenant can query. */
   project: string[];
   /** Personal datasets a tenant can query. */

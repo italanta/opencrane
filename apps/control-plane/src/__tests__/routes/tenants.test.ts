@@ -121,6 +121,7 @@ describe("tenantsRouter dataset membership endpoints", () =>
       .send({
         org: ["default"],
         team: ["engineering"],
+        department: ["platform"],
         project: ["apollo"],
         personal: ["owner@example.com"],
       });
@@ -145,6 +146,7 @@ describe("tenantsRouter dataset membership endpoints", () =>
       .send({
         org: ["default"],
         team: [],
+        department: [],
         project: [],
         personal: [],
       });
@@ -161,12 +163,13 @@ describe("tenantsRouter dataset membership endpoints", () =>
       .send({
         org: "default",
         team: [],
+        department: [],
         project: [],
         personal: [],
       });
 
     expect(response.status).toBe(400);
-    expect(response.body.error).toBe("org, team, project, and personal must all be string arrays, and org may only contain 'default'");
+    expect(response.body.error).toBe("org, team, department, project, and personal must all be string arrays, and org may only contain 'default'");
   });
 
   it("returns 502 when applying dataset updates in Cognee fails", async () =>
@@ -185,6 +188,7 @@ describe("tenantsRouter dataset membership endpoints", () =>
       .send({
         org: ["default"],
         team: [],
+        department: [],
         project: [],
         personal: [],
       });
@@ -209,6 +213,7 @@ describe("tenantsRouter dataset membership endpoints", () =>
       .send({
         org: ["default"],
         team: [],
+        department: [],
         project: [],
         personal: [],
       });
@@ -232,6 +237,7 @@ describe("tenantsRouter dataset membership endpoints", () =>
       .send({
         org: ["default"],
         team: [],
+        department: [],
         project: [],
         personal: [],
       });

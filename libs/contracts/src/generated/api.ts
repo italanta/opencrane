@@ -2397,6 +2397,7 @@ export interface components {
         DatasetMembership: {
             org: string[];
             team: string[];
+            department: string[];
             project: string[];
             personal: string[];
         };

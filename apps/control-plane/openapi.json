@@ -1931,6 +1931,7 @@
         "required": [
           "org",
           "team",
+          "department",
           "project",
           "personal"
         ],
@@ -1942,6 +1943,12 @@
             }
           },
           "team": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "department": {
             "type": "array",
             "items": {
               "type": "string"

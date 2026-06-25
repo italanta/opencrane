@@ -31,6 +31,7 @@ export interface GroupMutationResponse
 const _PRISMA_GRANT_SCOPE = {
   Org: "Org",
   Department: "Department",
+  Team: "Team",
   Project: "Project",
   Personal: "Personal",
 } as const;
@@ -55,6 +56,7 @@ const _PRISMA_AWARENESS_PAYLOAD_TYPE = "Awareness";
 const _ROUTE_SCOPE_BY_PRISMA_SCOPE = {
   [_PRISMA_GRANT_SCOPE.Org]: GrantScope.Org,
   [_PRISMA_GRANT_SCOPE.Department]: GrantScope.Department,
+  [_PRISMA_GRANT_SCOPE.Team]: GrantScope.Team,
   [_PRISMA_GRANT_SCOPE.Project]: GrantScope.Project,
   [_PRISMA_GRANT_SCOPE.Personal]: GrantScope.Personal,
 };

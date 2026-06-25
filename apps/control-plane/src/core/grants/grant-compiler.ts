@@ -51,6 +51,7 @@ const _PRISMA_GRANT_ACCESS = {
 const _PRISMA_GRANT_SCOPE = {
   Org: "Org",
   Department: "Department",
+  Team: "Team",
   Project: "Project",
   Personal: "Personal",
 } as const;
@@ -82,6 +83,7 @@ const _COMPILER_PAYLOAD_BY_PRISMA_PAYLOAD = {
 const _COMPILER_SCOPE_BY_PRISMA_SCOPE = {
   [_PRISMA_GRANT_SCOPE.Org]: GrantCompilerScope.Org,
   [_PRISMA_GRANT_SCOPE.Department]: GrantCompilerScope.Department,
+  [_PRISMA_GRANT_SCOPE.Team]: GrantCompilerScope.Team,
   [_PRISMA_GRANT_SCOPE.Project]: GrantCompilerScope.Project,
   [_PRISMA_GRANT_SCOPE.Personal]: GrantCompilerScope.Personal,
 };

@@ -669,10 +669,11 @@ const DeviceGrantSchema = {
 
 const DatasetMembershipSchema = {
   type: "object" as const,
-  required: ["org", "team", "project", "personal"],
+  required: ["org", "team", "department", "project", "personal"],
   properties: {
     org: { type: "array", items: { type: "string" } },
     team: { type: "array", items: { type: "string" } },
+    department: { type: "array", items: { type: "string" } },
     project: { type: "array", items: { type: "string" } },
     personal: { type: "array", items: { type: "string" } },
   },

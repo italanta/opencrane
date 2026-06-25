@@ -26,6 +26,7 @@ export enum GrantCompilerScope
 {
   Org = "org",
   Department = "department",
+  Team = "team",
   Project = "project",
   Personal = "personal",
 }

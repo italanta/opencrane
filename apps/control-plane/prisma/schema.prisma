@@ -82,10 +82,11 @@ model TenantDatasetMembership {
 }
 
 enum DatasetScope {
-  Org      @map("org")
-  Team     @map("team")
-  Project  @map("project")
-  Personal @map("personal")
+  Org        @map("org")
+  Team       @map("team")
+  Department @map("department")
+  Project    @map("project")
+  Personal   @map("personal")
 }
 
 model TenantLiteLlmKey {
@@ -307,6 +308,7 @@ model Group {
 enum GrantScope {
   Org        @map("org")
   Department @map("department")
+  Team       @map("team")
   Project    @map("project")
   Personal   @map("personal")
 }

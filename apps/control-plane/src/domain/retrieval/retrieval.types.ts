@@ -8,6 +8,7 @@ export enum DatasetScope
 {
   Org = "org",
   Team = "team",
+  Department = "department",
   Project = "project",
   Personal = "personal",
 }
