@@ -58,6 +58,46 @@ export function _RegisterShare(parent: Command, getConfig: () => CliConfig): voi
     });
 
   share
+    .command("resource")
+    .description("Share a file/chat with a user (creates/extends the resource's share group)")
+    .requiredOption("--type <type>", "Resource kind: file|chat|dataset")
+    .requiredOption("--id <resourceId>", "Id of the file/chat/dataset to share")
+    .requiredOption("--with-user <subject>", "Recipient user's IdP subject")
+    .action(async function _shareResource(opts: { type: "file" | "chat" | "dataset"; id: string; withUser: string })
+    {
+      const client = _MakeClient(getConfig());
+      const { data, error } = await client.POST("/resource-shares", {
+        body: { resourceType: opts.type, resourceId: opts.id, recipientSubject: opts.withUser },
+      });
+      if (error) _PrintApiError("share resource", error);
+      _PrintSuccess(`Shared ${opts.type} '${opts.id}' with '${opts.withUser}'.`);
+      console.log(JSON.stringify(data, null, 2));
+    });
+
+  share
+    .command("resources")
+    .description("List the file/chat resource shares you are a member of")
+    .option("-o, --output <format>", "Output format: table|json", "table")
+    .action(async function _listResources(opts: { output: OutputFormat })
+    {
+      const client = _MakeClient(getConfig());
+      const { data, error } = await client.GET("/resource-shares");
+      if (error) _PrintApiError("share resources", error);
+      _Print(data, opts.output, ["groupId", "resourceType", "resourceId", "members"]);
+    });
+
+  share
+    .command("unshare-resource <groupId> <subject>")
+    .description("Revoke a recipient from a resource share")
+    .action(async function _unshareResource(groupId: string, subject: string)
+    {
+      const client = _MakeClient(getConfig());
+      const { error } = await client.DELETE("/resource-shares/{groupId}/recipients/{subject}", { params: { path: { groupId, subject } } });
+      if (error) _PrintApiError("share unshare-resource", error);
+      _PrintSuccess(`Revoked '${subject}' from resource share '${groupId}'.`);
+    });
+
+  share
     .command("list")
     .description("List the shares you have created")
     .option("-o, --output <format>", "Output format: table|json", "table")

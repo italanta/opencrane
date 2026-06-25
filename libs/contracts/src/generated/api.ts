@@ -738,6 +738,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/resource-shares": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the file/chat resource shares the caller is a member of */
+        get: operations["listResourceShares"];
+        put?: never;
+        /** Share a file/chat with a user (creates/extends the resource's share group) */
+        post: operations["shareResource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/resource-shares/{groupId}/recipients/{subject}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke a recipient from a resource share */
+        delete: operations["revokeResourceShare"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/shares": {
         parameters: {
             query?: never;
@@ -1919,6 +1954,16 @@ export interface components {
             sharedBy?: string;
             /** Format: date-time */
             createdAt: string;
+        };
+        /** @description A direct share of a file/chat (S4c): the resource-scoped Personal group whose members can access it. */
+        ResourceShare: {
+            /** @description Id of the resource-scoped share group. */
+            groupId: string;
+            /** @enum {string} */
+            resourceType: "file" | "chat" | "dataset";
+            resourceId: string;
+            /** @description IdP subjects the resource is shared with (incl. the owner). */
+            members: string[];
         };
         SkillBundle: {
             id?: string;
@@ -4680,6 +4725,142 @@ export interface operations {
             };
             /** @description Caller is not an organisation admin. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listResourceShares: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Resource shares the caller is in. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceShare"][];
+                };
+            };
+            /** @description Authentication required. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    shareResource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    resourceType: "file" | "chat" | "dataset";
+                    resourceId: string;
+                    /** @description IdP subject of the user to share with. */
+                    recipientSubject: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Recipient added (or already present). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceShare"];
+                };
+            };
+            /** @description Resource share created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceShare"];
+                };
+            };
+            /** @description Invalid resource share request. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Authentication required. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description You can only share a resource you have access to. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    revokeResourceShare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: string;
+                subject: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recipient revoked. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceShare"];
+                };
+            };
+            /** @description Authentication required. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Resource share not found, or caller is not a member. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

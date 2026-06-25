@@ -13,6 +13,23 @@ export enum DatasetScope
   Personal = "personal",
 }
 
+/**
+ * Canonical retrieval relevance order, MOST → LEAST relevant. The agent's retrieval chain
+ * consults datasets in this order — the caller's own self/session (Personal) is the most
+ * specific and relevant context, widening outward through Project → Team → Department to the
+ * broad Org corpus (still pullable, just lower-priority context). This is a RELEVANCE ranking
+ * of the scope tiers; it is unrelated to how subjects are sorted within a single tier (that
+ * sort is only for deterministic dedup/diffing). The single source of truth for scope ordering
+ * so the derivation, the contract, and the scope-aware retrieval plugin never disagree.
+ */
+export const DATASET_SCOPE_RETRIEVAL_PRECEDENCE: readonly DatasetScope[] = [
+  DatasetScope.Personal,
+  DatasetScope.Project,
+  DatasetScope.Team,
+  DatasetScope.Department,
+  DatasetScope.Org,
+];
+
 /** Request body for a retrieval query. */
 export interface RetrievalQueryRequest
 {

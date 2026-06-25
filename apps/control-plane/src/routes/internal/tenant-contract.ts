@@ -8,6 +8,8 @@ import { _RenderToolsMarkdown } from "../../core/contract/tools-markdown.js";
 import { _LoadAwarenessRollout } from "../../core/awareness/rollout-store.js";
 import { _ResolveAwarenessVersion } from "../../core/awareness/rollout.js";
 import { _ResolveContractSkillModels } from "../../core/model-routing/resolve-contract-skill-models.js";
+import { _SyncDerivedDatasetMembership } from "../tenants.js";
+import { _log } from "../../log.js";
 
 /** Expected audience on the projected token the tenant pod uses to call this endpoint. */
 const _EXPECTED_AUDIENCE = "control-plane";
@@ -129,6 +131,14 @@ export function _RegisterInternalTenantContract(prisma: PrismaClient, authApi: k
         res.status(404).json({ error: "Not found", code: "NOT_FOUND" });
         return;
       }
+
+      // 4b. Re-derive this tenant's Cognee dataset memberships from its group expansion and sync
+      //     them when they changed (S4c). Fire-and-forget + diff-gated: it must not delay or fail
+      //     the contract response (the pod polls frequently and the contract does not depend on
+      //     the dataset sync), and an unchanged derivation writes nothing. Errors are logged, not
+      //     propagated. `_SyncDerivedDatasetMembership` is internally transactional (Cognee last).
+      void _SyncDerivedDatasetMembership(prisma, name, tenant.subject ?? null)
+        .catch(function _syncFailed(err) { _log.warn({ err, tenant: name }, "derived dataset membership sync failed on contract poll; will retry next poll"); });
 
       // 5. Compile MCP server and skill grants over the tenant's principal SET (S4 inheritance):
       //    the openclaw Tenant inherits the rights of its 1:1 ClusterTenant user, so we compile

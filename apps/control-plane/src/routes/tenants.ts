@@ -6,6 +6,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 
 import { compile, compileForPrincipals } from "../core/grants/grant-compiler.js";
 import { GrantCompilerAccess, GrantCompilerPayloadType } from "../core/grants/grant-compiler.types.js";
+import { _DeriveTenantDatasetMembership } from "../core/grants/derive-dataset-membership.js";
 import { _CutTenant } from "../core/connections/cut-tenant.js";
 import type { OpenClawGatewayAdmin } from "../core/connections/gateway-admin.types.js";
 import { _IsK8sNotFound } from "../shared/k8s-errors.js";
@@ -953,6 +954,64 @@ async function _ApplyTenantDatasetMembershipToCognee(
   {
     throw new Error(`Cognee permission sync failed with status ${response.status}`);
   }
+}
+
+/**
+ * Whether two memberships hold the same subjects per tier. Compares as SETS (order- AND
+ * duplicate-independent): the derived side is deduped, but the persisted projection is built
+ * in row order and could carry an accidental duplicate, so comparing distinct sets keeps the
+ * diff-gate from firing a spurious Cognee sync on a semantically-unchanged membership.
+ */
+function _DatasetMembershipEqual(a: TenantDatasetsResponse, b: TenantDatasetsResponse): boolean
+{
+  return (["org", "team", "department", "project", "personal"] as const).every(function _sameTier(key)
+  {
+    const setA = new Set(a[key]);
+    const setB = new Set(b[key]);
+    return setA.size === setB.size && Array.from(setA).every(function _has(subject) { return setB.has(subject); });
+  });
+}
+
+/**
+ * Derive a tenant's dataset memberships from its group expansion (S4c) and, when they differ
+ * from the persisted projection, REPLACE the rows and re-sync Cognee — both in one transaction
+ * with the Cognee call LAST, so the DB and Cognee never drift (a Cognee rejection rolls the
+ * row replacement back). Diff-gated: an unchanged derivation is a no-op with no Cognee write,
+ * so this is safe to call on every contract poll. Cognee sync is skipped when COGNEE_ENDPOINT
+ * is unset (Cognee not deployed) — the DB projection is still updated so other readers converge.
+ *
+ * @param prisma - Prisma client.
+ * @param tenant - The tenant whose memberships are derived.
+ * @param subject - The tenant's bound IdP subject, or null when unbound.
+ * @returns Whether the membership changed (and was written).
+ */
+export async function _SyncDerivedDatasetMembership(prisma: PrismaClient, tenant: string, subject: string | null): Promise<{ changed: boolean }>
+{
+  // 1. Derive the target membership and diff it against the persisted projection.
+  const derived = await _DeriveTenantDatasetMembership(prisma, tenant, subject);
+  const persisted = _BuildTenantDatasetMembershipResponse(
+    await prisma.tenantDatasetMembership.findMany({ where: { tenant }, select: { scope: true, subject: true } }),
+  );
+  if (_DatasetMembershipEqual(derived, persisted))
+  {
+    return { changed: false };
+  }
+
+  // 2. Replace the projection rows; when Cognee is deployed, push the new membership as the LAST
+  //    fallible step in the transaction so a Cognee failure rolls the row replacement back. When
+  //    Cognee is absent, only the projection is updated (no external step to wrap).
+  const rows = _BuildTenantDatasetMembershipRows(tenant, derived);
+  const cogneeConfigured = Boolean(process.env.COGNEE_ENDPOINT?.trim());
+  await prisma.$transaction(async function _replaceDerived(tx)
+  {
+    await tx.tenantDatasetMembership.deleteMany({ where: { tenant } });
+    await tx.tenantDatasetMembership.createMany({ data: rows, skipDuplicates: true });
+    if (cogneeConfigured)
+    {
+      await _ApplyTenantDatasetMembershipToCognee(tenant, derived, undefined);
+    }
+  });
+  return { changed: true };
 }
 
 /**

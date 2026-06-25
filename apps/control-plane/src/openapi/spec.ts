@@ -801,6 +801,17 @@ export const spec = {
         },
         required: ["id", "payloadType", "payloadId", "recipientType", "recipientId", "scope", "createdAt"],
       },
+      ResourceShare: {
+        type: "object",
+        description: "A direct share of a file/chat (S4c): the resource-scoped Personal group whose members can access it.",
+        properties: {
+          groupId: { type: "string", description: "Id of the resource-scoped share group." },
+          resourceType: { type: "string", enum: ["file", "chat", "dataset"] },
+          resourceId: { type: "string" },
+          members: { type: "array", items: { type: "string" }, description: "IdP subjects the resource is shared with (incl. the owner)." },
+        },
+        required: ["groupId", "resourceType", "resourceId", "members"],
+      },
       SkillBundle: SkillBundleSchema,
       AuditEntry: AuditEntrySchema,
       AccessToken: AccessTokenSchema,
@@ -1914,6 +1925,59 @@ export const spec = {
     // ------------------------------------------------------------------
     // Groups
     // ------------------------------------------------------------------
+
+    "/resource-shares": {
+      get: {
+        operationId: "listResourceShares",
+        summary: "List the file/chat resource shares the caller is a member of",
+        tags: ["Shares"],
+        responses: {
+          200: ok("Resource shares the caller is in.", { type: "array", items: { $ref: "#/components/schemas/ResourceShare" } }),
+          401: unauthorized("Authentication required."),
+        },
+      },
+      post: {
+        operationId: "shareResource",
+        summary: "Share a file/chat with a user (creates/extends the resource's share group)",
+        tags: ["Shares"],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: {
+            type: "object",
+            required: ["resourceType", "resourceId", "recipientSubject"],
+            properties: {
+              resourceType: { type: "string", enum: ["file", "chat", "dataset"] },
+              resourceId: { type: "string" },
+              recipientSubject: { type: "string", description: "IdP subject of the user to share with." },
+            },
+          } } },
+        },
+        responses: {
+          201: created("Resource share created.", { $ref: "#/components/schemas/ResourceShare" }),
+          200: ok("Recipient added (or already present).", { $ref: "#/components/schemas/ResourceShare" }),
+          400: badRequest("Invalid resource share request."),
+          401: unauthorized("Authentication required."),
+          403: forbidden("You can only share a resource you have access to."),
+        },
+      },
+    },
+
+    "/resource-shares/{groupId}/recipients/{subject}": {
+      delete: {
+        operationId: "revokeResourceShare",
+        summary: "Revoke a recipient from a resource share",
+        tags: ["Shares"],
+        parameters: [
+          { name: "groupId", in: "path", required: true, schema: { type: "string" } },
+          { name: "subject", in: "path", required: true, schema: { type: "string" } },
+        ],
+        responses: {
+          200: ok("Recipient revoked.", { $ref: "#/components/schemas/ResourceShare" }),
+          401: unauthorized("Authentication required."),
+          404: notFound("Resource share not found, or caller is not a member."),
+        },
+      },
+    },
 
     "/shares": {
       get: {
