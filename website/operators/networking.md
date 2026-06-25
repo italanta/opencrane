@@ -164,9 +164,31 @@ Tenant-to-plane calls carry **audience-bound projected-identity tokens** mounted
 
 ---
 
-## Egress
+## The per-silo default-deny baseline
 
-The intended baseline for tenant egress is **DNS port 53 + HTTPS port 443**, plus optional per-tenant extensions. The chart's `networkpolicy.yaml` renders a `*-tenant-default` policy with egress rules for DNS and HTTPS (and any additional CIDRs listed in `networkPolicy.egressAllowCIDRs`). Operators can bind an `AccessPolicy` with `egressRules` to add or restrict what a specific tenant can reach. For fine-grained FQDN filtering (e.g. allowing only `api.openai.com`), Cilium's `CiliumNetworkPolicy` with `spec.domains.allow` is the intended mechanism.
+Each ClusterTenant (org) is modelled as a strictly isolated **silo**. The operator now emits a per-silo default-deny baseline `NetworkPolicy` in **every** ClusterTenant namespace as it provisions the silo — `_BuildSiloBaselineNetworkPolicy` (see [`apps/operator/src/tenants/deploy/silo-baseline-network-policy.ts`](https://github.com/italanta/opencrane/blob/main/apps/operator/src/tenants/deploy/silo-baseline-network-policy.ts)), named `opencrane-<cluster-tenant>-silo-baseline`.
+
+The policy uses an **empty `podSelector`** (it selects every pod in the silo namespace) and names both `Ingress` and `Egress` in `policyTypes`, which flips the namespace to **default-deny**: anything not explicitly allowed below is dropped. The allow-list is the minimum a silo needs to function while staying isolated from every *other* silo — there is no silo→silo path because no rule ever names another silo namespace:
+
+| Direction | Allowed | Why |
+|-----------|---------|-----|
+| Ingress | the same silo namespace (intra-silo) | pods within one org talk to each other |
+| Ingress | the control-plane / operator namespace | the super-admin plane is the only principal allowed to reach inward (it brokers the gateway connection) |
+| Egress | cluster DNS (`kube-system`, UDP/TCP 53) | without this every name lookup fails and the pod is dead |
+| Egress | the same silo namespace + the control-plane / operator namespace | reach the shared planes (control-plane, Obot/MCP, skill-registry, LiteLLM, Cognee) in the shared tier |
+| Egress | external HTTPS (TCP 443) | the agent legitimately calls out to LLM / MCP / Git endpoints |
+
+This **replaces the retired `opencrane-tenant-default` policy**, which sat in the install namespace (`opencrane-system`) and selected tenant pods cluster-wide by `app.kubernetes.io/component=tenant` — so it governed nothing in the per-org namespaces where tenant pods actually run, leaving egress unrestricted there. The operator now emits one correctly-scoped policy per silo namespace it provisions, so egress (DNS + HTTPS only) and east-west default-deny are enforced in the right place. The companion per-tenant gateway policy (`openclaw-<tenant>-gateway`, [Layer 1](#the-authenticated-operator-seam) above) narrows the gateway *port* to the operator on top of this baseline; `NetworkPolicy` rules are additive, so the two compose.
+
+::: tip Enforcement is CNI-dependent
+This baseline is an **L3/L4** floor — a namespace-scoped, port-keyed allow-list. It only takes effect on a `NetworkPolicy`-enforcing CNI: GKE Dataplane V2 (and Autopilot) enforce it inherently; Calico/Cilium do elsewhere. On a CNI that does not enforce `NetworkPolicy`, the floor is inert.
+:::
+
+### Identity-aware L7 isolation is coming (Linkerd)
+
+The baseline above is keyed on namespaces and ports, not on **workload identity**, and it cannot express L7 (per-route) authorization. The next layer of the silo model adds a [Linkerd](https://linkerd.io) service mesh on top of this floor: the operator will annotate each silo namespace `linkerd.io/inject: enabled` (giving every silo workload an mTLS identity bound to its service account) and emit a Linkerd `Server` + `AuthorizationPolicy` per silo expressing the same default-deny + allow-super-admin posture at the request layer. The rollout is **additive** — the `NetworkPolicy` floor stays in place as defence-in-depth, and a silo gains identity/L7 isolation as it is meshed, never going below the floor described here. See [ADR 0001 — ClusterTenant-as-virtual-network strict isolation](https://github.com/italanta/opencrane/blob/main/docs/adr/0001-cluster-tenant-virtual-network-isolation.md) for the substrate decision and why Linkerd (portable, no cloud lock-in) was chosen.
+
+For fine-grained egress FQDN filtering (e.g. allowing only `api.openai.com`), an operator can additionally bind an `AccessPolicy` with `egressRules`, or apply a `CiliumNetworkPolicy` with `spec.domains.allow` on a Cilium-enabled cluster.
 
 ---
 
@@ -174,15 +196,11 @@ The intended baseline for tenant egress is **DNS port 53 + HTTPS port 443**, plu
 
 The following gaps are honest assessments verified against the live codebase. They do not undermine the overall isolation model but operators should be aware of them.
 
-**Tenant egress is not currently enforced for per-org-namespace tenants.** The chart's `*-tenant-default` egress policy (`networkpolicy.yaml`) selects pods by `app.kubernetes.io/component=tenant` but is rendered only into the release namespace (`opencrane-system`). Tenant pods run in per-org namespaces (`opencrane-<org>`), so the policy governs nothing there. Until this is fixed, tenant egress is unrestricted at the network layer unless an `AccessPolicy` with `egressRules` is bound. A fix is tracked separately. The ingress isolation (the three-layer gateway seam) is unaffected.
-
 **litellm, langfuse, and the otel-collector have no ingress NetworkPolicy.** The plane ingress policies cover the control plane, mcp-gateway, skill-registry, and OCI store. LiteLLM, Langfuse, and the OTEL collector are not yet covered by a corresponding ingress policy — a defence-in-depth gap. Application-level auth still applies on those services.
 
 **Plane ingress rules use tenant podSelectors without a namespaceSelector.** The rules admitting tenant pods to the control plane and plane services select by `app.kubernetes.io/component=tenant` without scoping to the correct namespace. In a multi-instance cluster, a tenant pod from a different instance's namespace could match. This is a multi-instance hygiene gap; the fix is to also add a `namespaceSelector` that constrains to the instance's own org namespaces.
 
-::: warning Egress is open until the per-org policy gap is fixed
-Until the egress enforcement gap is resolved, treat tenant pods as having unrestricted internet egress at the network layer. If your threat model requires egress restriction before that fix lands, apply manual `NetworkPolicy` or `CiliumNetworkPolicy` resources to the per-org namespaces directly.
-:::
+**Identity-aware L7 enforcement is not yet live.** Until the Linkerd layer lands, cross-silo isolation rests on the L3/L4 baseline alone — robust against routing position but not yet expressing per-workload identity or per-route authorization. The super-admin namespace is trusted as a whole at L3/L4; L7 will narrow that to the super-admin *identity*.
 
 ---
 
@@ -192,3 +210,4 @@ Until the egress enforcement gap is resolved, treat tenant pods as having unrest
 - [Connection security](/security/connection-security) — the full CONN.9/CONN.10 threat model, the trusted-proxy auth decision record, and the transport hardening posture
 - [DNS configuration](/operators/dns-config) — external-dns setup, cert-manager issuers, and the zone-write identity model
 - [Hosting & deployment](/operators/hosting) — ingress class, TLS cert modes, cloud hosting adapters
+- [ADR 0001 — ClusterTenant-as-virtual-network strict isolation](https://github.com/italanta/opencrane/blob/main/docs/adr/0001-cluster-tenant-virtual-network-isolation.md) — the substrate decision behind the per-silo baseline and the coming Linkerd L7 layer
