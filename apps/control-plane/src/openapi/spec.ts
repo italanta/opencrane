@@ -784,6 +784,22 @@ export const spec = {
       BillingAccount: BillingAccountSchema,
       BillingAccountWrite: BillingAccountWriteSchema,
       Group: GroupSchema,
+      Share: {
+        type: "object",
+        description: "An inter-user share: an Allow grant the caller created on a recipient for an entitlement they hold (S4).",
+        properties: {
+          id: { type: "string" },
+          payloadType: { type: "string", enum: ["mcp-server", "skill-bundle"], description: "The entitlement family shared." },
+          payloadId: { type: "string", description: "Id of the shared MCP server or skill bundle." },
+          recipientType: { type: "string", enum: ["user", "group"], description: "Whether the share targets a user (IdP subject) or a group." },
+          recipientId: { type: "string", description: "The recipient user subject or group id." },
+          scope: { type: "string", enum: ["org", "department", "project", "personal"] },
+          note: { type: "string" },
+          sharedBy: { type: "string", description: "IdP subject of the user who created the share." },
+          createdAt: { type: "string", format: "date-time" },
+        },
+        required: ["id", "payloadType", "payloadId", "recipientType", "recipientId", "scope", "createdAt"],
+      },
       SkillBundle: SkillBundleSchema,
       AuditEntry: AuditEntrySchema,
       AccessToken: AccessTokenSchema,
@@ -1897,6 +1913,60 @@ export const spec = {
     // ------------------------------------------------------------------
     // Groups
     // ------------------------------------------------------------------
+
+    "/shares": {
+      get: {
+        operationId: "listShares",
+        summary: "List the shares the authenticated caller has created",
+        tags: ["Shares"],
+        responses: {
+          200: ok("Shares created by the caller.", { type: "array", items: { $ref: "#/components/schemas/Share" } }),
+          401: unauthorized("Authentication required."),
+        },
+      },
+      post: {
+        operationId: "createShare",
+        summary: "Share an entitlement you hold with another user or group (least-privilege bounded)",
+        tags: ["Shares"],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: {
+            type: "object",
+            required: ["payloadType", "payloadId", "recipientType", "recipientId"],
+            properties: {
+              payloadType: { type: "string", enum: ["mcp-server", "skill-bundle"] },
+              payloadId: { type: "string" },
+              recipientType: { type: "string", enum: ["user", "group"] },
+              recipientId: { type: "string" },
+              scope: { type: "string", enum: ["org", "department", "project", "personal"], default: "personal" },
+              note: { type: "string" },
+            },
+          } } },
+        },
+        responses: {
+          201: created("Share created.", { $ref: "#/components/schemas/Share" }),
+          200: ok("An identical share already existed (idempotent).", { $ref: "#/components/schemas/Share" }),
+          400: badRequest("Invalid share request."),
+          401: unauthorized("Authentication required."),
+          403: forbidden("You can only share an entitlement you currently hold."),
+          404: notFound("Payload or recipient group not found."),
+        },
+      },
+    },
+
+    "/shares/{id}": {
+      delete: {
+        operationId: "revokeShare",
+        summary: "Revoke a share you created",
+        tags: ["Shares"],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          200: ok("Share revoked.", { type: "object", properties: { id: { type: "string" }, status: { type: "string" } } }),
+          401: unauthorized("Authentication required."),
+          404: notFound("Share not found, or not one the caller created."),
+        },
+      },
+    },
 
     "/groups": {
       get: {

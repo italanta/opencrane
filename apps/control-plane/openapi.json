@@ -681,6 +681,68 @@
           }
         }
       },
+      "Share": {
+        "type": "object",
+        "description": "An inter-user share: an Allow grant the caller created on a recipient for an entitlement they hold (S4).",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "payloadType": {
+            "type": "string",
+            "enum": [
+              "mcp-server",
+              "skill-bundle"
+            ],
+            "description": "The entitlement family shared."
+          },
+          "payloadId": {
+            "type": "string",
+            "description": "Id of the shared MCP server or skill bundle."
+          },
+          "recipientType": {
+            "type": "string",
+            "enum": [
+              "user",
+              "group"
+            ],
+            "description": "Whether the share targets a user (IdP subject) or a group."
+          },
+          "recipientId": {
+            "type": "string",
+            "description": "The recipient user subject or group id."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "org",
+              "department",
+              "project",
+              "personal"
+            ]
+          },
+          "note": {
+            "type": "string"
+          },
+          "sharedBy": {
+            "type": "string",
+            "description": "IdP subject of the user who created the share."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "payloadType",
+          "payloadId",
+          "recipientType",
+          "recipientId",
+          "scope",
+          "createdAt"
+        ]
+      },
       "SkillBundle": {
         "type": "object",
         "properties": {
@@ -5212,6 +5274,219 @@
           },
           "403": {
             "description": "Caller is not an organisation admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/shares": {
+      "get": {
+        "operationId": "listShares",
+        "summary": "List the shares the authenticated caller has created",
+        "tags": [
+          "Shares"
+        ],
+        "responses": {
+          "200": {
+            "description": "Shares created by the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Share"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createShare",
+        "summary": "Share an entitlement you hold with another user or group (least-privilege bounded)",
+        "tags": [
+          "Shares"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "payloadType",
+                  "payloadId",
+                  "recipientType",
+                  "recipientId"
+                ],
+                "properties": {
+                  "payloadType": {
+                    "type": "string",
+                    "enum": [
+                      "mcp-server",
+                      "skill-bundle"
+                    ]
+                  },
+                  "payloadId": {
+                    "type": "string"
+                  },
+                  "recipientType": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "group"
+                    ]
+                  },
+                  "recipientId": {
+                    "type": "string"
+                  },
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "org",
+                      "department",
+                      "project",
+                      "personal"
+                    ],
+                    "default": "personal"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "An identical share already existed (idempotent).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Share"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Share created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Share"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid share request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You can only share an entitlement you currently hold.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Payload or recipient group not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/shares/{id}": {
+      "delete": {
+        "operationId": "revokeShare",
+        "summary": "Revoke a share you created",
+        "tags": [
+          "Shares"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Share revoked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Share not found, or not one the caller created.",
             "content": {
               "application/json": {
                 "schema": {

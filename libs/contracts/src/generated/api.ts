@@ -738,6 +738,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/shares": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the shares the authenticated caller has created */
+        get: operations["listShares"];
+        put?: never;
+        /** Share an entitlement you hold with another user or group (least-privilege bounded) */
+        post: operations["createShare"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shares/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke a share you created */
+        delete: operations["revokeShare"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/groups": {
         parameters: {
             query?: never;
@@ -1859,6 +1894,31 @@ export interface components {
             description?: string;
             memberCount?: number;
             awarenessGrants?: Record<string, never>[];
+        };
+        /** @description An inter-user share: an Allow grant the caller created on a recipient for an entitlement they hold (S4). */
+        Share: {
+            id: string;
+            /**
+             * @description The entitlement family shared.
+             * @enum {string}
+             */
+            payloadType: "mcp-server" | "skill-bundle";
+            /** @description Id of the shared MCP server or skill bundle. */
+            payloadId: string;
+            /**
+             * @description Whether the share targets a user (IdP subject) or a group.
+             * @enum {string}
+             */
+            recipientType: "user" | "group";
+            /** @description The recipient user subject or group id. */
+            recipientId: string;
+            /** @enum {string} */
+            scope: "org" | "department" | "project" | "personal";
+            note?: string;
+            /** @description IdP subject of the user who created the share. */
+            sharedBy?: string;
+            /** Format: date-time */
+            createdAt: string;
         };
         SkillBundle: {
             id?: string;
@@ -4619,6 +4679,160 @@ export interface operations {
             };
             /** @description Caller is not an organisation admin. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listShares: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Shares created by the caller. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Share"][];
+                };
+            };
+            /** @description Authentication required. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createShare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    payloadType: "mcp-server" | "skill-bundle";
+                    payloadId: string;
+                    /** @enum {string} */
+                    recipientType: "user" | "group";
+                    recipientId: string;
+                    /**
+                     * @default personal
+                     * @enum {string}
+                     */
+                    scope?: "org" | "department" | "project" | "personal";
+                    note?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description An identical share already existed (idempotent). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Share"];
+                };
+            };
+            /** @description Share created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Share"];
+                };
+            };
+            /** @description Invalid share request. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Authentication required. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description You can only share an entitlement you currently hold. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Payload or recipient group not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    revokeShare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Share revoked. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id?: string;
+                        status?: string;
+                    };
+                };
+            };
+            /** @description Authentication required. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Share not found, or not one the caller created. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

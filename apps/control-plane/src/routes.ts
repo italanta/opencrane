@@ -27,6 +27,7 @@ import { routingEvalCasesRouter } from "./routes/routing-eval-cases.js";
 import { routingMeasurementsRouter } from "./routes/routing-measurements.js";
 import { routingProposalsRouter } from "./routes/routing-proposals.js";
 import { _BuildShadowSeams } from "./core/model-routing/shadow-seams.js";
+import { sharesRouter } from "./routes/shares.js";
 import { skillCatalogRouter } from "./routes/skill-catalog.js";
 import { skillModelPostureRouter } from "./routes/skill-model-posture.js";
 import { tenantsRouter } from "./routes/tenants.js";
@@ -128,6 +129,7 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
   app.use("/api/v1/groups", groupsRouter(prisma));
   app.use("/api/v1/mcp-servers", mcpServersRouter(prisma));
   app.use("/api/v1/mcp", mcpOperatorRouter(prisma));
+  app.use("/api/v1/shares", sharesRouter(prisma));
   app.use("/api/v1/skills/catalog", skillCatalogRouter(prisma, ociBundleStore));
   app.use("/api/v1/skills/posture", skillModelPostureRouter(prisma));
   app.use("/api/v1/model-routing/defaults", modelRoutingDefaultsRouter(prisma));

@@ -338,6 +338,10 @@ model Grant {
   access       GrantAccess
   priority     Int              @default(0)
   note         String?
+  /// IdP subject (OIDC sub) of the user who created this grant via the inter-user sharing
+  /// API (`oc share`, S4). Null for grants written by the admin entitlement paths. Lets a
+  /// sharer list + revoke ONLY the grants they themselves shared (no privilege over others').
+  sharedBy     String?          @map("shared_by")
   groupId      String?          @map("group_id")
   mcpServerId  String?          @map("mcp_server_id")
   skillBundleId String?         @map("skill_bundle_id")
@@ -351,6 +355,7 @@ model Grant {
 
   @@index([payloadType, payloadId])
   @@index([subjectType, subjectId])
+  @@index([sharedBy])
   @@map("grants")
 }
 
