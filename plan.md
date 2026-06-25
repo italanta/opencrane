@@ -1,5 +1,10 @@
 # OpenCrane — Active Plan
 
+> **Execution sequence rebased 2026-06-25:** the forward roadmap is now the **S-series** in
+> *Open Backlog* — the silo-multi-tenant program (`silo-multi-tenant-plan.md`) runs first as
+> S1–S7, then the independent leftovers as S8–S12. The dated *Current State* + lettered tracks
+> below are kept as reference/history.
+
 ## Current State (2026-06-10)
 
 - **Phases 1–3**: complete and validated.
@@ -17,8 +22,69 @@
 
 ## Open Backlog (Execute Next)
 
-> Authoritative, code-verified worklist as of 2026-06-10. Work top-to-bottom.
-> Items marked **[BLOCKED]** need a decision before implementation — do not guess.
+> **Canonical forward sequence = the S-series roadmap below (rebased 2026-06-25).** The
+> silo-multi-tenant program runs FIRST (S1–S7, driven by `silo-multi-tenant-plan.md`); the
+> independent leftovers follow (S8–S12). The lettered tracks further down (WOI/CONN/P4D/AIR/CT/…)
+> are now **reference detail + landed history** — each open one is absorbed by an S-step, noted
+> inline. Items marked **[BLOCKED]** need an external decision/dependency — do not guess.
+
+### ▶ Forward roadmap (S-series — execute in order)
+
+**Silo program (S1–S7) — full detail in `silo-multi-tenant-plan.md`.**
+
+- **S1 — Demo-able shared tier + unblock login.** *(silo Phase 0)* trustedProxies auto-derive,
+  preflight + `values.schema.json` guards, externalIp auto-derive + post-deploy verify,
+  openclaw-schema CI test; **interim manual redirect-URI add so `elewa-be.dev.opencrane.ai/login`
+  works**. Absorbs Go-Live → *DNS + ingress verification* (per-org-host path). No deps.
+- **S2 — Enforcement floor: make isolation real.** *(silo Phase 1)* Enable Dataplane-V2/Cilium +
+  default-deny baseline (cluster-lifecycle/Terraform, **not** Helm); per-silo egress NetworkPolicy.
+  Absorbs Go-Live → *GCP installer smoke* (must now provision DV2 + Workload Identity, which also
+  revives external-dns) and **CONN.8** remaining (cross-namespace wildcard-cert distribution + live
+  ACME e2e — per-silo namespaces each need the cert). Dep: S1.
+- **S3 — Zitadel as PDP system-of-record (control-plane controls Zitadel).** *(silo Phase 2a)*
+  `zitadel-client` + per-CT Org/app/roles provisioning + master onboarding (cross-org `admin` grant
+  + issued openclaw Tenant), host→CT→client resolution, **transactional** auth mutations, member API
+  + `oc cluster-tenant members`, reconcile/backfill, masters self-registration + billing. Durable
+  replacement for S1's manual redirect hack. Dep: S1.
+- **S4 — Inheritance: openclaw Tenant inherits its user's rights.** *(silo Phase 2b)* Bind
+  `Tenant.subject`; compile the contract over `{tenant, subject, groups(subject)}`; mirror Zitadel
+  groups → `Group.members`; derive Cognee dataset scopes; inter-user sharing API + `oc share`.
+  **Absorbs P4B.7** (.2 scope-aware Cognee plugin + .3 per-scope memory partitioning — same
+  enforcement surface; the scope universe becomes the inherited contract). Dep: S3.
+- **S5 — Identity loop + workload identity (SPIFFE/Cilium PEP).** *(silo Phase 2 identity loop)*
+  SPIRE/Cilium identity wiring; operator provisions per-silo workload identities + identity
+  policies; **super-admin identity issuance/rotation/audit (the crown jewel)**. **Absorbs CONN.4**
+  (the CP-held operator device IS the super-admin cross-silo identity) and **CONN.5** remaining
+  (adds identity-revocation + silo-level cut alongside the landed pod-delete). Deps: S2, S3.
+- **S6 — Silo architecture: per-CT operator + per-CT planes + ADR.** *(silo Phase 3)* ADR
+  `task_5164276f` (substrate; which planes move into the silo; per-CT operator; **per-CT API + DB**
+  that retires the resolution-ambiguity class — PR #68 is the interim shim). Decides placement that
+  gates S8/S9/S10. **Subsumes CONN.7** (a mesh substrate makes its per-session-cut/per-frame-audit
+  vision a mesh feature). Deps: S2, S5.
+- **S7 — Tiers & cost.** *(silo Phase 4)* Map `isolationTier` shared → dedicatedNodes →
+  dedicatedCluster (vcluster/Kamaji); cost/footprint model per tier. Dep: S6.
+
+**Independent leftovers (S8–S12) — re-sequenced after the silo program.**
+
+- **S8 — Obot downstream-credential brokering.** *(P4D.1)* The silo work **unblocks the hard part**:
+  S4 `Tenant.subject` makes per-user real, S5 SPIFFE→OIDC exchange propagates the human identity to
+  Obot's shim, S6 moves Obot into the silo. Then build the parked push-to-Obot OBO config surface +
+  enc-at-rest + live round-trip. Deps: S4, S5, S6.
+- **S9 — Zot digest-pinned skill-bundle storage.** *(P4D.2)* Placement (shared vs per-silo) decided
+  in the S6 ADR; the digest-pull egress must be an explicit allow in the default-deny silo policy.
+  Build: deploy Zot, push bundles by digest, fetch-by-digest, drop `SkillBundle.content`. Dep: S6.
+- **S10 — Provider-secret cutover. [BLOCKED]** *(AIR.0c)* Remove the `org-shared-secrets` `envFrom`
+  broadcast (a cross-silo secret leak the silo model forbids) + retire orphaned `ProviderApiKey`.
+  Silo strengthens the rationale and S6 per-CT LiteLLM makes keys silo-scoped, **but stays blocked**
+  on the OpenClaw translator-backend image change + WeOwnAI off the legacy endpoint.
+- **S11 — Fixed-model savings evaluator. (FUTURE)** *(AIR.8)* Advisory WeOwnAI view; in-repo enablers
+  done; per-CT-scoped. Low silo impact (data source shifts only if LiteLLM/Langfuse go per-silo).
+- **S12 — Safety / guardrail stream. (FUTURE)** *(AIR.9)* Adopt an OSS guardrail service when needed;
+  placement (per-silo vs main-network egress) follows the S6 substrate. No such service exists today.
+
+---
+
+### Reference detail — open-item bodies + landed history (indexed by the S-series above)
 
 ### Track WOI — WeOwnAI control-plane integration (frontend cutover dependencies)
 
@@ -864,10 +930,13 @@ With one agent per lane, wall-clock ≈ 4 sequential slices instead of 7.
 
 ## Go-Live Checklist (Open Items)
 
+> Both open items are now folded into the S-series: *GCP installer smoke* → **S2** (must provision
+> Dataplane-V2 + Workload Identity), *DNS + ingress verification* → **S1** (per-org-host path).
+
 | Item | Status | Done Criteria |
 |------|--------|---------------|
-| GCP installer smoke (`./platform/install.sh gcp`) | Not yet revalidated | Fresh GCP project deploys end-to-end; control-plane endpoint reachable; test tenant reconciles successfully. |
-| DNS + ingress verification | Not started | Domain and TLS resolve correctly; control-plane and tenant subdomains accessible externally. |
+| GCP installer smoke (`./platform/install.sh gcp`) → **S2** | Not yet revalidated | Fresh GCP project deploys end-to-end; control-plane endpoint reachable; test tenant reconciles successfully. |
+| DNS + ingress verification → **S1** | Not started | Domain and TLS resolve correctly; control-plane and tenant subdomains accessible externally. |
 
 All other checklist items (local baseline, k3d e2e, Helm chart, Docker CI publish, Prisma migrations, CI e2e gate, runbook) are complete. See `plan-done.md` for the full table.
 
