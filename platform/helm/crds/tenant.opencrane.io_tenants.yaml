@@ -128,9 +128,26 @@ spec:
                   type: string
                 message:
                   type: string
+                effectivePolicyRef:
+                  type: string
+                policyResolutionSource:
+                  type: string
+                policyResolutionState:
+                  type: string
                 lastReconciled:
                   type: string
                   format: date-time
+                observedGeneration:
+                  type: integer
+                  format: int64
+                  description: >-
+                    metadata.generation the operator last drove to Running. The reconcile-skip
+                    guard compares this against metadata.generation so an unchanged, already-
+                    running Tenant is not re-provisioned on every watch replay. MUST be present
+                    in the schema or the API server prunes it from status writes, defeating the
+                    guard and re-reconciling on every watch cycle — which, because each reconcile
+                    writes status (lastReconciled), self-triggers an endless MODIFIED → reconcile
+                    loop.
       additionalPrinterColumns:
         - name: Display Name
           type: string
