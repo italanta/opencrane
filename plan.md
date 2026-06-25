@@ -32,10 +32,12 @@
 
 **Silo program (S1–S7) — full detail in `silo-multi-tenant-plan.md`.**
 
-- **S1 — Demo-able shared tier + unblock login.** *(silo Phase 0)* trustedProxies auto-derive,
-  preflight + `values.schema.json` guards, externalIp auto-derive + post-deploy verify,
-  openclaw-schema CI test; **interim manual redirect-URI add so `elewa-be.dev.opencrane.ai/login`
-  works**. Absorbs Go-Live → *DNS + ingress verification* (per-org-host path). No deps.
+- **S1 — Demo-able shared tier + unblock login.** 🟢 **IN REVIEW (PR → strong-siloes).** Code
+  landed: trustedProxies `[auto]` derive (task_845dd617), `values.schema.json` + WI preflight
+  (task_bbafd7e9), `--auto-ingress-ip` + `--verify` (task_5cab917e). 🟡 openclaw-schema CI test =
+  structural-fallback only; full zod-schema **BLOCKED** (schema not vendored — task_d611ab4d).
+  ⏩ interim manual Zitadel redirect-URI add for `elewa-be.dev.opencrane.ai/login` (console action,
+  not code). Detail in `silo-multi-tenant-plan.md` Phase 0.
 - **S2 — Enforcement floor: make isolation real.** *(silo Phase 1)* Enable Dataplane-V2/Cilium +
   default-deny baseline (cluster-lifecycle/Terraform, **not** Helm); per-silo egress NetworkPolicy.
   Absorbs Go-Live → *GCP installer smoke* (must now provision DV2 + Workload Identity, which also

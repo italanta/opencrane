@@ -291,16 +291,23 @@ of bug. Demo-unblocking.
   `trustedProxies=[10.8.0.0/14]` (commit `818041d`).
 - ✅ **DONE** — networking architecture doc (commit `5795b99`).
 - ⏩ **INTERIM** — manual DNS for the demo (see §5).
-- `task_845dd617` — operator auto-derives `trustedProxies` from its own pod IP (downward API);
-  kills the "forgot the CIDR → all pods fail-closed" footgun.
-- `task_bbafd7e9` — preflight + `values.schema.json` guards (incl. the missing **WI-enabled**
-  check, not just `roles/dns.admin`; `gatewayProxy`↔`externalIp` coherence; non-empty
-  `trustedProxies`).
-- `task_5cab917e` — deploy auto-derives `ingress.externalIp` from the ingress-nginx LB +
-  a post-deploy verify phase (DNSEndpoints present, external-dns no auth errors, pods Running,
+- ✅ **DONE (S1)** `task_845dd617` — operator auto-derives `trustedProxies` from its own pod IP
+  via the opt-in `[auto]` token (downward API `POD_IP`, default /14); empty stays trust-nothing so
+  the CONN.9 fail-closed default is preserved. Kills the "forgot the CIDR → all pods fail-closed"
+  footgun without silently widening trust.
+- ✅ **DONE (S1)** `task_bbafd7e9` — `values.schema.json` coherence guard (`gatewayProxy.enabled` ⇒
+  non-empty `ingress.externalIp` + `trustedProxies`, Helm-enforced on every render) + preflight
+  **WI-enabled** cluster probe (`gke-metadata-server`), not just the `roles/dns.admin` binding.
+- ✅ **DONE (S1)** `task_5cab917e` — `--auto-ingress-ip` derives `ingress.externalIp` from the
+  ingress-nginx LB (deploy-multi-tenant opts in when `--ingress-ip` is omitted) + `--verify`
+  advisory post-deploy phase (DNSEndpoints present, external-dns no auth errors, pods Running,
   host resolves).
-- `task_d611ab4d` — CI contract test: render the tenant ConfigMap, validate `openclaw.json`
-  against the pinned OpenClaw zod schema (prevents the `trustNothing`-class crash).
+- 🟡 **PARTIAL (S1)** `task_d611ab4d` — landed the **minimal fallback**: a no-dep structural
+  contract test pinning the rendered `openclaw.json` to OpenClaw's strict gateway key set
+  (catches the `trustNothing`-class crash). Full validation against the **pinned OpenClaw zod
+  schema is BLOCKED** — the schema isn't vendored (OpenClaw ships as a container, not an npm dep);
+  schema-source is an open decision. Also surfaced: `configOverrides` shallow-merge can replace the
+  whole `gateway` block (drops the owner-pin / can inject a crashing key) — follow-up gap.
 - **NEW (live login bug)** — `<org>.<base>/login` throws the OIDC redirect error because the host's
   callback isn't a registered redirect URI. **Interim unblock (now):** add
   `elewa-be.dev.opencrane.ai/api/v1/auth/callback` to the current Zitadel app by hand. **Durable
@@ -383,6 +390,12 @@ The virtual-network model proper.
   cost/footprint model per tier. Then split implementation tasks (per-CT operator;
   templating planes into the silo; reparent under `ClusterTenantProvisioner` /
   `multiInstance`-per-CT).
+- **Per-silo ingress is the operator's job.** When the operator moves into the silo, *that*
+  operator must own its silo's north-south edge: emit the `{org}.{base-domain}` Ingress +
+  `DNSEndpoint` (and bind the wildcard/cert) for its own org, scoped to its namespace — never a
+  shared operator writing every org's ingress. Today the single shared operator already emits the
+  per-org Ingress/DNSEndpoint (Track DOMAIN); Phase 3 must preserve that capability per-CT and
+  fail-closed (a silo with no ingress is unreachable, not cross-wired to another org's host).
 
 ### Phase 4 — Tiers & cost
 - Map to `ClusterTenant.spec.isolationTier`: `shared` → `dedicatedNodes` → `dedicatedCluster`
