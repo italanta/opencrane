@@ -4,6 +4,7 @@ export { _BuildStatePvc } from "./3-state-pvc.js";
 export { _BuildDeployment } from "./3-deployment.js";
 export { _BuildService } from "./4-service.js";
 export { _BuildGatewayNetworkPolicy } from "./network-policy.js";
+export { _BuildSiloBaselineNetworkPolicy } from "./silo-baseline-network-policy.js";
 export { _BuildClusterTenantNamespace } from "./6-cluster-tenant-namespace.js";
 export { _BuildClusterTenantResourceQuota, _BuildClusterTenantLimitRange } from "./7-resource-quota.js";
 export { _BuildClusterTenantScheduling } from "./cluster-tenant-scheduling.js";

@@ -318,13 +318,18 @@ of bug. Demo-unblocking.
 Nothing below matters until an enforcer exists; even the namespace isolation that exists today
 is a no-op without it.
 
-- `task_d6404452` — **P0**: enable NetworkPolicy enforcement (prefer Dataplane V2 / Cilium —
-  doubles as the Phase-2 identity substrate) + default-deny-all baseline in `opencrane-system`
-  and every silo namespace (fail closed, not open). Cluster-lifecycle (Terraform/gcloud), not
-  Helm.
-- `task_08734d58` — operator emits a baseline egress NetworkPolicy per silo namespace
-  (default-deny except DNS + the allowed planes/control-plane); retire the misplaced
-  `opencrane-tenant-default`.
+- 🟡 **PARTIAL (S2)** `task_d6404452` — **enforcement substrate confirmed**: the GKE Terraform
+  module is Autopilot, which enforces Dataplane-V2/NetworkPolicy inherently (documented the
+  invariant + the "don't migrate to Standard without ADVANCED_DATAPATH" guard). Silo-namespace
+  default-deny ✅ (below). **Still open:** the `opencrane-system` (main-network) default-deny
+  baseline — deferred: needs the complete plane ingress/egress allow-list (DB, LiteLLM, Langfuse,
+  Cognee…) + live validation to avoid breaking platform traffic. The live `opencrane-dev` cluster
+  is a manually-created **Standard** cluster with enforcement OFF — a runbook migration, not code.
+- ✅ **DONE (S2)** `task_08734d58` — operator emits `_BuildSiloBaselineNetworkPolicy` per silo
+  namespace: default-deny ingress+egress, allow-list = intra-silo + control-plane/operator
+  namespace + DNS + external HTTPS; **no rule names another silo** (east-west default-deny by
+  construction). Applied in `enforceClusterTenantIsolation`. Misplaced install-namespace
+  `opencrane-tenant-default` retired. 5 unit tests.
 
 ### Phase 2 — The identity loop (IAM)  · design first
 Wire OIDC → control-plane (PDP) → operator (reconciler) → Cilium/SPIFFE (PEP) into the closed

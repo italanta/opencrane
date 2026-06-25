@@ -738,13 +738,16 @@ projectedIdentity:
 # for internal platform services)
 networkPolicy:
   enabled: true
-  # -- Allow DNS resolution
+  # -- Allow DNS resolution (still consumed by the multi-instance cross-namespace policy)
   allowDNS: true
-  # -- Default allowed egress domains (requires Cilium for FQDN filtering)
+  # -- Reserved for a future FQDN egress policy (requires Cilium). The per-silo egress
+  #    baseline is now emitted by the OPERATOR per ClusterTenant namespace
+  #    (_BuildSiloBaselineNetworkPolicy), replacing the retired install-namespace
+  #    `opencrane-tenant-default` policy that mis-selected tenant pods cluster-wide.
   defaultAllowedDomains:
     - api.openai.com
     - api.anthropic.com
-  # -- CIDR-based egress rules (works with standard NetworkPolicy)
+  # -- Reserved for CIDR-based egress rules (future per-silo egress refinement).
   egressAllowCIDRs: []
   # -- Namespace where the ingress controller runs. Used by the control-plane
   # ingress NetworkPolicy to permit external API traffic routed through it.

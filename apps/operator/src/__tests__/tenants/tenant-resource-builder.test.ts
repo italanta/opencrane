@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { defaultConfig, gcpConfig, gcpAdapter, onPremAdapter, _makeAccessPolicy, _makeTenant } from "../fixtures.js";
-import { _BuildClusterTenantLimitRange, _BuildClusterTenantNamespace, _BuildClusterTenantResourceQuota, _BuildClusterTenantScheduling, _BuildConfigMap, _BuildDeployment, _BuildGatewayNetworkPolicy, _BuildServiceAccount, _BuildStatePvc } from "../../tenants/deploy/index.js";
+import { _BuildClusterTenantLimitRange, _BuildClusterTenantNamespace, _BuildClusterTenantResourceQuota, _BuildClusterTenantScheduling, _BuildConfigMap, _BuildDeployment, _BuildGatewayNetworkPolicy, _BuildServiceAccount, _BuildSiloBaselineNetworkPolicy, _BuildStatePvc } from "../../tenants/deploy/index.js";
 
 describe("TenantResourceBuilder", () =>
 {
@@ -289,6 +289,52 @@ describe("TenantResourceBuilder", () =>
     expect(rule?._from?.[0]?.namespaceSelector?.matchLabels?.["kubernetes.io/metadata.name"]).toBe("opencrane");
     expect(rule?._from?.[0]?.podSelector?.matchLabels?.["app.kubernetes.io/component"]).toBe("operator");
     expect(rule?.ports?.[0]?.port).toBe(config.gatewayPort);
+  });
+});
+
+describe("Silo baseline NetworkPolicy (S2 / Phase 1 — default-deny silo edge)", () =>
+{
+  const config = { ...defaultConfig, operatorNamespace: "opencrane-system" };
+  const netpol = _BuildSiloBaselineNetworkPolicy("opencrane-acme", "acme", config);
+
+  it("flips the silo namespace to default-deny (empty podSelector, Ingress+Egress)", () =>
+  {
+    expect(netpol.metadata?.namespace).toBe("opencrane-acme");
+    expect(netpol.metadata?.labels?.["opencrane.io/cluster-tenant"]).toBe("acme");
+    expect(netpol.spec?.podSelector).toEqual({});
+    expect(netpol.spec?.policyTypes).toEqual(["Ingress", "Egress"]);
+  });
+
+  it("admits ingress only from the same silo and the control-plane namespace (uses _from, not from)", () =>
+  {
+    const rule = netpol.spec?.ingress?.[0];
+    // _from MUST be set — a bare `from` would be dropped by the serializer and fail OPEN.
+    expect(rule?._from).toBeDefined();
+    expect(rule?._from).toContainEqual({ podSelector: {} });
+    expect(rule?._from).toContainEqual({ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "opencrane-system" } } });
+  });
+
+  it("allows egress to DNS, the platform namespace, intra-silo, and external HTTPS only", () =>
+  {
+    const egress = netpol.spec?.egress ?? [];
+    // DNS on 53/UDP+TCP to kube-system.
+    const dns = egress.find(e => e.to?.some(t => t.namespaceSelector?.matchLabels?.["kubernetes.io/metadata.name"] === "kube-system"));
+    expect(dns?.ports).toEqual([{ protocol: "UDP", port: 53 }, { protocol: "TCP", port: 53 }]);
+    // External HTTPS on 443 (no `to` ⇒ any destination) for LLM/MCP/Git.
+    expect(egress).toContainEqual({ ports: [{ protocol: "TCP", port: 443 }] });
+    // Platform-plane reachability.
+    const platform = egress.find(e => e.to?.some(t => t.namespaceSelector?.matchLabels?.["kubernetes.io/metadata.name"] === "opencrane-system"));
+    expect(platform).toBeDefined();
+  });
+
+  it("creates NO silo→silo path (no rule names another silo namespace)", () =>
+  {
+    const serialized = JSON.stringify(netpol.spec);
+    // The only namespaces referenced are the platform namespace and kube-system —
+    // never another ClusterTenant silo (e.g. opencrane-bcorp).
+    expect(serialized).not.toContain("opencrane-bcorp");
+    const nsNames = [...serialized.matchAll(/"kubernetes\.io\/metadata\.name":"([^"]+)"/g)].map(m => m[1]);
+    expect(new Set(nsNames)).toEqual(new Set(["opencrane-system", "kube-system"]));
   });
 });
 

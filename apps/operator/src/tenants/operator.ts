@@ -10,7 +10,7 @@ import { TenantPolicyResolutionState, TenantStatusPhase } from "./models/tenant-
 import { __K8sApplyResource } from "../infra/k8s.js";
 import { _RunWatchLoop, K8sWatchEventType } from "../shared/watch-runner.js";
 import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "../shared/crd-constants.js";
-import { _BuildClusterTenantLimitRange, _BuildClusterTenantNamespace, _BuildClusterTenantResourceQuota, _BuildConfigMap, _BuildDeployment, _BuildGatewayNetworkPolicy, _BuildService, _BuildServiceAccount, _BuildStatePvc } from "./deploy/index.js";
+import { _BuildClusterTenantLimitRange, _BuildClusterTenantNamespace, _BuildClusterTenantResourceQuota, _BuildConfigMap, _BuildDeployment, _BuildGatewayNetworkPolicy, _BuildService, _BuildServiceAccount, _BuildSiloBaselineNetworkPolicy, _BuildStatePvc } from "./deploy/index.js";
 import { TenantCleanup } from "./destroy/tenant-cleanup.js";
 
 import { TenantEncryptionKeys } from "./internal/tenant-encryption-keys.js";
@@ -411,6 +411,12 @@ export class TenantOperator
     // 1. Namespace — ensure the fenced namespace exists and carries the PSA
     //    restricted enforce/warn/audit labels before any workload lands in it.
     await __K8sApplyResource(this.coreApi, _BuildClusterTenantNamespace(namespace, clusterTenantName), this.log);
+
+    // 1b. Silo baseline NetworkPolicy — flip the namespace to default-deny (S2 /
+    //     Phase 1) right after it exists and before any workload lands, so the silo
+    //     edge is closed from the start: only intra-silo + the control-plane plane,
+    //     DNS, and external HTTPS are allowed; no silo→silo path is ever created.
+    await __K8sApplyResource(this.networkingApi, _BuildSiloBaselineNetworkPolicy(namespace, clusterTenantName, this.config), this.log);
 
     // 2. ResourceQuota — cap the customer's aggregate CPU/memory/pods/storage/GPU
     //    so a single customer cannot starve the cluster. Only stamped when the
