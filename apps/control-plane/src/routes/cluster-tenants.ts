@@ -272,7 +272,7 @@ export function clusterTenantsRouter(prisma: PrismaClient, registry: ClusterTena
         });
         return tx.clusterTenant.update({
           where: { name: org.name },
-          data: { zitadelOrgId: zitadel.orgId, zitadelAppId: zitadel.appId, zitadelRedirectUri: zitadel.redirectUri },
+          data: { zitadelOrgId: zitadel.orgId, zitadelAppId: zitadel.appId, zitadelClientId: zitadel.clientId, zitadelRedirectUri: zitadel.redirectUri },
         });
       });
     }

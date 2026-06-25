@@ -11,7 +11,7 @@ import type { ZitadelManagementClient } from "../../infra/zitadel/zitadel-client
 
 /** Benign Zitadel test double (this suite exercises the org-admin guard, not provisioning). */
 const _fakeZitadel: ZitadelManagementClient = {
-  async provisionOrg(input) { return { orgId: "z", appId: "a", redirectUri: input.redirectUri }; },
+  async provisionOrg(input) { return { orgId: "z", appId: "a", clientId: "c", redirectUri: input.redirectUri }; },
   async teardownOrg() { /* no-op */ },
 };
 

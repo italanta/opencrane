@@ -39,6 +39,8 @@ export interface ProvisionOrgResult
   orgId: string;
   /** Provisioned OIDC application id (login surface for `<org>.<base>`). */
   appId: string;
+  /** The OIDC client_id of the provisioned app — the per-org credential login authorizes with. */
+  clientId: string;
   /** The redirect URI registered on the app (echoed for persistence). */
   redirectUri: string;
 }

@@ -27,6 +27,11 @@ declare module "express-session"
       state: string;
       nonce: string;
       returnTo: string;
+      // Per-org OIDC client_id resolved at buildLoginUrl from the request host (S3b).
+      // Persisted so completeLogin exchanges the code against the SAME client the
+      // authorization request used. Absent ⇒ the masters client (platform host or an
+      // unprovisioned/unknown org host that fell through fail-closed).
+      clientId?: string;
     };
   }
 }

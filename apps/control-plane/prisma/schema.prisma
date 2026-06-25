@@ -166,6 +166,11 @@ model ClusterTenant {
   zitadelOrgId       String?                @map("zitadel_org_id")
   /// Zitadel OIDC application id for this org's login surface at `<org>.<base>`.
   zitadelAppId       String?                @map("zitadel_app_id")
+  /// OIDC client_id of this org's Zitadel app — the per-org credential login uses to
+  /// authorize against the org's isolated user pool (S3b). Null until provisioned (or
+  /// when Zitadel is unconfigured); a host that resolves to a CT with no client_id
+  /// fail-closes to no per-org login (see oidc.service `_resolvePerOrgClient`).
+  zitadelClientId    String?                @map("zitadel_client_id")
   /// The redirect URI registered on this org's Zitadel app (`<org>.<base>/api/v1/auth/callback`).
   zitadelRedirectUri String?                @map("zitadel_redirect_uri")
   /// Creation timestamp.

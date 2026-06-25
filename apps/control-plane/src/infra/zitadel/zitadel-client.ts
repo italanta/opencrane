@@ -107,10 +107,17 @@ export class _HttpZitadelManagementClient implements ZitadelManagementClient
         appType: "OIDC_APP_TYPE_WEB",
         authMethodType: "OIDC_AUTH_METHOD_TYPE_NONE",
         devMode: false,
-      }, orgId) as { appId?: string };
+      }, orgId) as { appId?: string; clientId?: string };
       if (!app.appId)
       {
         throw new Error("Zitadel OIDC app create returned no appId");
+      }
+      // The live app-create response carries the generated OIDC client_id alongside the
+      // appId. Capture it so login can resolve this org's per-org client by host (S3b);
+      // without it the org has a login surface but no credential to authorize against it.
+      if (!app.clientId)
+      {
+        throw new Error("Zitadel OIDC app create returned no clientId");
       }
 
       // Grant the master `admin` on this org's project (cross-org user grant; the master
@@ -121,7 +128,7 @@ export class _HttpZitadelManagementClient implements ZitadelManagementClient
       }, orgId);
 
       _log.info({ orgId, appId: app.appId, orgName: input.orgName }, "provisioned Zitadel org for ClusterTenant");
-      return { orgId, appId: app.appId, redirectUri: input.redirectUri };
+      return { orgId, appId: app.appId, clientId: app.clientId, redirectUri: input.redirectUri };
     }
     catch (err)
     {

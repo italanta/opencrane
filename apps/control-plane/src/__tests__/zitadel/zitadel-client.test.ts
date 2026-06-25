@@ -43,7 +43,7 @@ describe("_HttpZitadelManagementClient — live provisioning lifecycle (injected
 
     const result = await client.provisionOrg({ orgName: "acme", displayName: "Acme", redirectUri: "https://acme.dev.opencrane.ai/api/v1/auth/callback", masterSubject: "u-master" });
 
-    expect(result).toEqual({ orgId: "org-9", appId: "app-9", redirectUri: "https://acme.dev.opencrane.ai/api/v1/auth/callback" });
+    expect(result).toEqual({ orgId: "org-9", appId: "app-9", clientId: "client-9", redirectUri: "https://acme.dev.opencrane.ai/api/v1/auth/callback" });
     const paths = calls.map(c => c.path);
     expect(paths).toEqual([
       "/oauth/v2/token",
@@ -64,6 +64,17 @@ describe("_HttpZitadelManagementClient — live provisioning lifecycle (injected
 
     await expect(client.provisionOrg({ orgName: "acme", displayName: "Acme", redirectUri: "https://acme.dev.opencrane.ai/api/v1/auth/callback", masterSubject: "u-master" })).rejects.toThrow(/apps\/oidc failed \(500\)/);
     // The compensating org delete ran.
+    expect(calls.some(c => c.method === "DELETE" && c.path === "/admin/v1/orgs/org-9")).toBe(true);
+  });
+
+  it("fails loud (and compensates) when the app-create response omits the clientId (S3b)", async function _noClientId()
+  {
+    // The live app-create returns appId + clientId; an app row without a clientId would
+    // leave the org with a login surface but no per-org credential, so we reject it.
+    const { fetchImpl, calls } = _fakeFetch({ "/management/v1/projects/proj-9/apps/oidc": { status: 200, body: { appId: "app-9" } } });
+    const client = new _HttpZitadelManagementClient({ apiUrl: "https://z.example.com", serviceAccountKey: _saKeyJson(), baseDomain: "dev.opencrane.ai" }, fetchImpl);
+
+    await expect(client.provisionOrg({ orgName: "acme", displayName: "Acme", redirectUri: "https://acme.dev.opencrane.ai/api/v1/auth/callback", masterSubject: "u-master" })).rejects.toThrow(/no clientId/);
     expect(calls.some(c => c.method === "DELETE" && c.path === "/admin/v1/orgs/org-9")).toBe(true);
   });
 

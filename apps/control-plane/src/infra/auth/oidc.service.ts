@@ -11,6 +11,7 @@ import { _ResolveCallerClusterTenant } from "./resolve-caller-cluster-tenant.js"
 import { _ClusterTenantFromHost, _RequestHost } from "./request-silo.js";
 import { _ResolveOrgMembershipFacts } from "./org-membership.js";
 import type { OwnedOrg } from "./org-membership.js";
+import { _OrgScope, _ResolvePerOrgClient } from "./per-org-client.js";
 
 /** Auth mode exposed to the UI so it can decide whether login is required. */
 export type ControlPlaneAuthMode = "development" | "oidc" | "token";
@@ -112,8 +113,16 @@ export class OidcAuthService
   /** Logger used for auth lifecycle diagnostics. */
   private log: Logger;
 
-  /** Lazily initialized OIDC client configuration discovered from the issuer. */
+  /** Lazily initialized OIDC client configuration discovered from the issuer (masters client). */
   private discoveredConfig: Promise<client.Configuration> | null = null;
+
+  /**
+   * Per-org discovered configurations, keyed by the org's OIDC client_id (S3b). Each
+   * ClusterTenant logs in against its own public client at the SAME issuer, so we memoize
+   * one `client.Configuration` per client_id and reuse it across requests. The masters
+   * client keeps its own `discoveredConfig` field above.
+   */
+  private perOrgDiscovered = new Map<string, Promise<client.Configuration>>();
 
   /** Prisma client used to resolve the caller's ClusterTenant by verified email. */
   private prisma: PrismaClient;
@@ -241,38 +250,48 @@ export class OidcAuthService
   /** Build the provider redirect URL and persist PKCE state in the local session. */
   async buildLoginUrl(req: Request, returnTo: string): Promise<string>
   {
-    const discoveredConfig = await this._getDiscoveredConfig();
+    // 1. Resolve the per-org client for this host (S3b). A host `<org>.<base>` that maps to
+    //    a fully-provisioned ClusterTenant uses THAT org's client + org-restriction scope so
+    //    only its user pool may log in. The platform host, and any unknown/unprovisioned org
+    //    host, fail-closed to null → the masters client below.
+    const perOrg = await _ResolvePerOrgClient(this.prisma, _RequestHost(req));
+    const discoveredConfig = perOrg ? await this._discoverForClient(perOrg.clientId) : await this._getDiscoveredConfig();
+    const scope = perOrg ? `${this.config.scopes} ${_OrgScope(perOrg.orgId)}` : this.config.scopes;
+
     const codeVerifier = client.randomPKCECodeVerifier();
     const codeChallenge = await client.calculatePKCECodeChallenge(codeVerifier);
     const state = client.randomState();
     const nonce = client.randomNonce();
     const sanitizedReturnTo = _sanitizeReturnTo(returnTo);
 
-    // 1. Persist the PKCE and replay-protection values into the signed session.
+    // 2. Persist the PKCE and replay-protection values into the signed session, recording the
+    //    resolved per-org client_id so completeLogin exchanges the code against the SAME
+    //    client (absent ⇒ masters client). Keeps auth-request and token-exchange consistent.
     req.session.oidcFlow = {
       codeVerifier,
       state,
       nonce,
       returnTo: sanitizedReturnTo,
+      ...(perOrg ? { clientId: perOrg.clientId } : {}),
     };
     await _saveSession(req);
 
-    // 2. Build a standards-only OIDC authorization redirect. Zitadel is the single trusted
-    //    issuer (Mode-2 broker, no upstream Entra), but this uses nothing Zitadel-specific —
-    //    it works against any spec-compliant issuer at OIDC_ISSUER_URL.
+    // 3. Build a standards-only OIDC authorization redirect. Zitadel is the single trusted
+    //    issuer (Mode-2 broker, no upstream Entra); the only Zitadel-specific element is the
+    //    org-restriction scope appended above (a no-op shape for other issuers).
     const loginUrl = client.buildAuthorizationUrl(discoveredConfig, {
       // Host-derived so per-org-host login works (each org is served at <org>.<base>) AND
       // the session cookie stays host-scoped to that host; matches the origin completeLogin
       // derives at the callback. Falls back to the configured URI when no host is present.
       redirect_uri: _buildRedirectUri(req, this.config.redirectUri),
-      scope: this.config.scopes,
+      scope,
       code_challenge: codeChallenge,
       code_challenge_method: "S256",
       state,
       nonce,
     });
 
-    // 3. Return the URL so the router can redirect the browser.
+    // 4. Return the URL so the router can redirect the browser.
     return loginUrl.href;
   }
 
@@ -285,8 +304,10 @@ export class OidcAuthService
       throw new Error("OIDC callback arrived without an in-flight login session");
     }
 
-    // 1. Exchange the authorization code for tokens using the stored PKCE verifier.
-    const discoveredConfig = await this._getDiscoveredConfig();
+    // 1. Exchange the authorization code for tokens using the stored PKCE verifier, against
+    //    the SAME client the authorization request used: the per-org client_id recorded in
+    //    the flow (S3b) when the login started on an org host, else the masters client.
+    const discoveredConfig = flow.clientId ? await this._discoverForClient(flow.clientId) : await this._getDiscoveredConfig();
     const tokens = await client.authorizationCodeGrant(discoveredConfig, _buildCurrentUrl(req), {
       pkceCodeVerifier: flow.codeVerifier,
       expectedState: flow.state,
@@ -393,6 +414,32 @@ export class OidcAuthService
     }
 
     return await this.discoveredConfig;
+  }
+
+  /**
+   * Discover (and memoize) the OIDC configuration for a SPECIFIC client_id at the
+   * configured issuer (S3b). Used for per-org clients: each ClusterTenant's Zitadel app is
+   * a distinct public client at the same issuer, so we discover once per client_id and
+   * cache it. Per-org apps are provisioned with `authMethodType: NONE` (public PKCE
+   * clients), so no client secret is supplied here — only the masters client may be
+   * confidential, and it uses `_getDiscoveredConfig`.
+   *
+   * @param clientId - The org's OIDC client_id resolved from the request host.
+   */
+  private async _discoverForClient(clientId: string): Promise<client.Configuration>
+  {
+    if (!this.config.enabled)
+    {
+      throw new Error("OIDC is not configured for this control-plane instance");
+    }
+
+    let discovered = this.perOrgDiscovered.get(clientId);
+    if (!discovered)
+    {
+      discovered = client.discovery(new URL(this.config.issuerUrl), clientId);
+      this.perOrgDiscovered.set(clientId, discovered);
+    }
+    return await discovered;
   }
 
   /** Merge ID token claims with UserInfo claims when an access token is available. */

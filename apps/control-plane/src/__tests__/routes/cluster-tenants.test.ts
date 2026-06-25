@@ -14,7 +14,7 @@ import type { ZitadelManagementClient } from "../../infra/zitadel/zitadel-client
 function _fakeZitadel(): ZitadelManagementClient
 {
   return {
-    async provisionOrg(input) { return { orgId: "zorg-test", appId: "zapp-test", redirectUri: input.redirectUri }; },
+    async provisionOrg(input) { return { orgId: "zorg-test", appId: "zapp-test", clientId: "zclient-test", redirectUri: input.redirectUri }; },
     async teardownOrg() { /* no-op */ },
   };
 }
@@ -368,7 +368,7 @@ describe("clusterTenantsRouter — Zitadel org provisioning (S3 / Phase 2a)", fu
       async provisionOrg(input)
       {
         calls.push(input);
-        return { orgId: "zorg-123", appId: "zapp-456", redirectUri: input.redirectUri };
+        return { orgId: "zorg-123", appId: "zapp-456", clientId: "zclient-789", redirectUri: input.redirectUri };
       },
       async teardownOrg() { /* no-op */ },
     };
@@ -391,6 +391,8 @@ describe("clusterTenantsRouter — Zitadel org provisioning (S3 / Phase 2a)", fu
     const row = store.get("acme");
     expect(row?.zitadelOrgId).toBe("zorg-123");
     expect(row?.zitadelAppId).toBe("zapp-456");
+    // S3b: the OIDC client_id is persisted so login can resolve the per-org client by host.
+    expect(row?.zitadelClientId).toBe("zclient-789");
   });
 
   it("fails the create (no 201) when Zitadel provisioning throws — the tx is the rollback boundary", async function _rollsBack()
