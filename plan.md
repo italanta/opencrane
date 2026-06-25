@@ -47,11 +47,25 @@
   hard dependency; single-cluster mode unaffected), `infra/zitadel`. **PREREQ: SA needs instance
   `IAM_OWNER`.** 🔜 **remaining S3 slices:** `oidc.service` host→CT→client login refactor, member API
   + `oc cluster-tenant members`, reconcile/backfill, masters self-registration. Dep: S1.
-- **S4 — Inheritance: openclaw Tenant inherits its user's rights.** *(silo Phase 2b)* Bind
-  `Tenant.subject`; compile the contract over `{tenant, subject, groups(subject)}`; mirror Zitadel
-  groups → `Group.members`; derive Cognee dataset scopes; inter-user sharing API + `oc share`.
-  **Absorbs P4B.7** (.2 scope-aware Cognee plugin + .3 per-scope memory partitioning — same
-  enforcement surface; the scope universe becomes the inherited contract). Dep: S3.
+- **S4 — Inheritance + scope-aware memory: the openclaw Tenant acts as its user.** *(silo Phase 2b)*
+  Now broken into sub-slices:
+  - **S4a [DONE — PR #77]** bind `Tenant.subject` + compile the contract over `{tenant, subject, groups}`
+    (`compileForPrincipals`; Deny>Allow holds across principals).
+  - **S4c.1 [DONE — PR #81]** sync the grant + dataset scope vocabularies (grants gain `team`, datasets
+    gain `department`) so they map 1:1; migration 0029.
+  - **S4c.2 [DONE — PR #82]** derive Cognee dataset memberships from the group expansion (**every tier
+    IS a scope-typed `Group`**); diff-gated replace→Cognee sync on the contract poll; resource-group
+    sharing (`/resource-shares` + `oc share resource`); added `DATASET_SCOPE_RETRIEVAL_PRECEDENCE`
+    (Personal→Project→Team→Department→Org).
+  - **S4d [DONE — PR #78]** inter-user tool/skill sharing API + `oc share` (least-privilege Grant).
+  - **S4b [TODO]** mirror Zitadel groups → `Group.members` so groups are IdP-sourced, not hand-maintained.
+    **BLOCKED on a decision:** Zitadel has no native group primitive — must decide the mapping (project
+    roles vs user metadata vs org-level). The derivation works off manual groups until this lands.
+  - **S4e [TODO] = P4B.7.2** the scope-aware Cognee retrieval plugin — the precedence cascade itself
+    ("get here"); full Cognee design captured in **Track P4-B → P4B.7.2** below. Dep: S4c.2 (the
+    derived memberships + precedence constant it consumes).
+  **Absorbs P4B.7** (.1 session→scope binding LANDED; .2 retrieval plugin = S4e; .3 per-scope memory
+  partitioning still its own sub-item). Dep: S3.
 - **S5 — Identity loop + workload identity (SPIFFE/Cilium PEP).** *(silo Phase 2 identity loop)*
   SPIRE/Cilium identity wiring; operator provisions per-silo workload identities + identity
   policies; **super-admin identity issuance/rotation/audit (the crown jewel)**. **Absorbs CONN.4**
@@ -337,13 +351,31 @@ Stacked on `feat/org-admin-billing`.
      **Seam:** binding identity (`principal`) is supplied in the body on this admin/frontend control
      surface (consistent with the rest of `/api/v1`); the *runtime* tenant-identity binding is the
      plugin's job (component 2), which reads the live `sessionKey`.
-  2. **[ ] Scope-aware OpenClaw retrieval plugin.** Replace the stock single-dataset Cognee plugin
+  2. **[ ] Scope-aware OpenClaw retrieval plugin (= S4e).** Replace the stock single-dataset Cognee plugin
      (which is `datasetName`-singular, dataset-wide, no scope filtering — confirmed via
      docs.cognee.ai/integrations/openclaw-integration) with a plugin wrapping `@opencrane/awareness`:
      per turn it resolves the active `sessionKey`→scope binding (cached; via CP API or contract
      re-pull) and restricts the Cognee query to those datasets, so other-project context is **never
      retrieved or auto-injected**. Requires extending the P4B.1 SDK with a `ScopeContext` +
      most-specific-wins/deny-overrides merge across the active levels.
+     **Cognee retrieval design (researched 2026-06-25 — docs.cognee.ai):** scope precedence is **NOT a
+     Cognee setting**. Cognee exposes `datasets`/`dataset_ids`, `node_set`/`node_name` (graph tags),
+     `top_k`, and the search types — but **no per-scope weighting and no exposed similarity score** for
+     the GRAPH_COMPLETION family. **Do NOT bake scope into the embedding** (keep vectors pure semantic);
+     scope is a partition/filter/re-rank dimension applied *around* the vector search. Realise precedence
+     in OUR layer over `DATASET_SCOPE_RETRIEVAL_PRECEDENCE` (Personal=self/session → Project → Team →
+     Department → Org; most→least relevant):
+       - **Pattern A — cascade (start here):** query the most-specific scope first, widen to broader
+         scopes only to fill remaining `top_k`. Deterministic; needs no score; broad-scope context strictly
+         trails. Encodes the precedence by construction.
+       - **Pattern B — parallel + weighted re-rank (upgrade):** fetch candidates with `only_context=true`/
+         `CHUNKS`, tag each by source scope, re-rank by `similarity × scope_weight` (Personal 1.0 → Org 0.2),
+         then synthesise. Interleaves broad context by relevance instead of trailing it.
+     - **Ingestion change (small, in harvesting-agent `_PushDocumentToCognee`):** also pass
+       `node_set=[scope, \`${scope}:${subject}\`]` so scope is a first-class, filterable graph tag (today
+       only `metadata.scope` + the `<scope>/<subject>` dataset name are set).
+     - **Isolation stays on the `/v1/permissions` ACL we sync, NOT the `datasets=` param** — the param
+       leaks across datasets (topoteretes/cognee#1023); datasets/node_set are the relevance/partition layer.
   3. **[ ] (Separate vector) per-scope memory partitioning.** Scoped retrieval stops *knowledge-base*
      spill; the pod-global L2 `MEMORY.md` + any cross-session summarisation are a second vector
      (window A's written notes readable by window B). Partition written memory per scope — track as
