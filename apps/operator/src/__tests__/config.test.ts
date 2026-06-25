@@ -128,3 +128,72 @@ describe("_LoadOperatorConfig trusted-proxy fail-closed wiring (OC-2 / CONN.4)",
 		expect(function _load() { _LoadOperatorConfig(); }).toThrow(/invalid IP\/CIDR entry/);
 	});
 });
+
+describe("_LoadOperatorConfig auto trusted-proxy derivation (task_845dd617)", function _autoSuite()
+{
+	let _saved: NodeJS.ProcessEnv;
+
+	beforeEach(function _save()
+	{
+		_saved = process.env;
+		process.env = { ..._BASE_ENV, WATCH_NAMESPACE: "oc-acme" };
+	});
+
+	afterEach(function _restore()
+	{
+		process.env = _saved;
+	});
+
+	it("expands `auto` to the POD_IP /14 pod range by default", function _autoDefault()
+	{
+		process.env.GATEWAY_TRUSTED_PROXIES = "auto";
+		process.env.POD_IP = "10.8.3.5";
+		const config = _LoadOperatorConfig();
+		expect(config.gatewayTrustedProxies).toEqual(["10.8.0.0/14"]);
+		expect(config.gatewayTrustNothing).toBe(false);
+	});
+
+	it("honours GATEWAY_TRUSTED_PROXIES_AUTO_MASK for the derived prefix", function _autoMask()
+	{
+		process.env.GATEWAY_TRUSTED_PROXIES = "auto";
+		process.env.POD_IP = "172.20.55.7";
+		process.env.GATEWAY_TRUSTED_PROXIES_AUTO_MASK = "16";
+		const config = _LoadOperatorConfig();
+		expect(config.gatewayTrustedProxies).toEqual(["172.20.0.0/16"]);
+	});
+
+	it("drops `auto` to trust-nothing when POD_IP is missing (stays fail-closed, never trust-all)", function _missingPodIp()
+	{
+		process.env.GATEWAY_TRUSTED_PROXIES = "auto";
+		// POD_IP intentionally absent.
+		const config = _LoadOperatorConfig();
+		expect(config.gatewayTrustedProxies).toEqual([]);
+		expect(config.gatewayTrustNothing).toBe(true);
+	});
+
+	it("drops `auto` to trust-nothing when POD_IP is not a valid IPv4 address", function _invalidPodIp()
+	{
+		process.env.GATEWAY_TRUSTED_PROXIES = "auto";
+		process.env.POD_IP = "fd00::1";
+		const config = _LoadOperatorConfig();
+		expect(config.gatewayTrustNothing).toBe(true);
+	});
+
+	it("keeps explicit CIDRs when `auto` derivation fails (partial fallback, no trust-all)", function _mixedFallback()
+	{
+		process.env.GATEWAY_TRUSTED_PROXIES = "auto, 10.0.0.0/8";
+		// POD_IP absent ⇒ the auto token is dropped, the explicit CIDR remains.
+		const config = _LoadOperatorConfig();
+		expect(config.gatewayTrustedProxies).toEqual(["10.0.0.0/8"]);
+		expect(config.gatewayTrustNothing).toBe(false);
+	});
+
+	it("falls back to the default /14 when the mask override is not a canonical integer", function _badMask()
+	{
+		process.env.GATEWAY_TRUSTED_PROXIES = "auto";
+		process.env.POD_IP = "10.8.3.5";
+		process.env.GATEWAY_TRUSTED_PROXIES_AUTO_MASK = "0xff";
+		const config = _LoadOperatorConfig();
+		expect(config.gatewayTrustedProxies).toEqual(["10.8.0.0/14"]);
+	});
+});

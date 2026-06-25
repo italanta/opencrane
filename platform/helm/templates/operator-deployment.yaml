@@ -35,6 +35,13 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            # -- This pod's own IP (downward API). Used ONLY to expand the opt-in
+            #    `auto` trusted-proxy token into a pod-range CIDR (task_845dd617); the
+            #    operator shares the cluster pod network with the ingress controller.
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
             {{- include "opencrane.observabilityEnv" (dict "ctx" $ "component" "operator") | nindent 12 }}
             - name: WATCH_NAMESPACE
               value: {{ .Values.operator.watchNamespace | quote }}
@@ -74,9 +81,16 @@ spec:
             #    source range). Comma-joined for the operator's fail-closed parser.
             #    EMPTY ⇒ trust nothing (the gateway honours no proxy source); a NetworkPolicy
             #    additionally locks the gateway port to the ingress so this range can't be
-            #    abused by other pods. Set to the ingress controller's pod source range.
+            #    abused by other pods. Set to the ingress controller's pod source range, or the
+            #    opt-in literal `auto` to derive a pod-range CIDR from POD_IP (task_845dd617).
             - name: GATEWAY_TRUSTED_PROXIES
               value: {{ join "," .Values.tenant.gateway.trustedProxies | quote }}
+            {{- with .Values.tenant.gateway.trustedProxiesAutoMask }}
+            # -- Prefix length the `auto` token masks POD_IP to (defaults to /14 in the
+            #    operator when unset). Only consulted when trustedProxies contains `auto`.
+            - name: GATEWAY_TRUSTED_PROXIES_AUTO_MASK
+              value: {{ . | quote }}
+            {{- end }}
             {{- if .Values.gatewayProxy.enabled }}
             # -- Identity-routing gateway proxy, folded in-process (DOMAIN.T4). The operator
             #    runs a WS proxy on GATEWAY_PROXY_PORT; the wildcard Ingress routes the gateway

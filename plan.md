@@ -31,16 +31,15 @@
 ### ▶ Forward roadmap (S-series — execute in order)
 
 **Silo program (S1–S7) — full detail in `silo-multi-tenant-plan.md`.**
-
 - **S1 — Demo-able shared tier + unblock login.** *(silo Phase 0)* trustedProxies auto-derive,
   preflight + `values.schema.json` guards, externalIp auto-derive + post-deploy verify,
   openclaw-schema CI test; **interim manual redirect-URI add so `elewa-be.dev.opencrane.ai/login`
   works**. Absorbs Go-Live → *DNS + ingress verification* (per-org-host path). No deps.
-- **S2 — Enforcement floor: make isolation real.** 🟢 **IN REVIEW (PR → strong-siloes).** Operator
-  emits a per-silo default-deny NetworkPolicy baseline (task_08734d58); Autopilot DV2 enforcement
-  confirmed + documented (task_d6404452). 🟡 `opencrane-system` main-network default-deny **deferred**
-  (needs full plane allow-list + live validation); live `opencrane-dev` Standard-cluster enforcement
-  is a runbook migration. CONN.8 cross-namespace cert + Go-Live GCP smoke remain (live-cluster work).
+- **S2 — Enforcement floor: make isolation real.** *(silo Phase 1)* Enable Dataplane-V2/Cilium +
+  default-deny baseline (cluster-lifecycle/Terraform, **not** Helm); per-silo egress NetworkPolicy.
+  Absorbs Go-Live → *GCP installer smoke* (must now provision DV2 + Workload Identity, which also
+  revives external-dns) and **CONN.8** remaining (cross-namespace wildcard-cert distribution + live
+  ACME e2e — per-silo namespaces each need the cert). Dep: S1.
 - **S3 — Zitadel as PDP system-of-record (control-plane controls Zitadel).** *(silo Phase 2a)*
   `zitadel-client` + per-CT Org/app/roles provisioning + master onboarding (cross-org `admin` grant
   + issued openclaw Tenant), host→CT→client resolution, **transactional** auth mutations, member API

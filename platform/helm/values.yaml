@@ -371,7 +371,15 @@ tenant:
     #    NetworkPolicy independently locks the gateway port to the ingress namespace, so
     #    a wide CIDR here still can't be abused by other pods. A malformed entry crashes
     #    the operator at startup rather than silently shifting the trust boundary.
+    #
+    #    OPT-IN convenience: the single literal entry `[auto]` asks the operator to derive
+    #    a pod-range CIDR from its own POD_IP (downward API), killing the "forgot the CIDR
+    #    ⇒ all pods fail-closed" footgun. This trusts the whole pod range, so it stays
+    #    opt-in and is logged loudly; empty still means trust-nothing.
     trustedProxies: []
+    # -- Prefix length `[auto]` masks POD_IP to (e.g. 14 → /14, the GKE pod range).
+    #    Empty ⇒ operator default (/14). Only consulted when trustedProxies is `[auto]`.
+    trustedProxiesAutoMask: ""
   # -- OpenClaw npm package version installed into each tenant pod. Pinned (not `latest`)
   # so the gateway can't silently roll across breaking changes; bump deliberately. A
   # Tenant CR's `spec.openclawVersion` overrides this per-tenant.

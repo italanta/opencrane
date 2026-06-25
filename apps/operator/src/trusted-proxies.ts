@@ -62,6 +62,54 @@ export function _ParseTrustedProxies(raw: string | string[]): TrustedProxyParseR
   return { cidrs, trustNothing: false };
 }
 
+/** The opt-in sentinel that asks the operator to derive a trusted-proxy CIDR from its own pod IP. */
+export const _AUTO_TRUSTED_PROXY_TOKEN = "auto";
+
+/** Default mask applied to the operator's pod IP when deriving the `auto` CIDR (GKE pod-range /14). */
+export const _DEFAULT_AUTO_TRUSTED_PROXY_MASK = 14;
+
+/**
+ * Derive a trusted-proxy CIDR from the operator's own pod IP (downward API
+ * `status.podIP`) — the convenience path behind the opt-in `auto` sentinel
+ * (task_845dd617). The ingress controller shares the cluster's pod network, so
+ * the operator's pod IP masked to the pod-range prefix is a sane trust source
+ * when no explicit CIDR was configured, killing the "forgot the CIDR ⇒ every pod
+ * fails closed" footgun.
+ *
+ * This is **opt-in only** and never the default: an empty `GATEWAY_TRUSTED_PROXIES`
+ * still resolves to trust-nothing (CONN.9). Trusting the pod range widens the
+ * boundary to any pod on it, so the caller must ask for it explicitly and log loudly.
+ *
+ * IPv4 only — GKE/most CNIs hand pods IPv4. A non-IPv4 / malformed pod IP or an
+ * out-of-range mask returns `null` so the caller falls back to fail-closed rather
+ * than emitting a bogus entry.
+ *
+ * @param podIp - The operator pod's own IPv4 address (downward API), or empty/unset.
+ * @param maskBits - The prefix length to mask the pod IP to (0–32).
+ * @returns The derived `network/mask` CIDR, or `null` when it cannot be derived.
+ */
+export function _DeriveTrustedProxyCidr(podIp: string, maskBits: number): string | null
+{
+  // 1. Reject anything that isn't a canonical IPv4 literal or an in-range mask —
+  //    derivation must fail to null (→ caller stays fail-closed), never guess.
+  const trimmed = podIp.trim();
+  if (!_isValidIpv4(trimmed) || !Number.isInteger(maskBits) || maskBits < 0 || maskBits > _IPV4_MAX_PREFIX)
+  {
+    return null;
+  }
+
+  // 2. Pack the four octets into a 32-bit value, mask off the host bits, and
+  //    unpack the network address back to dotted-quad. `>>> 0` keeps the shift
+  //    unsigned so the high octet never goes negative.
+  const octets = trimmed.split(".").map(Number);
+  const ipInt = ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
+  const maskInt = maskBits === 0 ? 0 : (0xffffffff << (_IPV4_MAX_PREFIX - maskBits)) >>> 0;
+  const networkInt = (ipInt & maskInt) >>> 0;
+  const network = [(networkInt >>> 24) & 0xff, (networkInt >>> 16) & 0xff, (networkInt >>> 8) & 0xff, networkInt & 0xff].join(".");
+
+  return `${network}/${maskBits}`;
+}
+
 /**
  * Validate a single trust entry as either a bare IP address or a CIDR block.
  *

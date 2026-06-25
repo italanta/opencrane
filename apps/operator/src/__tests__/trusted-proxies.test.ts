@@ -1,6 +1,47 @@
 import { describe, expect, it } from "vitest";
 
-import { _ParseTrustedProxies } from "../trusted-proxies.js";
+import { _ParseTrustedProxies, _DeriveTrustedProxyCidr } from "../trusted-proxies.js";
+
+describe("_DeriveTrustedProxyCidr — pod-IP `auto` trusted-proxy derivation (task_845dd617)", function _deriveSuite()
+{
+  it("masks a GKE pod IP to the /14 pod range", function _gke()
+  {
+    expect(_DeriveTrustedProxyCidr("10.8.3.5", 14)).toBe("10.8.0.0/14");
+  });
+
+  it("derives a /16 network address from a pod IP", function _slash16()
+  {
+    expect(_DeriveTrustedProxyCidr("172.20.55.7", 16)).toBe("172.20.0.0/16");
+  });
+
+  it("handles /0 (whole space) and /32 (single host) bounds", function _bounds()
+  {
+    expect(_DeriveTrustedProxyCidr("10.8.3.5", 0)).toBe("0.0.0.0/0");
+    expect(_DeriveTrustedProxyCidr("10.8.3.5", 32)).toBe("10.8.3.5/32");
+  });
+
+  it("returns null (→ caller stays fail-closed) for missing/invalid/non-IPv4 input", function _failClosed()
+  {
+    expect(_DeriveTrustedProxyCidr("", 14)).toBeNull();
+    expect(_DeriveTrustedProxyCidr("not-an-ip", 14)).toBeNull();
+    expect(_DeriveTrustedProxyCidr("256.0.0.1", 14)).toBeNull();
+    expect(_DeriveTrustedProxyCidr("fd00::1", 14)).toBeNull();
+  });
+
+  it("returns null for an out-of-range mask", function _badMask()
+  {
+    expect(_DeriveTrustedProxyCidr("10.8.3.5", -1)).toBeNull();
+    expect(_DeriveTrustedProxyCidr("10.8.3.5", 33)).toBeNull();
+  });
+
+  it("re-parses the derived CIDR as a valid allowlist entry", function _roundTrip()
+  {
+    const derived = _DeriveTrustedProxyCidr("10.8.3.5", 14);
+    const result = _ParseTrustedProxies(derived ?? "");
+    expect(result.trustNothing).toBe(false);
+    expect(result.cidrs).toEqual(["10.8.0.0/14"]);
+  });
+});
 
 describe("_ParseTrustedProxies — fail-closed trusted-proxy allowlist (OC-2 / CONN.4)", function _suite()
 {

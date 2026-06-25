@@ -184,6 +184,14 @@ DNS_WRITER_GSA="${OPENCRANE_DNS_WRITER_GSA:-${DNS_WRITER_GSA:-}}"
 # OPENCRANE_PREFLIGHT=1. It is advisory unless run — the install itself does not auto-run it.
 PREFLIGHT="${OPENCRANE_PREFLIGHT:-0}"
 
+# --auto-ingress-ip derives ingress.externalIp from the ingress-nginx LoadBalancer after
+# it is installed (so per-org *.<domain> A records resolve without hand-copying the IP).
+# Opt-in; an explicit ingress.externalIp --set always wins. Also via OPENCRANE_AUTO_INGRESS_IP=1.
+AUTO_INGRESS_IP="${OPENCRANE_AUTO_INGRESS_IP:-0}"
+# --verify runs an advisory post-deploy check (pods Running, DNSEndpoints present, external-dns
+# error-free, control-plane host resolves). Never fails the install. Also via OPENCRANE_VERIFY=1.
+VERIFY="${OPENCRANE_VERIFY:-0}"
+
 DB_CLUSTER="opencrane-db"
 DB_SECRET="opencrane-db"
 DB_USER="opencrane"
@@ -212,6 +220,8 @@ while [[ $# -gt 0 ]]; do
     --oidc-session-secret) OIDC_SESSION_SECRET="$2"; shift 2 ;;
     --platform-operator-seed-email) PLATFORM_OPERATOR_SEED_EMAIL="$2"; shift 2 ;;
     --preflight)        PREFLIGHT="1"; shift ;;
+    --auto-ingress-ip)  AUTO_INGRESS_IP="1"; shift ;;
+    --verify)           VERIFY="1"; shift ;;
     --no-ingress-nginx) INSTALL_INGRESS_NGINX="0"; shift ;;
     --no-external-dns)  INSTALL_EXTERNAL_DNS="0"; shift ;;
     --dns-writer-gsa)   DNS_WRITER_GSA="$2"; shift 2 ;;
@@ -314,6 +324,13 @@ _run_preflight() {
       # --dns-writer-gsa is required here too (the install fails closed without it).
       if [[ -z "$DNS_WRITER_GSA" ]]; then
         PF_FAILS+=("Workload-Identity DNS writes need the shared DNS-writer GSA. Pass --dns-writer-gsa <gsa>@<project>.iam.gserviceaccount.com (Terraform output dns_writer_service_account_email) so the external-dns + cert-manager KSAs can be annotated, or pass --dns01-credentials for an external zone.")
+      fi
+      # Workload Identity ENABLED on the cluster — a roles/dns.admin binding is useless if
+      # the cluster can't impersonate the GSA. GKE runs the gke-metadata-server DaemonSet in
+      # kube-system iff Workload Identity is enabled; its absence is the dead-external-dns
+      # root cause (records never written, no auth error — the pod just can't get a token).
+      if ! kubectl get ds -n kube-system gke-metadata-server -o name >/dev/null 2>&1; then
+        PF_FAILS+=("Workload Identity is NOT enabled on this cluster (no gke-metadata-server DaemonSet in kube-system), so external-dns + cert-manager DNS-01 cannot impersonate the DNS-writer GSA — records silently never get written. Enable it: gcloud container clusters update <cluster> --workload-pool=<project>.svc.id.goog (and node pools --workload-metadata=GKE_METADATA), or pass --dns01-credentials for an external zone.")
       fi
       local _proj="${DNS01_PROJECT:-$(gcloud config get-value project 2>/dev/null || true)}"
       if [[ -z "$_proj" || "$_proj" == "(unset)" ]]; then
@@ -558,6 +575,34 @@ _install_ingress_nginx() {
 }
 
 _install_ingress_nginx
+
+# 2.30. Auto-derive ingress.externalIp from the ingress-nginx LoadBalancer (opt-in,
+# --auto-ingress-ip). The operator's per-org DNS side effect needs the cluster ingress IP;
+# rather than hand-copy it from `kubectl get svc`, derive it here once the controller's LB is
+# assigned and feed it into the chart as a --set. An explicit ingress.externalIp --set wins.
+_resolve_ingress_ip() {
+  [[ "$AUTO_INGRESS_IP" == "1" ]] || return 0
+  if printf '%s\n' "${EXTRA_SET[@]}" | grep -q "ingress.externalIp="; then
+    log "Auto-ingress-ip: ingress.externalIp set explicitly — skipping derivation."
+    return 0
+  fi
+  log "Auto-ingress-ip: waiting for the ingress-nginx LoadBalancer address…"
+  local sel="app.kubernetes.io/name=ingress-nginx,app.kubernetes.io/component=controller"
+  local ip="" tries=0
+  while (( tries < 60 )); do
+    ip="$(kubectl get svc -n "$INGRESS_NGINX_NAMESPACE" -l "$sel" -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}' 2>/dev/null)"
+    [[ -z "$ip" ]] && ip="$(kubectl get svc -n "$INGRESS_NGINX_NAMESPACE" -l "$sel" -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}' 2>/dev/null)"
+    [[ -n "$ip" ]] && break
+    sleep 5; tries=$((tries+1))
+  done
+  if [[ -z "$ip" ]]; then
+    warn "Auto-ingress-ip: no LoadBalancer address after ~5m; leaving ingress.externalIp unset (per-org DNS records stay unwritten until it is set)."
+    return 0
+  fi
+  log "Auto-ingress-ip: derived ingress.externalIp=$ip from the ingress-nginx LB."
+  EXTRA_SET+=(--set "ingress.externalIp=$ip")
+}
+_resolve_ingress_ip
 
 # 2.35. external-dns (a cluster singleton). The operator declares per-org records as
 # namespaced DNSEndpoint CRs; the external-dns controller (run with --source=crd)
@@ -865,6 +910,55 @@ helm "${helm_args[@]}"
 # belt-and-suspenders guard for pod (re)creation between deploys. Idempotent.
 kubectl rollout status "deployment/${RELEASE}-operator" -n "$NAMESPACE" --timeout="${TIMEOUT}s"
 kubectl rollout status "deployment/${RELEASE}-control-plane" -n "$NAMESPACE" --timeout="${TIMEOUT}s"
+
+# 5. Post-deploy verify (opt-in, --verify). Advisory only — surfaces the failure modes that
+# leave a "green" install unreachable (pods not Running, no DNSEndpoints, external-dns auth
+# errors, host not resolving) so they are caught here instead of in a confused browser session.
+_post_deploy_verify() {
+  [[ "$VERIFY" == "1" ]] || return 0
+  log "Post-deploy verify (advisory — does not fail the install):"
+
+  # 1. Core pods Running — a CrashLoop/ImagePullBackOff that helm --wait didn't catch.
+  local notready
+  notready="$(kubectl get pods -n "$NAMESPACE" --field-selector=status.phase!=Running,status.phase!=Succeeded -o name 2>/dev/null | grep -c . || true)"
+  if [[ "$notready" == "0" ]]; then
+    log "  ✓ all pods Running/Succeeded in $NAMESPACE"
+  else
+    warn "  ✗ $notready pod(s) not Running in $NAMESPACE — kubectl get pods -n $NAMESPACE"
+  fi
+
+  # 2. DNSEndpoint CRs — the operator's per-org record side effect (only meaningful when the
+  #    external-dns CRD source is installed). Absent CRD ⇒ per-org hosts never get A records.
+  if kubectl get crd dnsendpoints.externaldns.k8s.io >/dev/null 2>&1; then
+    local des
+    des="$(kubectl get dnsendpoint -A -o name 2>/dev/null | grep -c . || true)"
+    log "  • DNSEndpoint CRs present: $des"
+  else
+    warn "  • DNSEndpoint CRD absent (external-dns --source=crd not installed) — per-org A records won't be written."
+  fi
+
+  # 3. external-dns recent auth/permission errors — the dead-external-dns failure mode (the
+  #    controller runs but can't write the zone, so records silently never appear).
+  if kubectl get deploy -A -l app.kubernetes.io/name=external-dns -o name 2>/dev/null | grep -q .; then
+    if kubectl logs -A -l app.kubernetes.io/name=external-dns --tail=200 2>/dev/null | grep -qiE "permission|forbidden|invalid_grant|denied|failed to (apply|submit)"; then
+      warn "  ✗ external-dns logs show recent errors — kubectl logs -A -l app.kubernetes.io/name=external-dns --tail=200"
+    else
+      log "  ✓ external-dns logs show no recent auth errors"
+    fi
+  fi
+
+  # 4. Control-plane host resolves to the ingress — the end of the chain a user hits first.
+  if [[ -n "$BASE_DOMAIN" ]] && command -v dig >/dev/null 2>&1; then
+    local host="platform.$BASE_DOMAIN" resolved
+    resolved="$(dig +short "$host" 2>/dev/null | tail -1)"
+    if [[ -n "$resolved" ]]; then
+      log "  ✓ $host resolves to $resolved"
+    else
+      warn "  ✗ $host does not resolve yet (DNS propagation lag or a missing record)."
+    fi
+  fi
+}
+_post_deploy_verify
 
 log "Done. OpenCrane is installed in namespace '$NAMESPACE'."
 [[ -n "$BASE_DOMAIN" ]] && log "Point your DNS at the ingress, then visit https://platform.${BASE_DOMAIN}"

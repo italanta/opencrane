@@ -20,9 +20,10 @@
 #       [ANY k8s-deploy.sh flag, e.g. --cert-manager --acme-email … --dns01-provider clouddns]
 #
 # --base-domain is required (the platform wildcard base every org is served under).
-# --ingress-ip / --dns-managed-zone wire the operator's per-org DNS side effect; omit
-# them on-prem or until the LoadBalancer IP is assigned (the operator then skips the DNS
-# write and only applies the per-org Certificate).
+# --ingress-ip / --dns-managed-zone wire the operator's per-org DNS side effect. When
+# --ingress-ip is OMITTED the core auto-derives it from the ingress-nginx LoadBalancer
+# (--auto-ingress-ip); on-prem with no LB it stays unset and the operator skips the DNS
+# write (per-org Certificate still applied). Add --verify for an advisory post-deploy check.
 #
 # Prereqs: kubectl (pointed at the target cluster) and helm.
 # =============================================================================
@@ -62,8 +63,15 @@ PROFILE_SET=(
   --set "billing.enabled=true"
   --set "ingress.tls.enabled=true"
 )
-[[ -n "$INGRESS_IP" ]]       && PROFILE_SET+=(--set "ingress.externalIp=$INGRESS_IP")
 [[ -n "$DNS_MANAGED_ZONE" ]] && PROFILE_SET+=(--set "ingress.dnsManagedZone=$DNS_MANAGED_ZONE")
+# When --ingress-ip is given, pin it; otherwise ask the core to auto-derive it from the
+# ingress-nginx LoadBalancer once installed (so per-org *.<org>.<base> records resolve
+# without hand-copying the IP). An on-prem install with no LB simply leaves it unset.
+if [[ -n "$INGRESS_IP" ]]; then
+  PROFILE_SET+=(--set "ingress.externalIp=$INGRESS_IP")
+else
+  PROFILE_SET+=(--auto-ingress-ip)
+fi
 
 echo -e "\033[0;32m[multi-tenant]\033[0m Profile: multi-tenant platform on $BASE_DOMAIN (self-service orgs + billing ON)"
 exec "$CORE" "${PROFILE_SET[@]}" "${PASSTHROUGH[@]}"
