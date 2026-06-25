@@ -14,12 +14,19 @@ queued task. Keep it updated as phases land.
 ## 1. The model (vocabulary — use these terms everywhere)
 
 - **ClusterTenant = the org (the customer).** The isolation unit. Each is a **silo /
-  virtual network / subnet**: its own namespace, its own operator, its own data + runtime
-  planes. Strictly isolated from every other silo.
-- **`openclaw` Tenant = a user/employee INSIDE a ClusterTenant.** Not an org.
+  virtual network / subnet**: its own namespace, its own **operator-API instance backed by
+  its own DB**, its own data + runtime planes. Strictly isolated from every other silo. The
+  silo-local API serves that silo's users (login introspection, the OpenClaw connection
+  broker, gateway routing, workspace CRUD) from silo-local data — so a user only ever
+  resolves against **their own silo's tenants**, never the fleet's.
+- **`openclaw` Tenant = a user/employee INSIDE a ClusterTenant.** Not an org. Its row lives
+  in that silo's own DB, never in a shared table.
 - **control-plane = the fleet super-admin plane.** Lives in the **main network**
   (`opencrane-system`). Oversees the whole ClusterTenant fleet. The ONLY shared plane and
-  the ONLY identity allowed to cross into a silo.
+  the ONLY identity allowed to cross into a silo. Holds only **fleet metadata** — the
+  ClusterTenant registry, ownership, and grants — NOT a silo's per-user `openclaw` Tenant
+  rows. (Today it is a single shared instance holding everything; the silo model splits the
+  per-user API + data down into each silo — see §3.1.)
 - **Silos feed the main network.** Default-deny at every silo edge. Egress allowed only
   toward the control-plane; ingress into a silo allowed only from the control-plane/operator
   super-admin identity. East-west isolation. (North-south edge — org host → ingress →
@@ -28,20 +35,22 @@ queued task. Keep it updated as phases land.
 
 ```
             ┌──────────────────── MAIN NETWORK (opencrane-system) ────────────────────┐
-            │  control-plane (super-admin identity)  ·  fleet metadata DB              │
+            │  fleet control-plane (super-admin / PDP)  ·  ClusterTenant + grant registry│
             └───────────▲───────────────────▲───────────────────▲─────────────────────┘
        identity-checked │   identity-checked │   identity-checked │   (super-admin is the
        (owner-scoped)   │                    │                    │    ONLY cross-silo principal)
         ┌───────────────┴──────┐  ┌──────────┴───────────┐  ┌─────┴────────────────┐
         │ SILO: opencrane-acme │  │ SILO: opencrane-bcorp │  │ SILO: opencrane-…    │
-        │  operator(acme)      │  │  operator(bcorp)      │  │  operator(…)         │
+        │  operator-API(acme)  │  │  operator-API(bcorp)  │  │  operator-API(…)     │
+        │   + reconciler       │  │   + reconciler        │  │   + reconciler       │
         │  Obot · skills ·     │  │  Obot · skills ·      │  │  …                   │
         │  litellm · cognee ·  │  │  litellm · cognee ·   │  │                      │
-        │  tenant DB           │  │  tenant DB            │  │                      │
+        │  silo DB (own tenants)│ │  silo DB (own tenants)│  │                      │
         │  openclaw pods (users)│ │  openclaw pods (users)│  │                      │
         └──────────────────────┘  └───────────────────────┘  └──────────────────────┘
                  default-deny edge        default-deny edge        default-deny edge
         NO silo-to-silo traffic, ever. Only the super-admin identity crosses inward.
+        Each silo's API resolves users against its OWN DB → no cross-silo ambiguity.
 ```
 
 ---
@@ -101,14 +110,40 @@ first-class.
 
 | Dimension | Intended (silo model) | As-built |
 |---|---|---|
+| User-facing API + DB | per silo (silo-local DB holds only that silo's tenants) | **one shared control-plane + one DB** holds every silo's `openclaw` tenants |
 | Operator | one per ClusterTenant, owner-scoped | **one shared** operator in `opencrane-system` reconciles all |
 | Planes (Obot/skills/litellm/cognee/DB) | per silo | **shared singletons** in `opencrane-system` |
-| Per-CT provisioning | subnet + operator + planes | only namespace + quota + DNS + openclaw pods |
+| Per-CT provisioning | subnet + operator-API + DB + planes | only namespace + quota + DNS + openclaw pods |
 | Isolation tier in use | dedicated / virtual-net | all 3 live CTs run `isolationTier=shared` (weakest) |
 | Network enforcement | identity-based, default-deny | **NONE** — no Dataplane V2 / Calico; every NetworkPolicy is inert |
 | Egress | default-deny per silo | unrestricted (egress baseline sits in the wrong namespace) |
 
-Net: there is currently **no network-level isolation between ClusterTenants at all.**
+Net: there is currently **no network-level isolation between ClusterTenants at all**, and
+**no data-level separation either** — one DB holds every silo's tenants behind one API.
+
+### 3.1 The shared-DB resolution-ambiguity class (retired by the silo model)
+
+Because one DB holds every silo's `openclaw` Tenant rows and every per-user resolution path
+keys on the IdP-verified email alone, a human who owns a workspace in **more than one**
+ClusterTenant matches multiple rows. Each path fail-closes on `>1` (correctly — it must never
+pick an arbitrary tenant), so a multi-silo owner resolves to *nothing* everywhere: the
+operator UI shows "No tenant yet", the WeOwnAI frontend shows "No workspace … maps to more
+than one", and scoped mutations + gateway routing 403. There are **four** such paths in the
+shared control-plane (`/auth/me`, the ClusterTenant mutation scope guard, `/auth/pod-token`
+[+`/pod-token/cut`], `/auth/gateway-resolve`).
+
+This is a **shared-topology artifact, not a domain rule.** Under the silo model each silo has
+its own API instance + its own DB containing **only that silo's tenants**, so a user reaching
+`<org>.<base>` resolves against one silo's data and matches exactly one row — the ambiguity
+cannot arise. The fleet control-plane keeps a fleet view (ClusterTenant ownership), but it is
+the super-admin/PDP, not the per-user resolver.
+
+**Interim shim (shared tier only — superseded by Phase 3):** branch `fix/cluster-tenant-resolver`
+(PR #68) scopes all four paths to the silo derived from the request host (`<clusterTenant>.<base>`
+first label) so multi-silo owners resolve on the current shared topology *today*. Once each
+silo runs its own API + DB this host-scoping is redundant (the silo DB is already single-silo),
+though it stays harmless — a no-op filter against a single-silo table. Treat it as a stopgap that
+buys correctness until the per-silo split lands, not as the destination.
 
 ---
 
@@ -153,14 +188,23 @@ loop of §2. Depends on Phase 1 substrate.
   once the substrate is chosen (SPIRE/Cilium identity wiring; operator provisions identities +
   identity policies per silo; super-admin identity issuance/rotation/audit).
 
-### Phase 3 — Silo architecture: per-CT operator + per-CT planes
-The virtual-network model proper.
+### Phase 3 — Silo architecture: per-CT operator-API + per-CT DB + per-CT planes
+The virtual-network model proper. **Each ClusterTenant runs its own operator-API instance
+backed by its own DB**, plus its own runtime planes — the silo becomes self-contained for
+everything its users touch; only the fleet super-admin plane stays shared.
 - `task_5164276f` — **ADR: ClusterTenant-as-virtual-network strict isolation.** Decides the
   substrate (managed Dataplane V2 vs self-managed Cilium vs mesh vs vcluster/Kamaji), which
   planes move into the silo vs stay in the main network, the per-CT-operator design, and the
-  cost/footprint model per tier. Then split implementation tasks (per-CT operator;
-  templating planes into the silo; reparent under `ClusterTenantProvisioner` /
+  cost/footprint model per tier. Then split implementation tasks (per-CT operator-API +
+  DB; templating planes into the silo; reparent under `ClusterTenantProvisioner` /
   `multiInstance`-per-CT).
+- **Per-CT API + DB split.** Stand up a silo-local API instance bound to a silo-local DB
+  holding only that silo's `openclaw` tenants; route `<org>.<base>` to it; reduce the fleet
+  control-plane to the super-admin/PDP over the ClusterTenant + grant registry. This
+  **dissolves the §3.1 resolution-ambiguity class by construction** (single-silo data ⇒
+  unambiguous email→tenant) and retires the host-scoping shim (PR #68). Open sub-questions for
+  the ADR: how silo DBs are provisioned/migrated/backed-up at fleet scale; whether the fleet
+  plane projects ownership down or the silo reads up; the super-admin's read path into a silo.
 
 ### Phase 4 — Tiers & cost
 - Map to `ClusterTenant.spec.isolationTier`: `shared` → `dedicatedNodes` → `dedicatedCluster`
