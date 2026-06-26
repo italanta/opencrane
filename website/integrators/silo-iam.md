@@ -7,7 +7,8 @@ designed retrieval scope precedence.
 > See also: [Authentication](/security/identity) (OIDC flow, session model, credential types),
 > [Retrieval & memory (Cognee)](/integrators/retrieval-memory) (write-through ingest and the dataset model),
 > [Control who can access what](/guide/permissions) (admin guide to grants and policies),
-> [MCP gateway (Obot)](/integrators/mcp-gateway) (how entitlements reach the agent tool surface).
+> [MCP gateway (Obot)](/integrators/mcp-gateway) (how entitlements reach the agent tool surface),
+> [ClusterTenant members](/operators/cluster-tenant-members) (who may administer the org — the OrgMembership registry the org-manager gate reads).
 
 ---
 

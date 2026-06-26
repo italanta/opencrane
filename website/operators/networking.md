@@ -184,9 +184,9 @@ This **replaces the retired `opencrane-tenant-default` policy**, which sat in th
 This baseline is an **L3/L4** floor — a namespace-scoped, port-keyed allow-list. It only takes effect on a `NetworkPolicy`-enforcing CNI: GKE Dataplane V2 (and Autopilot) enforce it inherently; Calico/Cilium do elsewhere. On a CNI that does not enforce `NetworkPolicy`, the floor is inert.
 :::
 
-### Identity-aware L7 isolation is coming (Linkerd)
+### Linkerd identity substrate (S5, gated off by default)
 
-The baseline above is keyed on namespaces and ports, not on **workload identity**, and it cannot express L7 (per-route) authorization. The next layer of the silo model adds a [Linkerd](https://linkerd.io) service mesh on top of this floor: the operator will annotate each silo namespace `linkerd.io/inject: enabled` (giving every silo workload an mTLS identity bound to its service account) and emit a Linkerd `Server` + `AuthorizationPolicy` per silo expressing the same default-deny + allow-super-admin posture at the request layer. The rollout is **additive** — the `NetworkPolicy` floor stays in place as defence-in-depth, and a silo gains identity/L7 isolation as it is meshed, never going below the floor described here. See [ADR 0001 — ClusterTenant-as-virtual-network strict isolation](https://github.com/italanta/opencrane/blob/main/docs/adr/0001-cluster-tenant-virtual-network-isolation.md) for the substrate decision and why Linkerd (portable, no cloud lock-in) was chosen.
+The baseline above is keyed on namespaces and ports, not on **workload identity**, and it cannot express L7 (per-route) authorisation. The Linkerd identity substrate adds a second, additive isolation layer on top of this floor: when `LINKERD_MESH_ENABLED=true`, the operator annotates each silo namespace `linkerd.io/inject: enabled` (giving every silo workload an mTLS identity bound to its ServiceAccount) and emits a Linkerd `Server` + `MeshTLSAuthentication` + `AuthorizationPolicy` per silo expressing the same default-deny + allow-intra-silo + allow-super-admin posture at the identity layer. The rollout is **additive** — the `NetworkPolicy` floor stays in place as defence-in-depth; enabling the Linkerd layer never relaxes it. The feature is off by default and fails closed if the Linkerd CRDs are absent. See [Linkerd identity substrate](/operators/linkerd-identity) for the full mechanism, the env var, and the fail-closed behaviour. See [ADR 0001 — ClusterTenant-as-virtual-network strict isolation](https://github.com/italanta/opencrane/blob/main/docs/adr/0001-cluster-tenant-virtual-network-isolation.md) for the substrate decision and why Linkerd (portable, no cloud lock-in) was chosen.
 
 For fine-grained egress FQDN filtering (e.g. allowing only `api.openai.com`), an operator can additionally bind an `AccessPolicy` with `egressRules`, or apply a `CiliumNetworkPolicy` with `spec.domains.allow` on a Cilium-enabled cluster.
 
@@ -200,14 +200,16 @@ The following gaps are honest assessments verified against the live codebase. Th
 
 **Plane ingress rules use tenant podSelectors without a namespaceSelector.** The rules admitting tenant pods to the control plane and plane services select by `app.kubernetes.io/component=tenant` without scoping to the correct namespace. In a multi-instance cluster, a tenant pod from a different instance's namespace could match. This is a multi-instance hygiene gap; the fix is to also add a `namespaceSelector` that constrains to the instance's own org namespaces.
 
-**Identity-aware L7 enforcement is not yet live.** Until the Linkerd layer lands, cross-silo isolation rests on the L3/L4 baseline alone — robust against routing position but not yet expressing per-workload identity or per-route authorization. The super-admin namespace is trusted as a whole at L3/L4; L7 will narrow that to the super-admin *identity*.
+**Identity-aware L7 enforcement is gated off by default.** Until `LINKERD_MESH_ENABLED=true` is set and Linkerd is installed, cross-silo isolation rests on the L3/L4 baseline alone — robust against routing position but not yet expressing per-workload identity or per-route authorisation. The super-admin namespace is trusted as a whole at L3/L4; the Linkerd layer narrows that to the super-admin *identity*. See [Linkerd identity substrate](/operators/linkerd-identity) for how to enable it.
 
 ---
 
 ## See also
 
+- [Linkerd identity substrate](/operators/linkerd-identity) — the S5 mTLS-identity layer that sits additively on top of this L3/4 baseline; includes the env var, fail-closed behaviour, and what the operator emits per silo
+- [ClusterTenant members](/operators/cluster-tenant-members) — managing who can administrate an org (Owner/Admin/Member roles) and the last-owner guardrail
 - [Identity & connection auth](/security/identity) — credential types, OIDC session, projected-identity tokens, and the identity-routing proxy flow
 - [Connection security](/security/connection-security) — the full CONN.9/CONN.10 threat model, the trusted-proxy auth decision record, and the transport hardening posture
 - [DNS configuration](/operators/dns-config) — external-dns setup, cert-manager issuers, and the zone-write identity model
 - [Hosting & deployment](/operators/hosting) — ingress class, TLS cert modes, cloud hosting adapters
-- [ADR 0001 — ClusterTenant-as-virtual-network strict isolation](https://github.com/italanta/opencrane/blob/main/docs/adr/0001-cluster-tenant-virtual-network-isolation.md) — the substrate decision behind the per-silo baseline and the coming Linkerd L7 layer
+- [ADR 0001 — ClusterTenant-as-virtual-network strict isolation](https://github.com/italanta/opencrane/blob/main/docs/adr/0001-cluster-tenant-virtual-network-isolation.md) — the substrate decision behind the per-silo baseline and the Linkerd identity layer

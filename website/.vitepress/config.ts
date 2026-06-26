@@ -107,6 +107,8 @@ export default defineConfig({
           { text: 'Hosting & deployment', link: '/operators/hosting' },
           { text: 'DNS configuration', link: '/operators/dns-config' },
           { text: 'Networking & isolation', link: '/operators/networking' },
+          { text: 'Linkerd identity substrate', link: '/operators/linkerd-identity' },
+          { text: 'ClusterTenant members', link: '/operators/cluster-tenant-members' },
           { text: 'Identity & connection auth', link: '/security/identity' },
           { text: 'Connection security', link: '/security/connection-security' },
           { text: 'Zitadel key rotation', link: '/security/zitadel-key-rotation' },
