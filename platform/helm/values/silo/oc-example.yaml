@@ -38,14 +38,9 @@ operator:
   # Scope the watch to this silo's namespace only.
   watchNamespace: oc-example
 
-# -- Per-CT tenant DB. The silo control-plane's DATABASE_URL is auto-wired to the
-#    release-prefixed CNPG `-rw` Service + its bootstrap-creds Secret (`uri` key).
-#    Set tenantDatabase.cnpg.enabled=false + existingSecret to BYO an external per-CT DB.
-tenantDatabase:
-  cnpg:
-    enabled: true
-    instances: 1
-    database: opencrane
+# -- Per-CT tenant DB: deploy-silo.sh provisions a dedicated CNPG cluster in THIS silo's
+#    namespace (one Postgres per silo, serving its control-plane + planes) and wires the
+#    control-plane to it via controlPlane.database.existingSecret. Nothing to set here.
 
 ingress:
   domain: example.opencrane.local

@@ -167,6 +167,13 @@ INGRESS_NGINX_NAMESPACE="ingress-nginx"
 # bundled in acme/clouddns mode, which is where the shared zone + WI binding are set up.
 INSTALL_EXTERNAL_DNS="${OPENCRANE_INSTALL_EXTERNAL_DNS:-1}"
 EXTERNAL_DNS_NAMESPACE="external-dns"
+# The CloudNativePG operator is a CLUSTER-WIDE singleton (one deployment watches every
+# namespace). The central install brings it up once; a per-silo install (deploy-silo.sh) must
+# NOT re-install it — a second cluster-wide operator would fight the first over the same CRs.
+# `--no-db-operator` (or OPENCRANE_INSTALL_DB_OPERATOR=0) skips the operator install while STILL
+# applying this release's own per-namespace CNPG `Cluster` CR + secrets (reconciled by the
+# already-present cluster-wide operator).
+INSTALL_DB_OPERATOR="${OPENCRANE_INSTALL_DB_OPERATOR:-1}"
 # The shared DNS-writer Google service account (Terraform `dns` module output
 # dns_writer_service_account_email) external-dns + the cert-manager DNS-01 solver impersonate
 # via Workload Identity. On GKE the controller's KSA must carry the annotation
@@ -234,6 +241,7 @@ while [[ $# -gt 0 ]]; do
     --verify)           VERIFY="1"; shift ;;
     --no-ingress-nginx) INSTALL_INGRESS_NGINX="0"; shift ;;
     --no-external-dns)  INSTALL_EXTERNAL_DNS="0"; shift ;;
+    --no-db-operator)   INSTALL_DB_OPERATOR="0"; shift ;;
     --dns-writer-gsa)   DNS_WRITER_GSA="$2"; shift 2 ;;
     --cert-manager)  CERT_MANAGER="on"; shift ;;
     --acme-email)    ACME_EMAIL="$2"; shift 2 ;;
@@ -466,11 +474,15 @@ if kubectl get cluster "$DB_CLUSTER" -n "$NAMESPACE" >/dev/null 2>&1; then
   fi
 fi
 
-log "Installing CloudNativePG operator…"
-helm repo add cnpg https://cloudnative-pg.github.io/charts --force-update >/dev/null
-helm upgrade --install cnpg cnpg/cloudnative-pg \
-  --namespace "$NAMESPACE" --create-namespace --wait \
-  --set-string monitoring.podMonitor.enabled=false
+if [[ "$INSTALL_DB_OPERATOR" == "1" ]]; then
+  log "Installing CloudNativePG operator…"
+  helm repo add cnpg https://cloudnative-pg.github.io/charts --force-update >/dev/null
+  helm upgrade --install cnpg cnpg/cloudnative-pg \
+    --namespace "$NAMESPACE" --create-namespace --wait \
+    --set-string monitoring.podMonitor.enabled=false
+else
+  log "CloudNativePG operator: install skipped (--no-db-operator) — ASSUMING a cluster-wide operator is already running (installed by the central release). This release's per-namespace Cluster CR is applied and only reconciles if that operator exists; deploy-silo.sh preflights for it."
+fi
 
 log "Creating database credentials…"
 kubectl create secret generic "${DB_CLUSTER}-creds" -n "$NAMESPACE" \
