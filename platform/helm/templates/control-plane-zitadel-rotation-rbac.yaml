@@ -1,9 +1,10 @@
 {{- /*
   Superadmin Zitadel SA-key rotation RBAC (S4 key-rotation feature).
 
-  When the control-plane needs to rotate its own Zitadel service-account key
-  in-place (via the superadmin API), it must be able to `get` the current key
-  from the Secret and `patch` it with the newly issued one.
+  When the control-plane rotates its own Zitadel service-account key in-place
+  (via the superadmin API), it `patch`es the Secret with the newly issued key
+  after validating it. (The current key is read from env at boot, not from the
+  k8s API, so no `get` is needed — least privilege.)
 
   Rendered ONLY when:
     - clusterTenantManager.enabled is true  (the feature lives in the multi-tenant path)
@@ -23,12 +24,13 @@ metadata:
   labels:
     {{- include "opencrane.labels" . | nindent 4 }}
 rules:
-  # Superadmin key-rotation: the control-plane reads the current SA-key JSON and
-  # patches it with the newly issued key after a successful Zitadel rotation call.
+  # Superadmin key-rotation: the control-plane PATCHES the SA-key Secret with the
+  # newly issued key after validating it (the in-use key is read from env at boot,
+  # not via the k8s API, so `get` is intentionally NOT granted — least privilege).
   # Locked to the single named Secret that carries the SA key — never all secrets.
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["get", "patch"]
+    verbs: ["patch"]
     resourceNames:
       - {{ .Values.controlPlane.zitadel.existingSecret | quote }}
 ---

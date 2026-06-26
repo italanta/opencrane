@@ -27,6 +27,7 @@ import { Command } from "commander";
 import { ___ShutdownTelemetry } from "@opencrane/observability";
 
 import { type CliConfig, _ResolveConfig } from "./config.js";
+import { _RegisterAdmin } from "./commands/admin.js";
 import { _RegisterAudit } from "./commands/audit.js";
 import { _RegisterAuth } from "./commands/auth.js";
 import { _RegisterAwareness } from "./commands/awareness.js";
@@ -75,6 +76,7 @@ function _getConfig(): CliConfig
 }
 
 // Register all command groups against the root program.
+_RegisterAdmin(program, _getConfig);
 _RegisterTenants(program, _getConfig);
 _RegisterClusterTenants(program, _getConfig);
 _RegisterPolicies(program, _getConfig);
