@@ -1,0 +1,396 @@
+{{- /*
+  Default-deny baseline NetworkPolicy for the shared platform namespace
+  (opencrane-system / the release namespace).
+
+  CONTEXT
+  -------
+  S2 shipped per-silo (per-ClusterTenant-namespace) default-deny policies emitted
+  by the operator (_BuildSiloBaselineNetworkPolicy). This policy completes the
+  picture by default-denying the PLATFORM namespace itself — the namespace that
+  runs the control-plane, LiteLLM, Cognee, Obot (mcp-gateway), skill-registry,
+  and the CNPG Postgres cluster.
+
+  Without this policy, any pod in any namespace that can route to the platform
+  namespace (e.g. a compromised tenant pod that breaks out of its silo) could
+  reach internal platform services directly.
+
+  GATE
+  ----
+  Rendered ONLY when `networkPolicy.mainNetworkDefaultDeny.enabled` is true
+  (default: false). The entire block is a no-op in a default install so this
+  cannot break a running cluster. Enable ONLY after validating that the
+  allow-list below is complete for your deployment profile.
+
+  DESIGN PRINCIPLE
+  ----------------
+  Be conservative: where an egress target is external or unknowable (Zitadel,
+  AI provider APIs, OTEL collector), allow port 443 (HTTPS) egress from the
+  pod class that needs it. It is better to allow a needed path than to
+  silently break a plane. The gate (default-off) makes the conservative
+  choice safe.
+
+  DOES NOT REPLACE the existing per-component ingress policies in
+  networkpolicy-planes.yaml and cognee-deployment.yaml — those remain active
+  independently and provide the per-component ingress allow-list. This template
+  adds the missing egress and the catch-all default-deny on top of them.
+*/}}
+{{- if .Values.networkPolicy.mainNetworkDefaultDeny.enabled }}
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# 1. DEFAULT-DENY: drop all ingress+egress for every pod in the platform
+#    namespace unless explicitly re-allowed by a rule below or in the existing
+#    per-component policies (networkpolicy-planes.yaml, cognee-deployment.yaml).
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "opencrane.fullname" . }}-platform-default-deny
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-network-baseline
+spec:
+  # Empty podSelector → applies to every pod in this namespace.
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  # No rules → deny everything by default. All allowed paths are opened by the
+  # more-specific policies below.
+  ingress: []
+  egress: []
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# 2. DNS EGRESS: allow every platform pod to resolve names via kube-dns.
+#    Required by all planes for service discovery (in-cluster SVC DNS) and by
+#    the control-plane / LiteLLM for external API calls (e.g. Zitadel, provider
+#    APIs). kube-dns runs in kube-system, outside this namespace, so an explicit
+#    egress rule is needed under default-deny.
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "opencrane.fullname" . }}-platform-allow-dns
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-network-baseline
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # Allow UDP + TCP 53 to any destination (kube-dns is at a fixed ClusterIP,
+    # but it may vary per cluster; restricting by namespace would require a
+    # namespaceSelector for kube-system, which is equivalent and no safer given
+    # that CoreDNS is a cluster singleton).
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# 3. INTRA-NAMESPACE INGRESS: allow any pod in the platform namespace to
+#    receive traffic from any other pod in the SAME namespace. This covers all
+#    plane-to-plane communication (control-plane → LiteLLM, control-plane →
+#    Cognee, skill-registry → control-plane, mcp-gateway → control-plane, etc.)
+#    without having to enumerate every port pair — the per-component ingress
+#    policies in networkpolicy-planes.yaml already enforce the port-level allow-
+#    list; this rule only restores the default-allow within the namespace.
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "opencrane.fullname" . }}-platform-intra-namespace-ingress
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-network-baseline
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Any pod in the same namespace may send ingress to any other pod here.
+    # The fine-grained port restrictions are provided by the per-component
+    # policies in networkpolicy-planes.yaml and cognee-deployment.yaml.
+    - from:
+        - podSelector: {}
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# 4. INTRA-NAMESPACE EGRESS: allow any pod in the platform namespace to
+#    initiate connections to any other pod in the SAME namespace.
+#    Covers: control-plane → LiteLLM (:4000), control-plane → Cognee (:8000),
+#    control-plane → mcp-gateway (:8080), control-plane → skill-registry (:5000),
+#    control-plane → Postgres (:5432 CNPG cluster), skill-registry → control-plane,
+#    mcp-gateway → control-plane, operator → control-plane.
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "opencrane.fullname" . }}-platform-intra-namespace-egress
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-network-baseline
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # Any pod in the platform namespace may open connections to any other pod
+    # in the same namespace. This is intra-plane traffic only; cross-namespace
+    # traffic (e.g. operator watching tenant namespaces) is covered by separate
+    # rules below.
+    - to:
+        - podSelector: {}
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# 5. INGRESS CONTROLLER → CONTROL-PLANE: the cluster ingress controller
+#    (nginx or equivalent) forwards external API traffic to the control-plane.
+#    The ingress controller runs in a separate namespace (networkPolicy.ingressNamespace).
+#    Already guarded by networkpolicy-planes.yaml for ingress; this rule opens
+#    the EGRESS side from the control-plane's perspective so metrics/healthz
+#    responses can flow back. (TCP connections are bidirectional but NetworkPolicy
+#    is connection-scoped: the INGRESS rule on the control-plane pod is in
+#    networkpolicy-planes.yaml; this allows initiation from ingress-ns pods.)
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "opencrane.fullname" . }}-platform-allow-ingress-controller
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-network-baseline
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "opencrane.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: control-plane
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow the cluster ingress controller (nginx, traefik, etc.) to reach the
+    # control-plane. Matches networkpolicy-planes.yaml's existing allow for this
+    # path so the two policies are consistent.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace | default "ingress-nginx" }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.controlPlane.service.port }}
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# 6. TENANT PODS → PLATFORM SERVICES: tenant pods (in silo namespaces) need
+#    to reach three platform services:
+#      a) control-plane: /api/internal/contract re-pull (P4A.3); operator
+#         reconciliation calls are already in networkpolicy-planes.yaml.
+#      b) mcp-gateway (Obot): tenant MCP connections.
+#      c) skill-registry: skill-bundle delivery.
+#    These are ingress rules from the platform-namespace perspective (silo pods
+#    come from OUTSIDE this namespace). They complement the per-component
+#    networkpolicy-planes.yaml ingress policies.
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "opencrane.fullname" . }}-platform-allow-tenant-ingress
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-network-baseline
+spec:
+  # Apply to the platform services that tenant pods are allowed to reach.
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values:
+          - control-plane
+          - mcp-gateway
+          - skill-registry
+  policyTypes:
+    - Ingress
+  ingress:
+    # Tenant pods carry app.kubernetes.io/component=tenant (set by the operator
+    # on every silo pod). Any namespace is acceptable — silos live in separate
+    # namespaces and the silo NetworkPolicy already restricts their egress; this
+    # is the matching platform-side ingress allow.
+    - from:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: tenant
+      ports:
+        - protocol: TCP
+          port: {{ .Values.controlPlane.service.port }}
+        - protocol: TCP
+          port: {{ .Values.mcpGateway.service.port }}
+        - protocol: TCP
+          port: {{ .Values.skillRegistry.service.port }}
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# 7. CONTROL-PLANE HTTPS EGRESS: the control-plane calls external services over
+#    HTTPS. Known targets:
+#      - Zitadel Management API (ZITADEL_MGMT_API_URL): org provisioning, SA-key
+#        rotation, per-org OIDC app creation.
+#      - OIDC issuer (OIDC_ISSUER_URL): token validation, discovery document.
+#      - ClusterTenant provisioner webhook (CLUSTER_TENANT_PROVISIONER_WEBHOOK_URL):
+#        optional operator-supplied webhook (external HTTPS endpoint).
+#    The exact hostnames vary per deployment; FQDN-based egress requires Cilium
+#    and is deferred. Allow port 443 egress from the control-plane to any external
+#    destination as a conservative allow. An operator running Cilium may replace
+#    this with a CiliumNetworkPolicy scoped to specific FQDNs.
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "opencrane.fullname" . }}-control-plane-https-egress
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-network-baseline
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "opencrane.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: control-plane
+  policyTypes:
+    - Egress
+  egress:
+    # HTTPS egress for external calls (Zitadel, OIDC issuer, provisioner webhook,
+    # cert-manager ACME, any other HTTPS API the control-plane talks to).
+    # Conservative blanket allow; replace with FQDN-scoped Cilium policy if needed.
+    - ports:
+        - protocol: TCP
+          port: 443
+    # Also allow HTTP (80) for OIDC discovery documents and internal redirects
+    # that some IdPs serve over plain HTTP on the LAN (e.g. a self-hosted Zitadel
+    # without a public cert). Omit if your IdP is always HTTPS.
+    - ports:
+        - protocol: TCP
+          port: 80
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# 8. LITELLM HTTPS EGRESS: LiteLLM proxies requests to AI provider APIs
+#    (OpenAI, Anthropic, Google, Azure OpenAI, etc.) all of which are HTTPS.
+#    Also calls the Langfuse trace API when the callback is configured, which
+#    is either in-cluster (covered by intra-namespace rule above) or external
+#    HTTPS. Conservative blanket allow on 443; narrow with Cilium FQDN policy
+#    if required by your security posture.
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "opencrane.fullname" . }}-litellm-https-egress
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-network-baseline
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "opencrane.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: litellm
+  policyTypes:
+    - Egress
+  egress:
+    # HTTPS egress for AI provider API calls (OpenAI, Anthropic, Google, Azure,
+    # Cohere, etc.) and for the Langfuse external trace callback when configured.
+    # Conservative blanket allow; replace with FQDN-scoped Cilium policy if needed.
+    - ports:
+        - protocol: TCP
+          port: 443
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# 9. OPERATOR EGRESS TO KUBERNETES API: the operator watches CRDs, reconciles
+#    tenant namespaces, and calls the Kubernetes API Server. The API server is
+#    typically at the cluster's service CIDR (10.x.x.1:443 or 6443) and is
+#    reachable via the `kubernetes` Service in the `default` namespace. Allow
+#    HTTPS egress from the operator pod to any destination on 443 + 6443 (common
+#    API-server ports). Includes: Kubernetes API Server, any admission webhooks,
+#    and external HTTPS calls the operator makes (e.g. LiteLLM, control-plane
+#    internal already covered by intra-namespace rule above).
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "opencrane.fullname" . }}-operator-apiserver-egress
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-network-baseline
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "opencrane.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: operator
+  policyTypes:
+    - Egress
+  egress:
+    # Kubernetes API Server (standard port). Needed for CRD watch, tenant
+    # namespace/RBAC/NetworkPolicy creation, and TokenReview calls.
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          # Non-standard API server port used by some distributions (k3s, kind).
+          port: 6443
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# 10. OPERATOR EGRESS TO TENANT NAMESPACES: the operator creates and manages
+#     resources in silo (tenant) namespaces. Under default-deny its egress to
+#     other namespaces is blocked; this allows egress from the operator to any
+#     pod or service in any namespace (the Kubernetes API Server mediates the
+#     actual resource writes, but the operator also calls tenant pods directly
+#     in some reconciliation paths, e.g. the gateway-proxy endpoint).
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "opencrane.fullname" . }}-operator-cross-namespace-egress
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-network-baseline
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "opencrane.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: operator
+  policyTypes:
+    - Egress
+  egress:
+    # Allow the operator to reach pods in any namespace. The operator must be
+    # able to communicate with silo workloads it manages (e.g. health-check
+    # the gateway-proxy, call internal endpoints during reconciliation).
+    - to:
+        - namespaceSelector: {}
+{{- if .Values.networkPolicy.mainNetworkDefaultDeny.allowOtelEgress }}
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# 11. OTEL COLLECTOR EGRESS (OPTIONAL): when the OTEL collector is deployed
+#     in-cluster, the collector pod sends traces/metrics to GCP Cloud Trace /
+#     Cloud Monitoring over HTTPS (443). When exporter.backend=otlp it may also
+#     forward to an external collector. This rule allows HTTPS egress from the
+#     collector pod. Only rendered when
+#     networkPolicy.mainNetworkDefaultDeny.allowOtelEgress=true (in addition to
+#     the main enabled gate) since some deployments use the GKE-native log
+#     pipeline instead and don't need this.
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "opencrane.fullname" . }}-otel-collector-egress
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-network-baseline
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "opencrane.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: otel-collector
+  policyTypes:
+    - Egress
+  egress:
+    # HTTPS egress for OTEL export to GCP Cloud Trace / Cloud Monitoring or an
+    # external OTLP endpoint. Collector also scrapes pod stdout (filelog) which
+    # is node-local — no egress rule needed for that.
+    - ports:
+        - protocol: TCP
+          port: 443
+{{- end }}
+{{- end }}

@@ -787,6 +787,41 @@ networkPolicy:
   # Override for non-standard ingress namespaces (e.g. "traefik", "gateway").
   ingressNamespace: ingress-nginx
 
+  # -- Default-deny baseline for the shared platform namespace (opencrane-system).
+  #
+  #    CONTEXT: S2 ships per-silo (per-ClusterTenant-namespace) default-deny policies
+  #    emitted by the operator. The PLATFORM namespace — where control-plane, LiteLLM,
+  #    Cognee, Obot (mcp-gateway), skill-registry, and the CNPG Postgres cluster run —
+  #    has no such policy by default. This section adds one as a gated, additive block.
+  #
+  #    GATE: `enabled` defaults to FALSE. The whole template is a no-op until an operator
+  #    explicitly sets this to true. Enable ONLY after validating that ALL plane-to-plane
+  #    connectivity is unaffected in your deployment profile:
+  #
+  #      1. Deploy with the flag off (current default) — all planes work normally.
+  #      2. Set enabled=true in a staging/dev cluster and run your full smoke test
+  #         (API calls, model routing, agent skill delivery, Obot MCP connections).
+  #      3. If any path breaks, check whether the missing allow-list entry is in this
+  #         template or in networkpolicy-planes.yaml / cognee-deployment.yaml.
+  #      4. Once all planes pass, promote to production.
+  #
+  #    RELATION TO S2: the per-silo operator policies restrict what TENANT pods can
+  #    reach OUTBOUND. This policy restricts what can reach PLATFORM pods INBOUND, and
+  #    what platform pods can reach OUTBOUND. The two complement each other.
+  #
+  #    FQDN-BASED EGRESS: the HTTPS egress rules (rules 7, 8) allow port 443 to ANY
+  #    external destination (conservative). If your cluster runs Cilium, replace those
+  #    with CiliumNetworkPolicy objects scoped to the exact FQDNs
+  #    (api.openai.com, api.anthropic.com, your Zitadel host, etc.).
+  mainNetworkDefaultDeny:
+    # -- Set to true ONLY after validating platform connectivity in a non-production
+    #    environment. Enabling this without validation can break all planes simultaneously.
+    enabled: false
+    # -- Set to true to also render the OTEL collector HTTPS egress rule (rule 11).
+    #    Only needed when observability.otel.enabled=true AND the OTEL exporter sends
+    #    to an external backend (e.g. GCP Cloud Trace). Ignored when enabled=false.
+    allowOtelEgress: false
+
 # -- Org-wide secrets injected into all tenant pods
 orgSecrets:
   # -- Name of the Kubernetes Secret containing org-wide API keys
