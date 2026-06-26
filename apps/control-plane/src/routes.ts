@@ -48,6 +48,7 @@ import { _BuildClusterTenantProvisionerRegistry } from "./core/cluster-tenants/r
 import { _BuildZitadelManagementClient } from "./infra/zitadel/zitadel-client.js";
 import { _BuildZitadelKeySecretStore } from "./infra/zitadel/key-secret-store.js";
 import { zitadelKeyRouter } from "./routes/admin/zitadel-key.js";
+import { zitadelReconcileRouter } from "./routes/admin/zitadel-reconcile.js";
 import { _CheckDbHealth } from "./infra/db/healtcheck-db.js";
 
 /**
@@ -167,6 +168,10 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
     // Mounted here, on the manager-enabled path, because that is the ONLY place the live
     // Zitadel client exists; the key Secret is patched via the same CoreV1Api the app uses.
     app.use("/api/v1/admin/zitadel", zitadelKeyRouter(zitadelClient, _BuildZitadelKeySecretStore(coreApi)));
+    // Idempotent reconcile/backfill (S3d): re-provision ClusterTenants whose Zitadel org is
+    // missing/partial (created before Zitadel was configured, or a half-failed provision) and
+    // heal the drift. Superadmin-gated; sibling of the SA-key router on the same live client.
+    app.use("/api/v1/admin/zitadel", zitadelReconcileRouter(prisma, zitadelClient));
   }
   app.use("/api/v1/awareness/rollout", awarenessRolloutRouter(prisma));
   app.use("/api/v1/awareness/participation", awarenessParticipationRouter(prisma));

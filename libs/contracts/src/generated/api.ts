@@ -24,6 +24,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/zitadel/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reconcile/backfill incomplete Zitadel orgs across the fleet (idempotent; superadmin only)
+         * @description For every ClusterTenant whose Zitadel ids are incomplete (missing orgId, clientId, appId, or projectId), re-runs provisionOrg (master subject = the org's Owner membership) and persists the ids transactionally. Idempotent: a fully-provisioned org is skipped (no Zitadel call); an org with no Owner is skipped (no-owner); a per-org provision failure is collected (failed) and never aborts the run. Optionally pass { name } to reconcile a single org. Platform-operator gated.
+         */
+        post: operations["reconcileZitadelOrgs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/platform/dns": {
         parameters: {
             query?: never;
@@ -2604,6 +2624,26 @@ export interface components {
             previousKeyId?: string;
             validation: components["schemas"]["ZitadelCandidateKeyValidation"];
         };
+        ZitadelReconcileRequest: {
+            /** @description When set, reconcile ONLY this ClusterTenant; when absent, scan the whole fleet. */
+            name?: string;
+        };
+        ZitadelReconcileSummary: {
+            /** @description Names of ClusterTenants whose Zitadel ids were (re-)provisioned and persisted. */
+            reconciled: string[];
+            /** @description ClusterTenants left untouched, with the reason. */
+            skipped: {
+                name: string;
+                /** @enum {string} */
+                reason: "already-provisioned" | "no-owner";
+            }[];
+            /** @description ClusterTenants whose reconcile threw (a per-CT failure never aborts the run). */
+            failed: {
+                name: string;
+                /** @description Human-readable error detail (never key material). */
+                error: string;
+            }[];
+        };
     };
     responses: never;
     parameters: never;
@@ -2664,6 +2704,48 @@ export interface operations {
             };
             /** @description The candidate key failed validation (token exchange or instance IAM_OWNER scope); no change was made. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reconcileZitadelOrgs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ZitadelReconcileRequest"];
+            };
+        };
+        responses: {
+            /** @description The reconcile run completed; summary of reconciled / skipped / failed orgs. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ZitadelReconcileSummary"];
+                };
+            };
+            /** @description Caller is not a platform operator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The named cluster tenant does not exist (single-org reconcile). */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

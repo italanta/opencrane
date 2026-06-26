@@ -918,6 +918,43 @@ export const spec = {
           validation: { $ref: "#/components/schemas/ZitadelCandidateKeyValidation" },
         },
       },
+      ZitadelReconcileRequest: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "When set, reconcile ONLY this ClusterTenant; when absent, scan the whole fleet." },
+        },
+      },
+      ZitadelReconcileSummary: {
+        type: "object",
+        required: ["reconciled", "skipped", "failed"],
+        properties: {
+          reconciled: { type: "array", items: { type: "string" }, description: "Names of ClusterTenants whose Zitadel ids were (re-)provisioned and persisted." },
+          skipped: {
+            type: "array",
+            description: "ClusterTenants left untouched, with the reason.",
+            items: {
+              type: "object",
+              required: ["name", "reason"],
+              properties: {
+                name: { type: "string" },
+                reason: { type: "string", enum: ["already-provisioned", "no-owner"] },
+              },
+            },
+          },
+          failed: {
+            type: "array",
+            description: "ClusterTenants whose reconcile threw (a per-CT failure never aborts the run).",
+            items: {
+              type: "object",
+              required: ["name", "error"],
+              properties: {
+                name: { type: "string" },
+                error: { type: "string", description: "Human-readable error detail (never key material)." },
+              },
+            },
+          },
+        },
+      },
     },
     securitySchemes: {
       bearerAuth: {
@@ -950,6 +987,24 @@ export const spec = {
           403: forbidden("Caller is not a platform operator."),
           409: conflict("Key-Secret persistence is not configured (ZITADEL_MGMT_SECRET_NAME unset); rotation refused."),
           422: unprocessable("The candidate key failed validation (token exchange or instance IAM_OWNER scope); no change was made."),
+        },
+      },
+    },
+
+    "/admin/zitadel/reconcile": {
+      post: {
+        operationId: "reconcileZitadelOrgs",
+        summary: "Reconcile/backfill incomplete Zitadel orgs across the fleet (idempotent; superadmin only)",
+        description: "For every ClusterTenant whose Zitadel ids are incomplete (missing orgId, clientId, appId, or projectId), re-runs provisionOrg (master subject = the org's Owner membership) and persists the ids transactionally. Idempotent: a fully-provisioned org is skipped (no Zitadel call); an org with no Owner is skipped (no-owner); a per-org provision failure is collected (failed) and never aborts the run. Optionally pass { name } to reconcile a single org. Platform-operator gated.",
+        tags: ["Admin"],
+        requestBody: {
+          required: false,
+          content: { "application/json": { schema: { $ref: "#/components/schemas/ZitadelReconcileRequest" } } },
+        },
+        responses: {
+          200: ok("The reconcile run completed; summary of reconciled / skipped / failed orgs.", { $ref: "#/components/schemas/ZitadelReconcileSummary" }),
+          403: forbidden("Caller is not a platform operator."),
+          404: notFound("The named cluster tenant does not exist (single-org reconcile)."),
         },
       },
     },

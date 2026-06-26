@@ -188,6 +188,20 @@ export function _RegisterClusterTenants(parent: Command, getConfig: () => CliCon
       _PrintSuccess(`Cluster tenant "${name}" deleted`);
     });
 
+  clusterTenant
+    .command("reconcile-zitadel [name]")
+    .description("Reconcile/backfill incomplete Zitadel orgs (superadmin) — re-provisions every cluster tenant whose Zitadel ids are missing/partial, or just [name] when given")
+    .option("-o, --output <format>", "Output format: table|json", "json")
+    .action(async function _reconcileZitadel(name: string | undefined, opts: { output: OutputFormat })
+    {
+      // Scope the run to a single org when a name is given, else reconcile the whole fleet.
+      // The API is superadmin-gated and idempotent; it always returns the run summary.
+      const client = _MakeClient(getConfig());
+      const { data, error } = await client.POST("/admin/zitadel/reconcile", { body: name ? { name } : {} });
+      if (error) _PrintApiError("cluster-tenant reconcile-zitadel", error);
+      _Print(data, opts.output);
+    });
+
   // --- members sub-group: the org's LOCAL membership registry (the rows the
   //     org-admin gate reads — OrgMembership, NOT Zitadel grants). ----------
   const members = clusterTenant
