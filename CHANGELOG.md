@@ -13,6 +13,88 @@ follows [Keep a Changelog](https://keepachangelog.com/); the project uses
 
 ## [Unreleased]
 
+Silo-program identity work — strong-siloes integration branch. All items below are unreleased
+and landed on the `strong-siloes` branch.
+
+### Added
+
+- **Every agent now acts with its user's full entitlements — not a flat tenant identity.** An
+  openclaw Tenant is bound to a specific OIDC user (the new `Tenant.subject` field); when the
+  contract is compiled the grant compiler expands `{tenant-name, user-subject, groups(subject)}`
+  so the agent inherits the same group memberships, skill entitlements, and MCP access-policy
+  decisions as the human behind it. Previously the compiler was keyed on the tenant name alone,
+  so user-level group grants never reached the agent. The contract poll and hot-reload are
+  unchanged — the capability propagates without a pod restart.
+
+- **An agent's Cognee dataset memberships are now derived automatically from the user's groups
+  and grants.** On every contract poll the control plane expands the user's principal-set, diffs
+  the result against the current memberships, and applies only the delta to Cognee — so
+  dataset access converges to the correct set without any manual `_ApplyTenantDatasetMembership`
+  call. The diff is dup-safe (no re-add on unchanged memberships) and scoped across
+  Org/Department/Team/Project/Personal tiers.
+
+- **Dataset-scope vocabulary is kept consistent between the grant system and Cognee.** A new
+  sync pass ensures the `DatasetScope` labels used in grants match those used when declaring
+  Cognee datasets, so the compiler's expansion produces the same scope identifiers that Cognee
+  dataset membership checks expect — closing a silent mis-match that caused group grants to
+  expand but not reach the right datasets.
+
+- **Users can share tools and skills with other users or groups via `oc share`.** Calling
+  `oc share grant --to <user|group> <resource>` writes a `Grant(subject=User|Group, Allow)`
+  bounded by least-privilege (a caller cannot share more than they themselves hold — no
+  privilege escalation). Revoking with `oc share revoke` removes the grant; the existing
+  compile→poll→reload loop propagates both changes to every affected agent without a restart.
+
+- **Sharing a file or chat creates a resource group that other users can be granted access to.**
+  `oc share resource` associates a file or chat artefact with a named resource group; a caller
+  with access to the group automatically gains access to everything inside it via the grant
+  compiler, and the group membership is derived into Cognee dataset memberships on the next
+  contract poll. The resource-group model extends the existing grant vocabulary with no new
+  enforcement surface.
+
+- **Each organisation's users log in through a fully isolated Zitadel Organisation — provisioned
+  automatically when the org is created.** On `POST /cluster-tenants` the control plane provisions
+  a dedicated Zitadel Organization, project, roles, and OIDC application for that org, and
+  registers the org's callback URI (`<org>.<base>/api/v1/auth/callback`) so login works
+  immediately at the org's host. The provisioning is transactional: Zitadel is called as the
+  last step inside the Prisma transaction so the database never commits without a matching IdP
+  object. Deleting the org tears down the Zitadel Organisation, roles, and redirect URI in the
+  same pattern — no orphaned IdP objects.
+
+- **Login at an org's host resolves to that org's OIDC client automatically.** The control
+  plane now maintains a per-org client registry (keyed on `<org>.<base>`); each request host
+  is resolved to the matching OIDC `client_id` and Zitadel org scope so only that org's user
+  pool can authenticate. The masters / control-plane host continues to use the platform-level
+  client. The previous single-client model that reused one redirect URI for all hosts is replaced.
+
+- **A customer's vanity domain is registered as a valid redirect URI in Zitadel automatically.**
+  When a `vanityDomain` is set on a ClusterTenant, the control plane adds the vanity host's
+  callback to the org's Zitadel OIDC application alongside the canonical `<org>.<base>` URI —
+  so users who reach the org via a custom CNAME can log in without a manual console step.
+
+- **Each silo namespace gets a default-deny network baseline on provision.** The operator emits
+  a `NetworkPolicy` for every ClusterTenant namespace that denies all ingress and egress by
+  default, then selectively allows intra-silo traffic, control-plane/operator reach, DNS (UDP 53),
+  and external HTTPS (TCP 443). No rule names another silo — east-west default-deny is structural,
+  not a configuration option. The misplaced install-namespace policy that previously provided no
+  real isolation is removed.
+
+- **The trusted-proxy CIDR is derived from the operator's own pod IP when configured with
+  `[auto]`.** Instead of requiring operators to look up and hard-code the ingress-nginx pod CIDR,
+  setting `tenant.gateway.trustedProxies: ["[auto]"]` causes the operator to read its own pod
+  IP from the downward API and derive a `/14` allowlist. The `[auto]` path still fails closed
+  (an unresolvable pod IP stays trust-nothing) and the CONN.9 default remains an empty allowlist
+  (trust nothing) — `[auto]` is opt-in only.
+
+### Security
+
+- **The platform gateway block in every tenant config is now pinned against `configOverrides`
+  clobber.** A shallow merge of `configOverrides` could previously replace the entire `gateway`
+  block, silently dropping the owner `allowUsers` pin and any crashing-key guard. The operator
+  now renders the gateway block in a way that `configOverrides` cannot overwrite it, so the
+  cross-tenant ownership check is structurally preserved regardless of what a tenant's overlay
+  supplies.
+
 ## [0.5.3] — 2026-06-23
 
 Tenant operator stability: eliminates the status-write hot-loop that inflated ResourceQuota usage and blocked workspace provisioning under high tenant counts.
