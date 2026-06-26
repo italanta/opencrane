@@ -4,6 +4,7 @@ How OpenCrane's operator layers cryptographic workload identity on top of the L3
 
 > See also:
 > [Networking & isolation](/operators/networking) — the S2 L3/4 NetworkPolicy baseline this layer sits on top of; read that page first for the overall silo model.
+> [Silo deployment model](/operators/silo-deployment) — how the central and per-ClusterTenant silo releases are installed; the deployment context for this identity layer.
 > [Hosting & deployment](/operators/hosting) — operator configuration, env vars, and the Helm chart.
 > [ADR 0001 — ClusterTenant-as-virtual-network strict isolation](https://github.com/italanta/opencrane/blob/main/docs/adr/0001-cluster-tenant-virtual-network-isolation.md) — the architecture decision record that defines the substrate choice and the layering contract.
 

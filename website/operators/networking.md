@@ -3,6 +3,7 @@
 OpenCrane organises all cluster traffic into **two distinct planes**: a narrow public edge that terminates TLS and routes DNS, and a fully private internal network where every platform service runs as a ClusterIP. Understanding the boundary between them — and how the operator bridges it safely — is the mental model you need to operate, debug, and harden the platform.
 
 > See also:
+> [Silo deployment model](/operators/silo-deployment) — how the central + per-ClusterTenant silo releases are installed and what each renders; the deployment context for this isolation model.
 > [Identity & connection auth](/security/identity) — how OIDC sessions and projected-identity tokens authenticate traffic across the planes.
 > [Connection security](/security/connection-security) — the full threat model and adopted posture for the browser-to-pod WebSocket.
 > [DNS configuration](/operators/dns-config) — how external-dns and cert-manager manage the DNS/TLS side of plane 1.
