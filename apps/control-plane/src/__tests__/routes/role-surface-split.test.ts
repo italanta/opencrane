@@ -19,6 +19,13 @@ import { _RegisterRoutes } from "../../routes.js";
  * so the test never has to construct the live Zitadel client; the role split itself is what's under
  * test. A route that was not mounted yields Express's 404; a mounted route yields anything else.
  */
+/**
+ * Build an Express app with the full control-plane route set registered for the role currently
+ * in `OPENCRANE_CONTROL_PLANE_ROLE`. Dependencies are stub-mocked because these tests assert mount
+ * presence (404 vs not) only, not handler behaviour. No auth middleware is mounted.
+ *
+ * @returns The configured Express app.
+ */
 function _buildApp(): Express
 {
   const prisma = {} as unknown as PrismaClient;
