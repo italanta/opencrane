@@ -60,6 +60,17 @@ done
 [[ -n "$BASE_DOMAIN" ]]     || { err "--base-domain is required (the platform wildcard base this silo is served under)."; exit 1; }
 [[ -n "$CLUSTER_TENANT" ]]  || { err "--cluster-tenant is required (the ClusterTenant this silo serves)."; exit 1; }
 
+# Fail FAST if the cluster-wide CloudNativePG operator is absent. A silo reuses it (it passes
+# --no-db-operator) and only applies its own per-namespace Cluster CR — but if no operator is
+# watching, that CR is never reconciled and the silo's DB silently never comes up. The operator's
+# Cluster CRD is the unambiguous signal it has been installed (by the central release). This
+# enforces the central-before-silo sequencing the prereq note describes.
+command -v kubectl >/dev/null 2>&1 || { err "kubectl not found."; exit 1; }
+if ! kubectl get crd clusters.postgresql.cnpg.io >/dev/null 2>&1; then
+  err "CloudNativePG operator not found (CRD clusters.postgresql.cnpg.io absent). Install the central release first (deploy-multi-tenant.sh) — it brings up the cluster-wide CNPG operator a silo reuses."
+  exit 1
+fi
+
 # The silo lives in its own namespace so its per-CT DB + planes are isolated from every other
 # silo and from the central release. Default `opencrane-<cluster-tenant>`; --namespace overrides.
 [[ -n "$NAMESPACE" ]] || NAMESPACE="opencrane-${CLUSTER_TENANT}"

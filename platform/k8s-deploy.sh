@@ -481,7 +481,7 @@ if [[ "$INSTALL_DB_OPERATOR" == "1" ]]; then
     --namespace "$NAMESPACE" --create-namespace --wait \
     --set-string monitoring.podMonitor.enabled=false
 else
-  log "CloudNativePG operator: install skipped (--no-db-operator) — using the cluster-wide operator. This release's per-namespace Cluster CR is still applied."
+  log "CloudNativePG operator: install skipped (--no-db-operator) — ASSUMING a cluster-wide operator is already running (installed by the central release). This release's per-namespace Cluster CR is applied and only reconciles if that operator exists; deploy-silo.sh preflights for it."
 fi
 
 log "Creating database credentials…"
