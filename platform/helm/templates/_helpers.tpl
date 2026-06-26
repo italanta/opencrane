@@ -222,26 +222,19 @@ the control-plane at it. Otherwise (central role, or BYO Cognee) the configured
 DATABASE_URL env entry for the control-plane (deployment initContainer, main container,
 and the migration Job all share it so they can never drift).
 
-Precedence:
-  1. controlPlane.database.existingSecret  → secretKeyRef (explicit, both roles).
-  2. controlPlane.database.url             → inline value (explicit, both roles).
-  3. SILO role only:
-       - tenantDatabase.cnpg.enabled       → the chart-templated per-CT CNPG `-app`
-                                              Secret (DATABASE_URL key, from tenant-db.yaml).
-       - tenantDatabase.cnpg.existingSecret (BYO external per-CT DB) → secretKeyRef.
-       - otherwise                          → FAIL: a silo has no tenant DB.
+Both roles wire the control-plane to the database the installer provisions via
+`controlPlane.database.existingSecret` (or `.url`). Per-ClusterTenant isolation (S6 / ADR 0002)
+comes from the SILO deploying a dedicated CNPG cluster IN ITS OWN NAMESPACE — one Postgres per
+silo serving that silo's control-plane + runtime planes — so the silo control-plane's DB already
+holds exactly one ClusterTenant's data and never has to infer which tenant a row belongs to. The
+deploy scripts (`deploy-silo.sh` → `k8s-deploy.sh`) provision that per-namespace cluster + secret;
+this helper just consumes whatever secret the installer points at, identically for both roles.
 
-Central role with no explicit DB renders no DATABASE_URL (unchanged legacy behaviour —
-the central control-plane is wired to its shared DB via values/gcp etc.).
+With no explicit DB this renders no DATABASE_URL (the control-plane stays in its no-DB mode); a
+real deploy always supplies one.
 */}}
 {{- define "opencrane.controlPlaneDatabaseEnv" -}}
 {{- $db := .Values.controlPlane.database | default dict -}}
-{{- /* A silo must use its per-CT tenant DB (tenantDatabase.cnpg.*) and NEVER the shared/central
-       controlPlane.database.* knob — pointing a silo at a shared DB would re-couple tenants and
-       resurrect the resolution-ambiguity the per-CT DB exists to kill (ADR 0002). Reject it. */ -}}
-{{- if and (eq (include "opencrane.isSilo" .) "true") (or $db.existingSecret $db.url) -}}
-{{- fail "deploymentRole=silo must use a per-ClusterTenant DB via tenantDatabase.cnpg.* — controlPlane.database.existingSecret/url is the CENTRAL DB knob and must not be set for a silo (it would break per-CT isolation)" -}}
-{{- end -}}
 {{- if $db.existingSecret -}}
 - name: DATABASE_URL
   valueFrom:
@@ -251,24 +244,6 @@ the central control-plane is wired to its shared DB via values/gcp etc.).
 {{- else if $db.url -}}
 - name: DATABASE_URL
   value: {{ $db.url | quote }}
-{{- else if eq (include "opencrane.isSilo" .) "true" -}}
-{{- $td := .Values.tenantDatabase | default dict -}}
-{{- $cnpg := $td.cnpg | default dict -}}
-{{- if $cnpg.enabled -}}
-- name: DATABASE_URL
-  valueFrom:
-    secretKeyRef:
-      name: {{ printf "%s-tenant-db-app" (include "opencrane.fullname" .) }}
-      key: uri
-{{- else if $cnpg.existingSecret -}}
-- name: DATABASE_URL
-  valueFrom:
-    secretKeyRef:
-      name: {{ $cnpg.existingSecret }}
-      key: {{ default "DATABASE_URL" $cnpg.secretKey }}
-{{- else -}}
-{{- fail "deploymentRole=silo requires a per-ClusterTenant tenant DB: enable tenantDatabase.cnpg.enabled (CNPG Cluster), set tenantDatabase.cnpg.existingSecret (BYO DB), or set controlPlane.database.existingSecret/url" -}}
-{{- end -}}
 {{- end -}}
 {{- end }}
 
