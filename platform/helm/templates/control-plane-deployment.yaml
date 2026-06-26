@@ -32,16 +32,7 @@ spec:
           imagePullPolicy: {{ .Values.controlPlane.image.pullPolicy }}
           command: ["node", "apps/control-plane/dist/scripts/migrate.js"]
           env:
-            {{- if .Values.controlPlane.database.existingSecret }}
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.controlPlane.database.existingSecret }}
-                  key: {{ .Values.controlPlane.database.secretKey }}
-            {{- else if .Values.controlPlane.database.url }}
-            - name: DATABASE_URL
-              value: {{ .Values.controlPlane.database.url | quote }}
-            {{- end }}
+            {{- include "opencrane.controlPlaneDatabaseEnv" . | nindent 12 }}
       containers:
         - name: control-plane
           image: "{{ .Values.controlPlane.image.repository }}:{{ .Values.controlPlane.image.tag }}"
@@ -57,6 +48,12 @@ spec:
             - name: PORT
               value: {{ .Values.controlPlane.service.port | quote }}
             {{- include "opencrane.observabilityEnv" (dict "ctx" $ "component" "control-plane") | nindent 12 }}
+            # -- Deployment role (S6 / ADR 0002). `central` = the super-admin control-plane;
+            #    `silo` = a per-ClusterTenant control-plane API. A later route-split slice
+            #    reads this to mount the right routes (cross-silo super-admin surface vs.
+            #    silo-scoped tenant-facing surface). This slice only wires the env.
+            - name: OPENCRANE_CONTROL_PLANE_ROLE
+              value: {{ include "opencrane.deploymentRole" . | quote }}
             - name: INGRESS_DOMAIN
               value: {{ .Values.ingress.domain | quote }}
             # -- Platform base domain the control-plane derives each org's Zitadel redirect
@@ -87,8 +84,10 @@ spec:
             - name: SKILL_OCI_REPOSITORY
               value: {{ .Values.skillRegistry.ociStore.repository | quote }}
             {{- end }}
+            # -- Cognee endpoint, resolved by role (ADR 0002): silo + bundled Cognee →
+            #    release-prefixed in-cluster Service; central / BYO → configured endpoint.
             - name: COGNEE_ENDPOINT
-              value: {{ .Values.controlPlane.cognee.endpoint | quote }}
+              value: {{ include "opencrane.cogneeEndpoint" . | quote }}
             - name: COGNEE_PERMISSIONS_TIMEOUT_MS
               value: {{ .Values.controlPlane.cognee.permissionsTimeoutMs | quote }}
             - name: COGNEE_ENABLE_BACKEND_ACCESS_CONTROL
@@ -171,6 +170,11 @@ spec:
             {{- end }}
             {{- end }}
             {{- end }}
+            {{- /* Zitadel is CENTRAL-only (ADR 0002 decision 2): the super-admin
+                   control-plane provisions per-org Zitadel orgs. A silo control-plane
+                   never talks to Zitadel, so this block is gated to the central role
+                   (belt-and-braces — a silo profile also leaves zitadel.mgmtApiUrl empty). */ -}}
+            {{- if eq (include "opencrane.isCentral" .) "true" }}
             {{- with .Values.controlPlane.zitadel }}
             {{- if .mgmtApiUrl }}
             # -- Zitadel Management API (S3 / Phase 2a): the control-plane provisions a
@@ -195,6 +199,7 @@ spec:
             {{- end }}
             {{- end }}
             {{- end }}
+            {{- end }}
             # -- LiteLLM base endpoint, resolved via sharedPlatform scope (B5):
             #    instance mode → release-prefixed in-cluster Service; shared mode →
             #    sharedPlatform.litellm.shared.endpoint.
@@ -213,16 +218,7 @@ spec:
                   {{- end }}
                   key: {{ .Values.litellm.secretKey }}
             {{- end }}
-            {{- if .Values.controlPlane.database.existingSecret }}
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.controlPlane.database.existingSecret }}
-                  key: {{ .Values.controlPlane.database.secretKey }}
-            {{- else if .Values.controlPlane.database.url }}
-            - name: DATABASE_URL
-              value: {{ .Values.controlPlane.database.url | quote }}
-            {{- end }}
+            {{- include "opencrane.controlPlaneDatabaseEnv" . | nindent 12 }}
             {{- if .Values.clusterTenant.provisionerWebhook.url }}
             - name: CLUSTER_TENANT_PROVISIONER_WEBHOOK_URL
               value: {{ .Values.clusterTenant.provisionerWebhook.url | quote }}

@@ -1,0 +1,46 @@
+{{- /*
+  Per-ClusterTenant tenant DB (S6 / ADR 0002 decision 3 — the Helm part of S5).
+
+  Each SILO gets its OWN dedicated tenant-facing Postgres so the silo control-plane API
+  never has to infer which tenant a row belongs to: the silo IS the scope. This retires
+  the resolution-ambiguity class uniformly (no shared tenant-facing DB left to
+  disambiguate).
+
+  This templates a per-silo CloudNativePG `Cluster` CR. CNPG is assumed to be a CLUSTER
+  SINGLETON prerequisite (installed once cluster-wide, like cert-manager / external-dns);
+  the chart only declares the per-silo `Cluster` and lets the operator reconcile it.
+  CNPG creates a `<cluster>-app` Secret (libpq creds for the bootstrap owner role) and a
+  `<cluster>-rw` Service (primary). The silo control-plane's DATABASE_URL is derived from
+  those by the `opencrane.tenantDatabaseUrl` helper.
+
+  GATED to the silo role AND `tenantDatabase.cnpg.enabled`. The central release never
+  renders a per-CT DB. BYO path: set `tenantDatabase.cnpg.enabled=false` +
+  `tenantDatabase.cnpg.existingSecret` to point the silo control-plane at an external DB.
+
+  NOTE: actual data migration off the shared central DB is a later live-only slice; this
+  template only provisions the DB + the connection wiring `helm template` validates.
+*/ -}}
+{{- if and (eq (include "opencrane.isSilo" .) "true") .Values.tenantDatabase.cnpg.enabled }}
+{{- $cnpg := .Values.tenantDatabase.cnpg }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "opencrane.fullname" . }}-tenant-db
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tenant-db
+spec:
+  instances: {{ $cnpg.instances }}
+  imageName: {{ $cnpg.imageName | quote }}
+  bootstrap:
+    initdb:
+      database: {{ $cnpg.database | quote }}
+      owner: {{ $cnpg.owner | quote }}
+  storage:
+    size: {{ $cnpg.storage.size | quote }}
+    {{- with $cnpg.storage.storageClass }}
+    storageClass: {{ . | quote }}
+    {{- end }}
+  resources:
+    {{- toYaml $cnpg.resources | nindent 4 }}
+{{- end }}

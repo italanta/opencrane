@@ -35,14 +35,5 @@ spec:
           imagePullPolicy: {{ .Values.controlPlane.image.pullPolicy }}
           command: ["node", "apps/control-plane/dist/scripts/migrate.js"]
           env:
-            {{- if .Values.controlPlane.database.existingSecret }}
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.controlPlane.database.existingSecret }}
-                  key: {{ .Values.controlPlane.database.secretKey }}
-            {{- else if .Values.controlPlane.database.url }}
-            - name: DATABASE_URL
-              value: {{ .Values.controlPlane.database.url | quote }}
-            {{- end }}
+            {{- include "opencrane.controlPlaneDatabaseEnv" . | nindent 12 }}
 {{- end }}

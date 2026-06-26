@@ -1,7 +1,7 @@
 {{- /* Render the release-local LiteLLM only when enabled AND instance-scoped.
        When sharedPlatform.litellm.mode=shared, callers use opencrane.litellmEndpoint
        (the external endpoint) and no in-release LiteLLM workload is created. */ -}}
-{{- if and .Values.litellm.enabled (ne (include "opencrane.litellmShared" .) "true") }}
+{{- if and (eq (include "opencrane.isSilo" .) "true") .Values.litellm.enabled (ne (include "opencrane.litellmShared" .) "true") }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
