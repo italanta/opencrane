@@ -1,4 +1,4 @@
-{{- if .Values.mcpGateway.enabled }}
+{{- if and (eq (include "opencrane.isSilo" .) "true") .Values.mcpGateway.enabled }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:

@@ -10,16 +10,20 @@
        `*.backendAccessControl` (the runtime ACL-enforcement switch) so an operator can
        BYO Cognee while still enforcing the backend access control.
 
-       The Service name is the cluster-singleton `cognee`, so the bundled workload is
-       only rendered in single-install mode. Under multiInstance the in-chart Cognee is
-       suppressed (an unprefixed singleton can't be per-release); a multi-instance
-       cluster must point each instance at a shared Cognee via the endpoint instead. */ -}}
-{{- if and .Values.controlPlane.cognee.install (not .Values.multiInstance.enabled) }}
+       SILO role (S6 / ADR 0002): every ClusterTenant gets its OWN dedicated Cognee, so
+       the bundled workload IS rendered here — but the Service is release-prefixed
+       (`<fullname>-cognee`, B5) instead of the legacy unprefixed `cognee` singleton, so
+       two silos never collide. The control-plane's COGNEE_ENDPOINT is derived from this
+       release-prefixed Service by the `opencrane.cogneeEndpoint` helper.
+
+       CENTRAL role: Cognee is a per-CT plane, not a central component (ADR 0002 decision
+       2), so the bundled workload is NOT rendered. */ -}}
+{{- if and (eq (include "opencrane.isSilo" .) "true") .Values.controlPlane.cognee.install }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: cognee
+  name: {{ include "opencrane.fullname" . }}-cognee
   labels:
     {{- include "opencrane.labels" . | nindent 4 }}
     app.kubernetes.io/component: cognee

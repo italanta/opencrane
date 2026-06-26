@@ -160,6 +160,119 @@ and is folded into the per-namespace Role by MI.4's namespaced cert Issuer.
 {{- end }}
 
 {{/*
+Deployment role (S6 / ADR 0002 — per-ClusterTenant silo architecture).
+
+Two release shapes share ONE chart + ONE control-plane image, differing only by which
+templates render and by the OPENCRANE_CONTROL_PLANE_ROLE env a later route-split slice reads:
+
+  - `central` (default): the super-admin control-plane + Zitadel (+ fleet-level bits).
+    Renders NONE of the per-ClusterTenant planes. Preserves the legacy single-install
+    surface for the central `opencrane-system` release.
+  - `silo`: one release per ClusterTenant on shared nodes. Renders the per-CT stack —
+    operator + Obot/MCP gateway + skill-registry + Cognee + LiteLLM + a per-CT
+    control-plane-API instance + per-CT networking + a per-CT tenant DB — and renders
+    NO central super-admin control-plane role and NO Zitadel.
+
+A silo IS a `multiInstance` instance MINUS the central control-plane role MINUS Zitadel;
+the silo profile therefore turns `multiInstance.enabled` on as well (see values/silo).
+
+Resolution + fail-loud: any value other than `central`/`silo` is rejected at render time,
+consistent with the other `fail` guards in this file.
+*/}}
+{{- define "opencrane.deploymentRole" -}}
+{{- $role := default "central" .Values.deploymentRole -}}
+{{- if not (or (eq $role "central") (eq $role "silo")) -}}
+{{- fail (printf "deploymentRole must be \"central\" or \"silo\", got %q" $role) -}}
+{{- end -}}
+{{- $role -}}
+{{- end }}
+
+{{/*
+"true" when this release is the SILO (per-ClusterTenant) shape, else "".
+*/}}
+{{- define "opencrane.isSilo" -}}
+{{- if eq (include "opencrane.deploymentRole" .) "silo" -}}true{{- end -}}
+{{- end }}
+
+{{/*
+"true" when this release is the CENTRAL (super-admin / Zitadel) shape, else "".
+*/}}
+{{- define "opencrane.isCentral" -}}
+{{- if eq (include "opencrane.deploymentRole" .) "central" -}}true{{- end -}}
+{{- end }}
+
+{{/*
+Cognee endpoint the control-plane permission-sync routes call.
+
+In the SILO role with the bundled Cognee on (`controlPlane.cognee.install`), Cognee is a
+release-local, per-CT plane: the Service is release-prefixed (`<fullname>-cognee`, B5) so
+two silos never collide on the legacy unprefixed `cognee` singleton, and this helper points
+the control-plane at it. Otherwise (central role, or BYO Cognee) the configured
+`controlPlane.cognee.endpoint` is used verbatim.
+*/}}
+{{- define "opencrane.cogneeEndpoint" -}}
+{{- if and (eq (include "opencrane.isSilo" .) "true") .Values.controlPlane.cognee.install -}}
+{{- printf "http://%s-cognee:%v" (include "opencrane.fullname" .) .Values.controlPlane.cognee.service.port -}}
+{{- else -}}
+{{- .Values.controlPlane.cognee.endpoint -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+DATABASE_URL env entry for the control-plane (deployment initContainer, main container,
+and the migration Job all share it so they can never drift).
+
+Precedence:
+  1. controlPlane.database.existingSecret  → secretKeyRef (explicit, both roles).
+  2. controlPlane.database.url             → inline value (explicit, both roles).
+  3. SILO role only:
+       - tenantDatabase.cnpg.enabled       → the chart-templated per-CT CNPG `-app`
+                                              Secret (DATABASE_URL key, from tenant-db.yaml).
+       - tenantDatabase.cnpg.existingSecret (BYO external per-CT DB) → secretKeyRef.
+       - otherwise                          → FAIL: a silo has no tenant DB.
+
+Central role with no explicit DB renders no DATABASE_URL (unchanged legacy behaviour —
+the central control-plane is wired to its shared DB via values/gcp etc.).
+*/}}
+{{- define "opencrane.controlPlaneDatabaseEnv" -}}
+{{- $db := .Values.controlPlane.database | default dict -}}
+{{- /* A silo must use its per-CT tenant DB (tenantDatabase.cnpg.*) and NEVER the shared/central
+       controlPlane.database.* knob — pointing a silo at a shared DB would re-couple tenants and
+       resurrect the resolution-ambiguity the per-CT DB exists to kill (ADR 0002). Reject it. */ -}}
+{{- if and (eq (include "opencrane.isSilo" .) "true") (or $db.existingSecret $db.url) -}}
+{{- fail "deploymentRole=silo must use a per-ClusterTenant DB via tenantDatabase.cnpg.* — controlPlane.database.existingSecret/url is the CENTRAL DB knob and must not be set for a silo (it would break per-CT isolation)" -}}
+{{- end -}}
+{{- if $db.existingSecret -}}
+- name: DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ $db.existingSecret }}
+      key: {{ $db.secretKey }}
+{{- else if $db.url -}}
+- name: DATABASE_URL
+  value: {{ $db.url | quote }}
+{{- else if eq (include "opencrane.isSilo" .) "true" -}}
+{{- $td := .Values.tenantDatabase | default dict -}}
+{{- $cnpg := $td.cnpg | default dict -}}
+{{- if $cnpg.enabled -}}
+- name: DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ printf "%s-tenant-db-app" (include "opencrane.fullname" .) }}
+      key: uri
+{{- else if $cnpg.existingSecret -}}
+- name: DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ $cnpg.existingSecret }}
+      key: {{ default "DATABASE_URL" $cnpg.secretKey }}
+{{- else -}}
+{{- fail "deploymentRole=silo requires a per-ClusterTenant tenant DB: enable tenantDatabase.cnpg.enabled (CNPG Cluster), set tenantDatabase.cnpg.existingSecret (BYO DB), or set controlPlane.database.existingSecret/url" -}}
+{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Resolve the namespace(s) a multi-instance install owns for namespaced RBAC.
 Defaults to the release namespace when `multiInstance.instanceNamespaces` is empty.
 */}}

@@ -14,7 +14,10 @@
   control-plane SA cannot read or write any other Secret in the release namespace.
   This is a namespaced Role + RoleBinding (NOT ClusterRole/ClusterRoleBinding).
 */}}
-{{- if and .Values.clusterTenantManager.enabled .Values.controlPlane.zitadel.existingSecret }}
+{{- /* CENTRAL-only (S6 / ADR 0002 decision 2): Zitadel is a central component — only the
+       super-admin control-plane provisions/rotates per-org Zitadel orgs. A silo never holds
+       the Zitadel SA key, so its rotation RBAC is never rendered there. */ -}}
+{{- if and (eq (include "opencrane.isCentral" .) "true") .Values.clusterTenantManager.enabled .Values.controlPlane.zitadel.existingSecret }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

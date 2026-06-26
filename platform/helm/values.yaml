@@ -5,6 +5,62 @@ global:
   # -- Deployment environment used for Helm validations (`dev`, `staging`, `prod`).
   environment: dev
 
+# -- Deployment ROLE (S6 / ADR 0002 — per-ClusterTenant silo architecture). Selects
+#    which of the two release shapes this install renders. Both shapes share ONE chart
+#    and ONE control-plane image; they differ only by which templates render and by the
+#    `OPENCRANE_CONTROL_PLANE_ROLE` env a later route-split slice (S6) reads to mount the
+#    right routes.
+#
+#      central (default): the super-admin control-plane + Zitadel (+ fleet-level bits).
+#        Renders NONE of the per-ClusterTenant planes — this is the central
+#        `opencrane-system` release. Preserves the legacy single-install layout.
+#      silo: ONE release per ClusterTenant (on shared nodes). Renders the per-CT stack —
+#        operator + Obot/MCP gateway + skill-registry + Cognee + LiteLLM + a per-CT
+#        control-plane-API (role=silo, pointed at the per-CT tenant DB below) + per-CT
+#        networking — and renders NO central super-admin control-plane role and NO Zitadel.
+#
+#    A silo IS a `multiInstance` instance MINUS the central control-plane role MINUS
+#    Zitadel; the silo values profile (values/silo/oc-example.yaml) also turns
+#    `multiInstance.enabled` on. Any value other than central/silo fails the render.
+deploymentRole: central
+
+# -- Per-ClusterTenant tenant DB (S5 Helm part / ADR 0002 decision 3). ONLY consumed in
+#    the silo role. Each silo gets its own dedicated tenant-facing Postgres so the
+#    control-plane API never has to disambiguate which tenant a row belongs to (the silo
+#    IS the scope). Default: template a per-silo CloudNativePG `Cluster` (assumes the CNPG
+#    operator is a cluster singleton, like cert-manager / external-dns). The silo
+#    control-plane's DATABASE_URL is wired to its `-rw` Service automatically.
+#    NOTE: actual data migration off the shared DB is a later live-only slice; this slice
+#    provisions the per-CT DB + connection wiring (which `helm template` validates).
+tenantDatabase:
+  cnpg:
+    # -- Template a per-silo CNPG `Cluster` CR. Default true in the silo role. Requires
+    #    the CloudNativePG operator installed cluster-wide (a singleton prerequisite).
+    enabled: true
+    # -- Number of Postgres instances (1 = single primary; raise for HA).
+    instances: 1
+    # -- CNPG operand image. Pinned for reproducible, audited deploys (no rolling tag).
+    imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+    # -- Initial database + owner role CNPG bootstraps. The control-plane DATABASE_URL
+    #    is derived as `postgresql://<owner>@<release>-tenant-db-rw:5432/<database>`.
+    database: opencrane
+    owner: opencrane
+    storage:
+      size: 5Gi
+      # -- StorageClass for the per-CT PVCs. Empty → cluster default.
+      storageClass: ""
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+    # -- BYO an externally-provisioned per-CT DB instead of templating a CNPG Cluster:
+    #    set existingSecret to a libpq-style `DATABASE_URL` Secret and enabled=false.
+    existingSecret: ""
+    secretKey: DATABASE_URL
+
 # -- Native multi-instance mode (run N strictly-isolated OpenCrane instances in
 #    one cluster). Off by default → the legacy single-install path is unchanged.
 #    When enabled, the chart flips the isolation-safe defaults below.
