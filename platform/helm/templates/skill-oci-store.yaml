@@ -7,7 +7,7 @@ skillRegistry.ociStore.enabled (default off) so existing installs are unchanged 
 the publish/delivery cutover lands. NetworkPolicy ingress (control-plane only) is
 tightened in the cutover slice; nothing depends on this store until then.
 */ -}}
-{{- if and (eq (include "opencrane.isSilo" .) "true") .Values.skillRegistry.ociStore.enabled }}
+{{- if and .Values.skillRegistry.ociStore.enabled }}
 {{- $oci := .Values.skillRegistry.ociStore }}
 apiVersion: apps/v1
 kind: Deployment

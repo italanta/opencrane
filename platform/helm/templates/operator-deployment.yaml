@@ -1,8 +1,3 @@
-{{- /* Per-ClusterTenant operator (S6 / ADR 0002 decisions 1 & 4): every silo runs its
-       OWN namespace-scoped operator that owns its silo's north-south edge. The central
-       release runs no operator (it provisions silos, it does not reconcile a tenant's
-       Ingress). Gated to the silo role. */ -}}
-{{- if eq (include "opencrane.isSilo" .) "true" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -173,4 +168,3 @@ spec:
             {{- end }}
           resources:
             {{- toYaml .Values.operator.resources | nindent 12 }}
-{{- end }}

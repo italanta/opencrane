@@ -58,11 +58,7 @@ done
 # seeded org, and the fleet wildcard wiring. multiInstance stays at its default off —
 # multi-TENANT (many orgs in one install) is distinct from multi-INSTANCE (many isolated
 # installs in one cluster).
-# S6 / ADR 0002: the multi-tenant install IS the CENTRAL super-admin control-plane — cross-silo,
-# control-plane + Zitadel only (no runtime planes; those live in per-CT silo releases installed by
-# deploy-silo.sh). deploymentRole=central makes the chart render exactly that surface.
 PROFILE_SET=(
-  --deployment-role central
   --set "clusterTenantManager.enabled=true"
   --set "billing.enabled=true"
   --set "ingress.tls.enabled=true"

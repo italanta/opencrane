@@ -50,8 +50,6 @@ import { _BuildZitadelKeySecretStore } from "./infra/zitadel/key-secret-store.js
 import { zitadelKeyRouter } from "./routes/admin/zitadel-key.js";
 import { zitadelReconcileRouter } from "./routes/admin/zitadel-reconcile.js";
 import { _CheckDbHealth } from "./infra/db/healtcheck-db.js";
-import { _ControlPlaneRole, _ServesFleetSurface, _ServesTenantSurface } from "./infra/deployment-role.js";
-import { _log } from "./log.js";
 
 /**
  * Build the optional OCI (Zot) skill-bundle store from the environment.
@@ -119,98 +117,69 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
   // API to gate which isolation tiers a customer may request.
   const clusterTenantRegistry = _BuildClusterTenantProvisionerRegistry();
 
-  // S6 / ADR 0002: the control-plane image runs in one of two topological roles, and mounts
-  // only the API surface that belongs to that role.
-  //   - silo    → the per-ClusterTenant (incl. single-cluster) tenant-facing surface.
-  //   - central → the shared super-admin / fleet surface (ClusterTenant lifecycle, Zitadel, DNS).
-  // A silo serves exactly one ClusterTenant, so it carries no caller→silo inference; a central
-  // control-plane never sees a tenant-facing request. This is what retires the resolution
-  // ambiguity. The role is resolved (fail-loud) once at registration.
-  const role = _ControlPlaneRole();
-  _log.info({ role }, "Registering control-plane routes for deployment role.");
+  app.use("/api/internal/bundles", _RegisterInternalBundles(prisma, ociBundleStore));
+  // NetworkPolicy-only (no auth/TokenReview): the operator fetches a tenant's
+  // allowed model set + effective default at reconcile. Best-effort — never 404/500.
+  app.use("/api/internal/tenant-models", _RegisterInternalTenantModels(prisma));
+  // Note: /api/internal/contract enforces per-tenant identity via TokenReview — not NetworkPolicy-only.
+  app.use("/api/internal/contract", _RegisterInternalTenantContract(prisma, authApi));
+  app.use("/api/internal/awareness/participation", _RegisterInternalParticipation(prisma, authApi));
 
-  // ── Tenant-facing surface (silo + single-cluster; NOT the central super-admin control-plane).
-  if (_ServesTenantSurface())
-  {
-    // Internal pod-poll routes consumed by THIS silo's own runtime planes (Obot, skill-registry,
-    // tenant pods). Mounted before ___AuthMiddleware and not behind any token check — access is
-    // enforced by Kubernetes NetworkPolicy: only the in-silo planes can reach the control-plane
-    // service on the cluster network. A central control-plane runs no planes, so it serves none.
-    // @see platform/helm/templates/networkpolicy-planes.yaml — runtime-plane policies.
-    // @see platform/helm/templates/obot-mcp-gateway-deployment.yaml — OBOT_SERVER_PROVIDER_REGISTRIES wiring.
-    app.use("/api/internal/bundles", _RegisterInternalBundles(prisma, ociBundleStore));
-    // NetworkPolicy-only (no auth/TokenReview): the operator fetches a tenant's
-    // allowed model set + effective default at reconcile. Best-effort — never 404/500.
-    app.use("/api/internal/tenant-models", _RegisterInternalTenantModels(prisma));
-    // Note: /api/internal/contract enforces per-tenant identity via TokenReview — not NetworkPolicy-only.
-    app.use("/api/internal/contract", _RegisterInternalTenantContract(prisma, authApi));
-    app.use("/api/internal/awareness/participation", _RegisterInternalParticipation(prisma, authApi));
-
-    app.use("/api/v1/metrics", metricsRouter(customApi, prisma));
-    app.use("/api/v1/tenants", tenantsRouter(customApi, prisma, coreApi, gatewayAdmin));
-    app.use("/api/v1/policies", policiesRouter(customApi, prisma));
-    app.use("/api/v1/ai-budget", aiBudgetRouter(coreApi, prisma));
-    app.use("/api/v1/token-usage", tokenUsageRouter(prisma));
-    app.use("/api/v1/groups", groupsRouter(prisma));
-    app.use("/api/v1/mcp-servers", mcpServersRouter(prisma));
-    app.use("/api/v1/mcp", mcpOperatorRouter(prisma));
-    app.use("/api/v1/shares", sharesRouter(prisma));
-    app.use("/api/v1/resource-shares", resourceSharesRouter(prisma));
-    app.use("/api/v1/skills/catalog", skillCatalogRouter(prisma, ociBundleStore));
-    app.use("/api/v1/skills/posture", skillModelPostureRouter(prisma));
-    app.use("/api/v1/model-routing/defaults", modelRoutingDefaultsRouter(prisma));
-    app.use("/api/v1/model-routing/eval-cases", routingEvalCasesRouter(prisma));
-    app.use("/api/v1/model-routing/measurements", routingMeasurementsRouter(prisma, _BuildShadowSeams));
-    app.use("/api/v1/model-routing/proposals", routingProposalsRouter(prisma));
-    app.use("/api/v1/model-routing/recommendations", modelRoutingRecommendationsRouter(prisma));
-    app.use("/api/v1/model-routing/metrics", modelRoutingMetricsRouter(prisma));
-    app.use("/api/v1/third-party-sources", thirdPartySourcesRouter(prisma));
-    app.use("/api/v1/org/workspace-docs", companyDocsRouter(prisma, _BuildDocMergeReconciler()));
-    app.use("/api/v1/awareness/rollout", awarenessRolloutRouter(prisma));
-    app.use("/api/v1/awareness/participation", awarenessParticipationRouter(prisma));
-    app.use("/api/v1/sessions", sessionsRouter(prisma));
-    app.use("/api/v1/access-tokens", accessTokensRouter(prisma));
-    app.use("/api/v1/providers/keys", providerKeysRouter(prisma));
-    app.use("/api/v1/providers/credentials", providerCredentialsRouter(prisma));
-    app.use("/api/v1/models", modelRegistryRouter(prisma));
-  }
-
-  // ── Fleet / super-admin surface (central super-admin control-plane; NOT a per-silo silo).
-  //    These cross-silo / platform-level surfaces are further gated by their own feature flags.
-  if (_ServesFleetSurface())
-  {
-    app.use("/api/v1/platform/dns", platformDnsRouter(customApi, coreApi));
-    // Multi-tenant self-service surfaces. The single-tenant profile turns these OFF
-    // (billing.enabled=false, clusterTenantManager.enabled=false in Helm): the org is
-    // seeded directly at boot (see _SeedClusterTenant), so there is no self-service
-    // billing or org management to expose. Default ON for the multi-tenant profile.
-    if (_featureEnabled("OPENCRANE_BILLING_ENABLED"))
-    {
-      app.use("/api/v1/billing-accounts", billingAccountsRouter(prisma));
-    }
-    if (_featureEnabled("OPENCRANE_CLUSTER_TENANT_MANAGER_ENABLED"))
-    {
-      // Zitadel is a hard dependency of the multi-tenant path — built here (and only here)
-      // so a single-cluster install (manager off) never requires it; fail-loud if unset.
-      const zitadelClient = _BuildZitadelManagementClient();
-      app.use("/api/v1/cluster-tenants", clusterTenantsRouter(prisma, clusterTenantRegistry, customApi, zitadelClient));
-      // Org membership registry (the LOCAL rows the org-admin gate reads), mounted under
-      // the parent org's `:name`. `mergeParams` carries `:name` into the child router.
-      app.use("/api/v1/cluster-tenants/:name/members", clusterTenantMembersRouter(prisma));
-      // Superadmin-gated rotation of the platform's Zitadel SA key (the master IdP credential).
-      // Mounted here, on the manager-enabled path, because that is the ONLY place the live
-      // Zitadel client exists; the key Secret is patched via the same CoreV1Api the app uses.
-      app.use("/api/v1/admin/zitadel", zitadelKeyRouter(zitadelClient, _BuildZitadelKeySecretStore(coreApi)));
-      // Idempotent reconcile/backfill (S3d): re-provision ClusterTenants whose Zitadel org is
-      // missing/partial (created before Zitadel was configured, or a half-failed provision) and
-      // heal the drift. Superadmin-gated; sibling of the SA-key router on the same live client.
-      app.use("/api/v1/admin/zitadel", zitadelReconcileRouter(prisma, zitadelClient));
-    }
-  }
-
-  // ── Always mounted (both roles): cross-cutting infra + the audit log. Audit serves both the
-  //    central fleet operations and the per-silo tenant operations, so it lives in both.
+  app.use("/api/v1/metrics", metricsRouter(customApi, prisma));
   app.use("/api/v1/audit", auditRouter(prisma));
+  app.use("/api/v1/tenants", tenantsRouter(customApi, prisma, coreApi, gatewayAdmin));
+  app.use("/api/v1/policies", policiesRouter(customApi, prisma));
+  app.use("/api/v1/ai-budget", aiBudgetRouter(coreApi, prisma));
+  app.use("/api/v1/token-usage", tokenUsageRouter(prisma));
+  app.use("/api/v1/groups", groupsRouter(prisma));
+  app.use("/api/v1/mcp-servers", mcpServersRouter(prisma));
+  app.use("/api/v1/mcp", mcpOperatorRouter(prisma));
+  app.use("/api/v1/shares", sharesRouter(prisma));
+  app.use("/api/v1/resource-shares", resourceSharesRouter(prisma));
+  app.use("/api/v1/skills/catalog", skillCatalogRouter(prisma, ociBundleStore));
+  app.use("/api/v1/skills/posture", skillModelPostureRouter(prisma));
+  app.use("/api/v1/model-routing/defaults", modelRoutingDefaultsRouter(prisma));
+  app.use("/api/v1/model-routing/eval-cases", routingEvalCasesRouter(prisma));
+  app.use("/api/v1/model-routing/measurements", routingMeasurementsRouter(prisma, _BuildShadowSeams));
+  app.use("/api/v1/model-routing/proposals", routingProposalsRouter(prisma));
+  app.use("/api/v1/model-routing/recommendations", modelRoutingRecommendationsRouter(prisma));
+  app.use("/api/v1/model-routing/metrics", modelRoutingMetricsRouter(prisma));
+  app.use("/api/v1/third-party-sources", thirdPartySourcesRouter(prisma));
+  app.use("/api/v1/org/workspace-docs", companyDocsRouter(prisma, _BuildDocMergeReconciler()));
+  app.use("/api/v1/platform/dns", platformDnsRouter(customApi, coreApi));
+  // Multi-tenant self-service surfaces. The single-tenant profile turns these OFF
+  // (billing.enabled=false, clusterTenantManager.enabled=false in Helm): the org is
+  // seeded directly at boot (see _SeedClusterTenant), so there is no self-service
+  // billing or org management to expose. Default ON for the multi-tenant profile.
+  if (_featureEnabled("OPENCRANE_BILLING_ENABLED"))
+  {
+    app.use("/api/v1/billing-accounts", billingAccountsRouter(prisma));
+  }
+  if (_featureEnabled("OPENCRANE_CLUSTER_TENANT_MANAGER_ENABLED"))
+  {
+    // Zitadel is a hard dependency of the multi-tenant path — built here (and only here)
+    // so a single-cluster install (manager off) never requires it; fail-loud if unset.
+    const zitadelClient = _BuildZitadelManagementClient();
+    app.use("/api/v1/cluster-tenants", clusterTenantsRouter(prisma, clusterTenantRegistry, customApi, zitadelClient));
+    // Org membership registry (the LOCAL rows the org-admin gate reads), mounted under
+    // the parent org's `:name`. `mergeParams` carries `:name` into the child router.
+    app.use("/api/v1/cluster-tenants/:name/members", clusterTenantMembersRouter(prisma));
+    // Superadmin-gated rotation of the platform's Zitadel SA key (the master IdP credential).
+    // Mounted here, on the manager-enabled path, because that is the ONLY place the live
+    // Zitadel client exists; the key Secret is patched via the same CoreV1Api the app uses.
+    app.use("/api/v1/admin/zitadel", zitadelKeyRouter(zitadelClient, _BuildZitadelKeySecretStore(coreApi)));
+    // Idempotent reconcile/backfill (S3d): re-provision ClusterTenants whose Zitadel org is
+    // missing/partial (created before Zitadel was configured, or a half-failed provision) and
+    // heal the drift. Superadmin-gated; sibling of the SA-key router on the same live client.
+    app.use("/api/v1/admin/zitadel", zitadelReconcileRouter(prisma, zitadelClient));
+  }
+  app.use("/api/v1/awareness/rollout", awarenessRolloutRouter(prisma));
+  app.use("/api/v1/awareness/participation", awarenessParticipationRouter(prisma));
+  app.use("/api/v1/sessions", sessionsRouter(prisma));
+  app.use("/api/v1/access-tokens", accessTokensRouter(prisma));
+  app.use("/api/v1/providers/keys", providerKeysRouter(prisma));
+  app.use("/api/v1/providers/credentials", providerCredentialsRouter(prisma));
+  app.use("/api/v1/models", modelRegistryRouter(prisma));
   app.use("/api/v1/openapi.json", openapiRouter());
   app.get("/healthz", _CheckDbHealth(prisma));
   app.use("/prom", prometheusMetricsRouter(prisma, customApi));

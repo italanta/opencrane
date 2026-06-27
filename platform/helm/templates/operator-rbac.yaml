@@ -1,6 +1,3 @@
-{{- /* Per-CT operator RBAC (S6 / ADR 0002): rendered only in the silo role, alongside
-       its operator Deployment. The central release runs no operator. */ -}}
-{{- if eq (include "opencrane.isSilo" .) "true" }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -70,5 +67,4 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "opencrane.fullname" . }}-operator
     namespace: {{ .Release.Namespace }}
-{{- end }}
 {{- end }}

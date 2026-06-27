@@ -4,9 +4,9 @@
 #
 # A thin profile over the shared install core (k8s-deploy.sh). It installs ONE
 # per-ClusterTenant silo — the dedicated stack a single ClusterTenant runs on shared
-# nodes: its own operator + Obot + skill-registry + LiteLLM + Cognee + a role=silo
-# control-plane + per-CT networking + a per-CT database (one CNPG cluster IN THIS
-# SILO'S NAMESPACE, serving the silo control-plane + its planes). deploymentRole=silo.
+# nodes: its own operator + Obot + skill-registry + LiteLLM + Cognee + control-plane +
+# per-CT networking + a per-CT database (one CNPG cluster IN THIS SILO'S NAMESPACE,
+# serving the silo control-plane + its planes), with self-service manager/billing OFF.
 #
 # The CLUSTER-WIDE infra (ingress-nginx, external-dns, the CloudNativePG operator,
 # cert-manager) is installed ONCE by the CENTRAL release (deploy-multi-tenant.sh); a
@@ -75,12 +75,11 @@ fi
 # silo and from the central release. Default `opencrane-<cluster-tenant>`; --namespace overrides.
 [[ -n "$NAMESPACE" ]] || NAMESPACE="opencrane-${CLUSTER_TENANT}"
 
-# SILO value profile: deploymentRole=silo (renders the per-CT stack), self-service manager +
-# billing OFF, multi-instance OFF. The cluster-wide infra is the central release's job, so skip
-# re-installing the ingress controller, external-dns and the CNPG operator (the silo's own CNPG
-# Cluster CR is still applied and reconciled by the cluster-wide operator).
+# SILO value profile: a per-ClusterTenant install in its own namespace — self-service manager +
+# billing OFF, multi-instance OFF. The cluster-wide infra is installed once by the admin/registry
+# release, so skip re-installing the ingress controller, external-dns and the CNPG operator (the
+# silo's own per-namespace CNPG Cluster CR is still applied and reconciled by the cluster-wide operator).
 PROFILE_SET=(
-  --deployment-role silo
   --namespace "$NAMESPACE"
   --no-ingress-nginx
   --no-external-dns

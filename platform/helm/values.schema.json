@@ -4,10 +4,6 @@
   "description": "Fail-fast guards for the demo-able shared-tier install (S1 / task_bbafd7e9). Deliberately PERMISSIVE: only the keys below are constrained, every other value passes through untouched. Helm validates the MERGED values on every install/template/lint, so an incoherent overlay (e.g. gatewayProxy enabled with no ingress IP) is rejected before the rollout half-installs.",
   "type": "object",
   "properties": {
-    "deploymentRole": {
-      "description": "S6 / ADR 0002 release shape: 'central' (super-admin + Zitadel, default) or 'silo' (per-ClusterTenant stack).",
-      "enum": ["central", "silo"]
-    },
     "ingress": {
       "type": "object",
       "properties": {

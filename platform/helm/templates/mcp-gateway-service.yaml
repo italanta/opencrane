@@ -1,6 +1,6 @@
 {{- /* Service only exists for the release-local (instance-scoped) Obot. A shared
        Obot lives outside this release, reached via opencrane.mcpGatewayUrl. */ -}}
-{{- if and (eq (include "opencrane.isSilo" .) "true") .Values.mcpGateway.enabled (ne (include "opencrane.mcpGatewayShared" .) "true") }}
+{{- if and .Values.mcpGateway.enabled (ne (include "opencrane.mcpGatewayShared" .) "true") }}
 apiVersion: v1
 kind: Service
 metadata:

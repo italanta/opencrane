@@ -1,4 +1,4 @@
-{{- if and (eq (include "opencrane.isSilo" .) "true") .Values.ingress.enabled .Values.gatewayProxy.enabled -}}
+{{- if and .Values.ingress.enabled .Values.gatewayProxy.enabled -}}
 {{- /*
 Single-per-org-host topology (DOMAIN.T4). Every org is served at its own host under the
 platform wildcard `*.<ingress.domain>` (e.g. `acme.weownai.eu`). One wildcard Ingress covers

@@ -160,58 +160,15 @@ and is folded into the per-namespace Role by MI.4's namespaced cert Issuer.
 {{- end }}
 
 {{/*
-Deployment role (S6 / ADR 0002 — per-ClusterTenant silo architecture).
-
-Two release shapes share ONE chart + ONE control-plane image, differing only by which
-templates render and by the OPENCRANE_CONTROL_PLANE_ROLE env a later route-split slice reads:
-
-  - `central` (default): the super-admin control-plane + Zitadel (+ fleet-level bits).
-    Renders NONE of the per-ClusterTenant planes. Preserves the legacy single-install
-    surface for the central `opencrane-system` release.
-  - `silo`: one release per ClusterTenant on shared nodes. Renders the per-CT stack —
-    operator + Obot/MCP gateway + skill-registry + Cognee + LiteLLM + a per-CT
-    control-plane-API instance + per-CT networking + a per-CT tenant DB — and renders
-    NO central super-admin control-plane role and NO Zitadel.
-
-A silo IS a `multiInstance` instance MINUS the central control-plane role MINUS Zitadel;
-the silo profile therefore turns `multiInstance.enabled` on as well (see values/silo).
-
-Resolution + fail-loud: any value other than `central`/`silo` is rejected at render time,
-consistent with the other `fail` guards in this file.
-*/}}
-{{- define "opencrane.deploymentRole" -}}
-{{- $role := default "central" .Values.deploymentRole -}}
-{{- if not (or (eq $role "central") (eq $role "silo")) -}}
-{{- fail (printf "deploymentRole must be \"central\" or \"silo\", got %q" $role) -}}
-{{- end -}}
-{{- $role -}}
-{{- end }}
-
-{{/*
-"true" when this release is the SILO (per-ClusterTenant) shape, else "".
-*/}}
-{{- define "opencrane.isSilo" -}}
-{{- if eq (include "opencrane.deploymentRole" .) "silo" -}}true{{- end -}}
-{{- end }}
-
-{{/*
-"true" when this release is the CENTRAL (super-admin / Zitadel) shape, else "".
-*/}}
-{{- define "opencrane.isCentral" -}}
-{{- if eq (include "opencrane.deploymentRole" .) "central" -}}true{{- end -}}
-{{- end }}
-
-{{/*
 Cognee endpoint the control-plane permission-sync routes call.
 
-In the SILO role with the bundled Cognee on (`controlPlane.cognee.install`), Cognee is a
-release-local, per-CT plane: the Service is release-prefixed (`<fullname>-cognee`, B5) so
-two silos never collide on the legacy unprefixed `cognee` singleton, and this helper points
-the control-plane at it. Otherwise (central role, or BYO Cognee) the configured
-`controlPlane.cognee.endpoint` is used verbatim.
+With the bundled Cognee on (`controlPlane.cognee.install`), Cognee is a release-local plane:
+the Service is release-prefixed (`<fullname>-cognee`, B5) so two installs never collide on the
+legacy unprefixed `cognee` singleton, and this helper points the control-plane at it. Otherwise
+(BYO Cognee) the configured `controlPlane.cognee.endpoint` is used verbatim.
 */}}
 {{- define "opencrane.cogneeEndpoint" -}}
-{{- if and (eq (include "opencrane.isSilo" .) "true") .Values.controlPlane.cognee.install -}}
+{{- if .Values.controlPlane.cognee.install -}}
 {{- printf "http://%s-cognee:%v" (include "opencrane.fullname" .) .Values.controlPlane.cognee.service.port -}}
 {{- else -}}
 {{- .Values.controlPlane.cognee.endpoint -}}

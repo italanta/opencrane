@@ -18,7 +18,7 @@
 
        CENTRAL role: Cognee is a per-CT plane, not a central component (ADR 0002 decision
        2), so the bundled workload is NOT rendered. */ -}}
-{{- if and (eq (include "opencrane.isSilo" .) "true") .Values.controlPlane.cognee.install }}
+{{- if and .Values.controlPlane.cognee.install }}
 ---
 apiVersion: v1
 kind: Service

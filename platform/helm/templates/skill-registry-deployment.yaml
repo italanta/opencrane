@@ -2,7 +2,7 @@
        AND instance-scoped. When sharedPlatform.skillRegistry.mode=shared, the operator
        points tenants at the external registry (opencrane.skillRegistryUrl) and no
        in-release workload, ServiceAccount, or token-review RBAC is created. */ -}}
-{{- if and (eq (include "opencrane.isSilo" .) "true") .Values.skillRegistry.enabled (ne (include "opencrane.skillRegistryShared" .) "true") }}
+{{- if and .Values.skillRegistry.enabled (ne (include "opencrane.skillRegistryShared" .) "true") }}
 ---
 # ServiceAccount for the skill-registry pod. automountServiceAccountToken is
 # enabled here (unlike tenant pods) so the pod can call the Kubernetes TokenReview

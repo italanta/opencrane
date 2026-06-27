@@ -5,25 +5,6 @@ global:
   # -- Deployment environment used for Helm validations (`dev`, `staging`, `prod`).
   environment: dev
 
-# -- Deployment ROLE (S6 / ADR 0002 — per-ClusterTenant silo architecture). Selects
-#    which of the two release shapes this install renders. Both shapes share ONE chart
-#    and ONE control-plane image; they differ only by which templates render and by the
-#    `OPENCRANE_CONTROL_PLANE_ROLE` env a later route-split slice (S6) reads to mount the
-#    right routes.
-#
-#      central (default): the super-admin control-plane + Zitadel (+ fleet-level bits).
-#        Renders NONE of the per-ClusterTenant planes — this is the central
-#        `opencrane-system` release. Preserves the legacy single-install layout.
-#      silo: ONE release per ClusterTenant (on shared nodes). Renders the per-CT stack —
-#        operator + Obot/MCP gateway + skill-registry + Cognee + LiteLLM + a per-CT
-#        control-plane-API (role=silo, pointed at the per-CT tenant DB below) + per-CT
-#        networking — and renders NO central super-admin control-plane role and NO Zitadel.
-#
-#    A silo IS a `multiInstance` instance MINUS the central control-plane role MINUS
-#    Zitadel; the silo values profile (values/silo/oc-example.yaml) also turns
-#    `multiInstance.enabled` on. Any value other than central/silo fails the render.
-deploymentRole: central
-
 # -- Per-ClusterTenant tenant DB (S6 / ADR 0002 decision 3). Each silo runs ONE CNPG cluster
 #    IN ITS OWN NAMESPACE, serving that silo's control-plane + runtime planes — so the silo's
 #    database holds exactly one ClusterTenant's data and the control-plane API never has to

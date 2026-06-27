@@ -1,7 +1,7 @@
 {{- /* Render the release-local Obot Deployment only when enabled AND instance-scoped.
        When sharedPlatform.mcpGateway.mode=shared the operator points tenants at an
        external Obot (opencrane.mcpGatewayUrl), so no in-release workload is created. */ -}}
-{{- if and (eq (include "opencrane.isSilo" .) "true") .Values.mcpGateway.enabled (ne (include "opencrane.mcpGatewayShared" .) "true") }}
+{{- if and .Values.mcpGateway.enabled (ne (include "opencrane.mcpGatewayShared" .) "true") }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

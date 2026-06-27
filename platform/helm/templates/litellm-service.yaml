@@ -2,7 +2,7 @@
        LiteLLM lives outside this release, reached via opencrane.litellmEndpoint. The
        name is release-prefixed (B5) so it never collides with another instance and
        matches the endpoint opencrane.litellmEndpoint resolves to in instance mode. */ -}}
-{{- if and (eq (include "opencrane.isSilo" .) "true") .Values.litellm.enabled (ne (include "opencrane.litellmShared" .) "true") }}
+{{- if and .Values.litellm.enabled (ne (include "opencrane.litellmShared" .) "true") }}
 apiVersion: v1
 kind: Service
 metadata:

@@ -205,15 +205,6 @@ DB_USER="opencrane"
 DB_NAME="opencrane"
 TIMEOUT="${TIMEOUT_SECONDS:-300}"
 
-# --deployment-role selects the S6 / ADR 0002 topology this release takes (chart `deploymentRole`,
-# also read by the control-plane as OPENCRANE_CONTROL_PLANE_ROLE):
-#   central → the shared super-admin control-plane + Zitadel ONLY (no runtime planes, no operator).
-#   silo    → a per-ClusterTenant stack: operator + Obot + skill-registry + LiteLLM + Cognee +
-#             role=silo control-plane + per-CT networking + per-CT DB, one release per silo namespace.
-# Empty → inherit the chart default (central). The profile scripts (deploy-multi-tenant / deploy-silo)
-# preset it; passing it bare here is supported too. Also via OPENCRANE_DEPLOYMENT_ROLE.
-DEPLOYMENT_ROLE="${OPENCRANE_DEPLOYMENT_ROLE:-}"
-
 log()  { echo -e "\033[0;32m[k8s-deploy]\033[0m $1"; }
 warn() { echo -e "\033[1;33m[k8s-deploy]\033[0m $1"; }
 err()  { echo -e "\033[0;31m[k8s-deploy]\033[0m $1" >&2; }
@@ -223,7 +214,6 @@ while [[ $# -gt 0 ]]; do
     --base-domain)   BASE_DOMAIN="$2"; shift 2 ;;
     --domain)        BASE_DOMAIN="$2"; shift 2 ;;  # backwards-compatible alias
     --namespace)     NAMESPACE="$2"; shift 2 ;;
-    --deployment-role) DEPLOYMENT_ROLE="$2"; shift 2 ;;
     --release)       RELEASE="$2"; shift 2 ;;
     --image-tag)        IMAGE_TAG="$2"; shift 2 ;;
     --control-plane-tag) CONTROL_PLANE_TAG="$2"; shift 2 ;;
@@ -258,13 +248,6 @@ done
 
 for c in kubectl helm; do command -v "$c" >/dev/null 2>&1 || { err "Missing required command: $c"; exit 1; }; done
 kubectl cluster-info >/dev/null 2>&1 || { err "kubectl can't reach a cluster. Point your context at the target cluster first."; exit 1; }
-
-# --deployment-role validation: fail fast on a typo rather than mis-rendering the topology
-# (the chart fails loud too, but catching it here gives a clearer message before any mutation).
-if [[ -n "$DEPLOYMENT_ROLE" && "$DEPLOYMENT_ROLE" != "central" && "$DEPLOYMENT_ROLE" != "silo" ]]; then
-  err "Invalid --deployment-role '$DEPLOYMENT_ROLE'. Expected 'central' or 'silo'."
-  exit 1
-fi
 
 # --base-domain validation. When supplied it must be a syntactically valid, lowercase
 # FQDN (≥2 labels, no scheme/port/path, no trailing dot) so it can stand in for
@@ -923,9 +906,6 @@ fi
 _DB_CKSUM="$(printf '%s' "$DB_PASSWORD" | sha256sum | cut -c1-8)"
 helm_args+=(--set "litellm.podAnnotations.db-checksum=$_DB_CKSUM")
 helm_args+=(--set "mcpGateway.podAnnotations.db-checksum=$_DB_CKSUM")
-# S6 deployment role (central|silo). Empty → chart default (central). Set before EXTRA_SET so an
-# explicit `--set deploymentRole=…` on the CLI still wins.
-[[ -n "$DEPLOYMENT_ROLE" ]] && helm_args+=(--set "deploymentRole=$DEPLOYMENT_ROLE")
 helm_args+=("${EXTRA_SET[@]}")
 # When --reuse-values is set, inherit all previously-supplied values from the live release
 # and apply only the overrides passed on this invocation (e.g. a pure image-tag rollout).
@@ -940,12 +920,7 @@ helm "${helm_args[@]}"
 # so the db-migrate initContainer alone could leave the schema behind when the
 # database was recreated under a running pod). The initContainer remains a
 # belt-and-suspenders guard for pod (re)creation between deploys. Idempotent.
-# The operator + runtime planes render ONLY for a silo (S6). Both a central super-admin release
-# and an unset role (chart default = central) have no operator deployment, so waiting on it would
-# hang — wait on it only when the effective role is explicitly silo.
-if [[ "$DEPLOYMENT_ROLE" == "silo" ]]; then
-  kubectl rollout status "deployment/${RELEASE}-operator" -n "$NAMESPACE" --timeout="${TIMEOUT}s"
-fi
+kubectl rollout status "deployment/${RELEASE}-operator" -n "$NAMESPACE" --timeout="${TIMEOUT}s"
 kubectl rollout status "deployment/${RELEASE}-control-plane" -n "$NAMESPACE" --timeout="${TIMEOUT}s"
 
 # 5. Post-deploy verify (opt-in, --verify). Advisory only — surfaces the failure modes that
