@@ -13,7 +13,7 @@
   cert-manager is enabled. These grants moved here from the clustertenant-manager (the silo no
   longer serves platform DNS).
 */}}
-{{- if and .Values.clusterTenantManagement.enabled .Values.certManager.enabled }}
+{{- if and .Values.fleetManager.enabled .Values.clusterTenantManagement.enabled .Values.certManager.enabled }}
 {{- if ne (include "opencrane.namespacedCertIssuer" .) "true" }}
 ---
 # Cluster-issuer mode: the cluster-scoped ClusterIssuer the platform-DNS endpoint upserts.

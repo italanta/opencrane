@@ -105,6 +105,12 @@ sharedPlatform:
 
 # -- Operator settings
 fleetManager:
+  # -- Render the cluster-wide fleet-manager (the singleton operator + fleet/super-admin API +
+  #    registry DB + Zitadel IAM). MUST be true in exactly ONE release per cluster (the fleet
+  #    install via deploy-multi-tenant.sh) and FALSE in every per-silo install (deploy-silo.sh) —
+  #    two fleet-managers would contend over the cluster-scoped ClusterTenant CRs + IAM ownership.
+  #    Default true so a single-box `helm install` runs both managers co-located.
+  enabled: true
   image:
     repository: ghcr.io/italanta/opencrane-fleet-manager
     tag: latest
@@ -190,6 +196,11 @@ fleetManager:
 
 # -- Control plane settings
 clustertenantManager:
+  # NOTE: a `clustertenantManager.enabled` gate (to suppress the silo manager + its idle planes in
+  # the cluster-wide fleet install) is deferred — it needs the fleet↔silo cross-references untangled
+  # first (the fleet-manager's CLUSTERTENANT_MANAGER_INTERNAL_URL + the shared LiteLLM secret).
+  # Today the fleet install renders an idle clustertenant-manager + planes (waste, not harm). The
+  # correctness-critical gate — never running a SECOND fleet-manager in a silo — is `fleetManager.enabled`.
   image:
     repository: ghcr.io/italanta/opencrane-clustertenant-manager
     tag: latest

@@ -84,6 +84,9 @@ PROFILE_SET=(
   --no-ingress-nginx
   --no-external-dns
   --no-db-operator
+  # A silo NEVER runs the cluster-wide fleet-manager — that singleton lives in the fleet install
+  # (deploy-multi-tenant.sh). Two fleet-managers would contend over the ClusterTenant CRs + IAM.
+  --set "fleetManager.enabled=false"
   --set "clusterTenantManagement.enabled=false"
   --set "billing.enabled=false"
   --set "multiInstance.enabled=false"

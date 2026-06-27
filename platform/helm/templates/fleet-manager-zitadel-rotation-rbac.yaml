@@ -17,7 +17,7 @@
   Stage 4: Zitadel management/provisioning moved wholly to the fleet-manager — a silo never holds
   the Zitadel SA key, so this RBAC is rendered for the fleet plane only.
 */}}
-{{- if and .Values.clusterTenantManagement.enabled .Values.fleetManager.zitadel.existingSecret }}
+{{- if and .Values.fleetManager.enabled .Values.clusterTenantManagement.enabled .Values.fleetManager.zitadel.existingSecret }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

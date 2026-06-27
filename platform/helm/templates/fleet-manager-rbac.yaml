@@ -1,3 +1,4 @@
+{{- if .Values.fleetManager.enabled }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -67,4 +68,5 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "opencrane.fullname" . }}-fleet-manager
     namespace: {{ .Release.Namespace }}
+{{- end }}
 {{- end }}
