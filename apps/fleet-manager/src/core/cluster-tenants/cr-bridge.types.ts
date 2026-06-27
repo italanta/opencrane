@@ -32,6 +32,20 @@ export interface ClusterTenantCrSpecPatch
     /** Kubernetes `ResourceQuota` map (CPU, memory, storage, etc.) applied to the org namespace. */
     quota: Record<string, unknown>;
   };
+  /**
+   * Public per-org Zitadel OIDC identifiers, projected onto the CR so the silo resolves
+   * per-org login from the CR (Option A). Omitted entirely until the org is provisioned —
+   * a JSON merge-patch then leaves any existing `spec.zitadel` untouched. These are PUBLIC
+   * OIDC ids (client_id / org id / redirect URI), NOT secrets.
+   */
+  zitadel?: {
+    /** The org's OIDC `client_id` login authorizes with. */
+    clientId?: string;
+    /** The org's Zitadel Organization id (drives the `urn:zitadel:iam:org:id:{orgId}` login scope). */
+    orgId?: string;
+    /** The redirect URI registered on the org's OIDC app, when known. */
+    redirectUri?: string;
+  };
 }
 
 /**

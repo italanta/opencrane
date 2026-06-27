@@ -62,6 +62,18 @@ function _BuildSpecPatch(org: ClusterTenant): ClusterTenantCrSpecPatch
         : {}),
     },
     resources: { quota: (org.resources.quota as Record<string, unknown>) ?? {} },
+    // Project the public per-org Zitadel OIDC ids onto the CR so the silo resolves per-org
+    // login straight from the CR (Option A). Only included when present — an unprovisioned
+    // org omits `zitadel` entirely, so a merge-patch never clears ids already on the CR.
+    ...(org.zitadel && (org.zitadel.clientId || org.zitadel.orgId || org.zitadel.redirectUri)
+      ? {
+          zitadel: {
+            ...(org.zitadel.clientId ? { clientId: org.zitadel.clientId } : {}),
+            ...(org.zitadel.orgId ? { orgId: org.zitadel.orgId } : {}),
+            ...(org.zitadel.redirectUri ? { redirectUri: org.zitadel.redirectUri } : {}),
+          },
+        }
+      : {}),
   };
 }
 

@@ -182,6 +182,18 @@ export function _ToContract(row: ClusterTenantRow): ClusterTenant
       ...(row.nodePool ? { nodePool: row.nodePool } : {}),
     },
     resources: { quota: (row.quota as ClusterTenantResourceQuota | null) ?? {} },
+    // Public per-org Zitadel OIDC ids (set after `provisionOrg`). Included only when at
+    // least one id is present, so the CR-projection (and merge-patch) does not carry an
+    // empty `zitadel` block on an as-yet-unprovisioned org.
+    ...((row.zitadelClientId || row.zitadelOrgId || row.zitadelRedirectUri)
+      ? {
+          zitadel: {
+            ...(row.zitadelClientId ? { clientId: row.zitadelClientId } : {}),
+            ...(row.zitadelOrgId ? { orgId: row.zitadelOrgId } : {}),
+            ...(row.zitadelRedirectUri ? { redirectUri: row.zitadelRedirectUri } : {}),
+          },
+        }
+      : {}),
     status: {
       phase: _FromPrismaPhase(row.phase),
       ...(row.message ? { message: row.message } : {}),

@@ -125,6 +125,11 @@ export interface ClusterTenant
   compute: ClusterTenantCompute;
   /** Resource gating for the customer's namespace. */
   resources: ClusterTenantResources;
+  /**
+   * Public per-org Zitadel OIDC identifiers, projected onto the CR spec so the silo can
+   * resolve per-org login from the CR. Absent until the org is provisioned in Zitadel.
+   */
+  zitadel?: ClusterTenantZitadel;
   /** Observed state; absent until first reconciled. */
   status?: ClusterTenantStatus;
 }
@@ -134,6 +139,23 @@ export interface ClusterTenantResources
 {
   /** Aggregate quota enforced across the customer's namespace. */
   quota: ClusterTenantResourceQuota;
+}
+
+/**
+ * Public per-org Zitadel OIDC identifiers, projected onto the ClusterTenant CR spec so the
+ * silo can resolve a host's per-org login client straight from the CR (the single source of
+ * truth) without its own ClusterTenant read-model. These are PUBLIC OIDC ids — a client_id, an
+ * org id and a redirect URI — NOT secrets, so carrying them on a cluster-scoped CR is safe.
+ * The fleet sets them in its registry DB after `provisionOrg`, then projects them here.
+ */
+export interface ClusterTenantZitadel
+{
+  /** The org's OIDC `client_id` login authorizes with (the per-org public credential). */
+  clientId?: string;
+  /** The org's Zitadel Organization id — added as the `urn:zitadel:iam:org:id:{orgId}` login scope. */
+  orgId?: string;
+  /** The redirect URI registered on the org's OIDC app, when known. */
+  redirectUri?: string;
 }
 
 /**
