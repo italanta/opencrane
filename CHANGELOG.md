@@ -13,8 +13,77 @@ follows [Keep a Changelog](https://keepachangelog.com/); the project uses
 
 ## [Unreleased]
 
-Silo-program identity work — strong-siloes integration branch. All items below are unreleased
-and landed on the `strong-siloes` branch.
+Stage 4 "strong-siloes" fleet/silo architecture split plus earlier silo-program identity work.
+All items below are unreleased and landed on the `strong-siloes` branch.
+
+### Added (Stage 4 — fleet/silo split)
+
+- **The platform is now governed by two purpose-built managers — one fleet-wide, one per-silo —
+  so the super-admin plane and the tenant-facing plane can never bleed scope into each other.**
+  The former `operator` is renamed `fleet-manager`: it is the cluster-wide singleton that owns
+  ClusterTenant lifecycle, billing accounts, org membership, platform DNS, and the Zitadel admin
+  credential. The former `control-plane` is renamed `clustertenant-manager`: it is deployed once
+  per silo (one per ClusterTenant) and serves only tenant-facing routes (tenants, policies,
+  groups, skills, model routing, shares, awareness, sessions). Neither binary can serve the other's
+  routes — an unrecognised role crashes at boot, so a misconfigured deploy fails loud.
+
+- **Fleet operations are reachable at a dedicated fleet endpoint, distinct from any silo.**
+  The `oc` CLI reads `--fleet-url` / `OPENCRANE_FLEET_URL` (falls back to `--url` for
+  co-located single-host dev) and routes all `cluster-tenant`, `admin zitadel`, and
+  `platform dns` commands there. In a production topology, platform operators point the CLI at
+  the fleet-manager; tenant operators point it at their silo — and neither can accidentally hit
+  the wrong plane.
+
+- **The fleet-manager has its own OpenAPI specification and typed client.**  `GET /api/v1/openapi.json`
+  on the fleet-manager returns its own spec covering the 11 fleet paths. `@opencrane/contracts`
+  now ships two typed clients — `___CreateFleetClient` and the existing silo client — so
+  integrators can depend on exactly the surface they need and get compile-time safety for both.
+
+- **Shared infrastructure code is extracted into two workspace libs usable by both managers.**
+  `@opencrane/infra-api` provides CRD constants and typed Kubernetes error helpers.
+  `@opencrane/infra-auth` provides the shared OIDC login/auth substrate — `OidcAuthServiceBase`,
+  auth middleware, org-membership helpers, and the gating primitives — parametrised over each
+  manager's Prisma client so neither app ships a duplicate copy of the auth stack.
+
+- **Each org's OIDC login now resolves from the cluster-scoped ClusterTenant CR, not a silo
+  database row.** When a user hits a silo at `<org>.<base>`, the silo reads the ClusterTenant
+  CR (keyed by host label or `spec.vanityDomain`) to find the correct Zitadel `client_id` and
+  org scope — the CR is the single source of truth, written by the fleet and readable by any
+  silo. The previous per-silo database lookup is gone, so a silo never holds a stale or
+  diverged copy of IdP routing data.
+
+- **The fleet projects each org's public Zitadel identifiers onto the ClusterTenant CR** so that
+  silos can resolve per-org login without access to the fleet registry database. The fleet writes
+  the org's Zitadel organisation ID, project ID, and OIDC client ID onto `spec` at provision
+  time and keeps them current on reconcile.
+
+- **A new org's first workspace is seeded automatically by the fleet operator, not the silo.**
+  When a ClusterTenant CR transitions to `ready`, the fleet operator writes the `<org>-default`
+  Tenant CRD directly into the bound namespace — owner identity is carried on `spec.owner`.
+  The silo TenantOperator then reconciles it into a running openclaw pod. Seeding is idempotent
+  and fail-soft: a transient error retries on the next reconcile without wedging the org.
+
+- **The silo periodically repairs its Tenant projection to stay in sync with CRDs.**  A
+  background `TenantProjectionRepairer` loop (default interval: 60 s; set
+  `OPENCRANE_PROJECTION_REPAIR_INTERVAL_SECONDS=0` to disable) diffs the silo's Postgres
+  Tenant rows against the namespace's Tenant CRDs and upserts any missing entries. This ensures
+  fleet-seeded workspaces surface in the silo's management API (e.g. `oc tenant list`) without
+  requiring the silo to watch the fleet write-path.
+
+- **The silo schema no longer carries fleet-owned tables.** Migration `0030` drops the silo's
+  `cluster_tenants` and `billing_accounts` tables along with their enums; `OrgMembership` retains
+  a soft string reference to the ClusterTenant name (no cascade FK) as a local read-model for
+  `/auth/me` and the org-admin gate. The fleet-manager is now the sole owner of the fleet
+  registry.
+
+### Changed (Stage 4 — fleet/silo split)
+
+- **The Zitadel management credential, key-rotation RBAC, and platform-DNS RBAC all move to the
+  fleet-manager service account.** The silo's ClusterRole for `clustertenants` is reduced to
+  read-only (needed only for per-org login CR reads). The Helm values key for the self-service
+  flag is renamed `clusterTenantManagement.enabled` (was `clusterTenantManager.enabled`) to
+  disambiguate it from the `clustertenantManager` component key; fleet-specific OIDC is under
+  `fleetManager.oidc` and fleet-specific Zitadel config under `fleetManager.zitadel`.
 
 ### Added
 
