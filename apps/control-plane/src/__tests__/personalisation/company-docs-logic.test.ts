@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 
-import { _PublishCompanyDocVersion } from "../../features/company-docs/company-docs.logic.js";
+import { _PublishCompanyDocVersion } from "../../core/company-docs/company-docs.logic.js";
 
 describe("_PublishCompanyDocVersion (P4C.3 immutable versioning)", function _suite()
 {

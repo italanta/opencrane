@@ -4,8 +4,8 @@ import { DocProposalStatus, type PrismaClient } from "@prisma/client";
 
 import { _FindL0Directives } from "../core/personalisation/l0-guard.js";
 import type { DocMergeReconciler } from "../core/personalisation/reconciler.types.js";
-import { _GetCompanyDoc, _GetCompanyDocVersion, _ListCompanyDocVersions, _PublishCompanyDocVersion } from "../features/company-docs/company-docs.logic.js";
-import { _DecideProposal, _ListProposals, _ReconcileTenantDoc } from "../features/company-docs/reconciliation.logic.js";
+import { _GetCompanyDoc, _GetCompanyDocVersion, _ListCompanyDocVersions, _PublishCompanyDocVersion } from "../core/company-docs/company-docs.logic.js";
+import { _DecideProposal, _ListProposals, _ReconcileTenantDoc } from "../core/company-docs/reconciliation.logic.js";
 
 /**
  * Resolve the acting identity from the session, falling back to `system` for

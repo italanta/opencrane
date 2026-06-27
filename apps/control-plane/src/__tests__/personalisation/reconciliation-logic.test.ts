@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 
-import { _DecideProposal, _ReconcileTenantDoc } from "../../features/company-docs/reconciliation.logic.js";
+import { _DecideProposal, _ReconcileTenantDoc } from "../../core/company-docs/reconciliation.logic.js";
 import type { DocMergeReconciler } from "../../core/personalisation/reconciler.types.js";
 
 /** A reconciler stub returning a fixed merge. */

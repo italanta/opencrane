@@ -1,4 +1,4 @@
-import { DatasetScope } from "../../domain/retrieval/retrieval.types.js";
+import { DatasetScope } from "../../core/retrieval/retrieval.types.js";
 
 export { DatasetScope };
 

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { PrismaClient } from "@prisma/client";
 
-import { createGroup, deleteGroup, getGroup, listGroups, updateGroup } from "../features/groups/groups.logic.js";
+import { createGroup, deleteGroup, getGroup, listGroups, updateGroup } from "../core/groups/groups.logic.js";
 import type { GroupWriteRequest } from "./groups.types.js";
 
 /**

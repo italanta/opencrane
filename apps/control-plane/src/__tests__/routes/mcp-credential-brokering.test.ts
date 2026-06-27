@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { McpCredentialValidationError, _NormalizeCredentialInput } from "../../features/mcp-servers/mcp-servers.logic.js";
+import { McpCredentialValidationError, _NormalizeCredentialInput } from "../../core/mcp-servers/mcp-servers.logic.js";
 import type { McpServerCredentialInput } from "../../routes/mcp-servers.types.js";
 
 const _SERVER_ID = "srv_1";
