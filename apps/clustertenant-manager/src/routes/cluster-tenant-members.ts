@@ -2,7 +2,7 @@ import { Router } from "express";
 import type { Request } from "express";
 import type { PrismaClient } from "@prisma/client";
 
-import { _RequireOrgManager } from "../infra/middleware/cluster-tenant-org-admin.js";
+import { _RequireOrgManager } from "@opencrane/infra-auth";
 import { _log } from "../log.js";
 
 /** The org roles a membership may hold (mirrors the Prisma `OrgRole` enum). */

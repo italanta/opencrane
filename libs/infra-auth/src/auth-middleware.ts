@@ -1,8 +1,21 @@
-import { createHash } from "crypto";
-import type { NextFunction, Request, RequestHandler, Response } from "express";
-import type { PrismaClient } from "@prisma/client";
+import { createHash } from "node:crypto";
 
-import { ___LoadOidcAuthConfig } from "../auth/oidc.config.js";
+import type { NextFunction, Request, RequestHandler, Response } from "express";
+
+import { ___LoadOidcAuthConfig } from "./oidc-config.js";
+
+/**
+ * Minimal `AccessToken` read surface for per-user DB token validation. A manager that
+ * issues `oc auth login` tokens (the clustertenant-manager) passes its client; one that
+ * does not (the fleet-manager has no `AccessToken` model) omits it, skipping step 5.
+ */
+export interface AccessTokenReader
+{
+  accessToken: {
+    findFirst(args: unknown): Promise<{ id: string } | null>;
+    update(args: unknown): Promise<unknown>;
+  };
+}
 
 /**
  * Module-level env-var snapshot read once at startup.
@@ -13,47 +26,42 @@ const _envToken = process.env.OPENCRANE_API_TOKEN?.trim() ?? "";
 const _oidcConfig = ___LoadOidcAuthConfig();
 
 /**
- * Express authentication middleware.
+ * Express authentication middleware shared by both managers.
  *
  * Authentication is resolved in priority order:
  *   1. Public path bypass  — /healthz and /api/v1/auth/* never require a token.
  *   2. OIDC session        — a valid session cookie from the browser login flow.
  *   3. Env-var token       — OPENCRANE_API_TOKEN, for CI automation without a DB.
- *   4. DB access token     — per-user token created via `oc auth login` or POST /access-tokens.
+ *   4. DB access token      — per-user token created via `oc auth login` (when a reader is given).
  *   5. Dev-mode bypass     — when neither OIDC nor OPENCRANE_API_TOKEN is configured.
  *
- * @param prisma - Optional Prisma client.  When provided, bearer tokens are also
- *                 validated against the `access_tokens` database table (step 4 above).
- *                 Omit in unit tests that only exercise steps 1–3/5.
+ * @param reader - Optional access-token reader. When provided, bearer tokens are also
+ *                 validated against the `access_tokens` table (step 4). Omit when the
+ *                 manager issues no DB tokens.
  */
-export function ___AuthMiddleware(prisma?: PrismaClient): RequestHandler
+export function ___AuthMiddleware(reader?: AccessTokenReader): RequestHandler
 {
   return function _authHandler(req, res, next)
   {
     // Delegate to an async helper so we can await the DB lookup while still
     // presenting the synchronous `RequestHandler` signature Express expects.
-    _resolveAuth(req, res, next, prisma).catch(next);
+    _resolveAuth(req, res, next, reader).catch(next);
   };
 }
 
-// ---------------------------------------------------------------------------
-// Internal async resolution logic
-// ---------------------------------------------------------------------------
-
 /**
  * Resolve authentication for a single request.
- * Extracted from the outer closure so it can be an async function cleanly.
  *
  * @param req    - Incoming Express request.
  * @param res    - Express response (used only to send 401/403).
  * @param next   - Express next function (called with no args on success).
- * @param prisma - Optional Prisma client for per-user DB token lookup.
+ * @param reader - Optional access-token reader for per-user DB token lookup.
  */
 async function _resolveAuth(
   req: Request,
   res: Response,
   next: NextFunction,
-  prisma: PrismaClient | undefined,
+  reader: AccessTokenReader | undefined,
 ): Promise<void>
 {
   // 1. Public paths bypass all auth checks — /healthz and the auth router
@@ -82,13 +90,11 @@ async function _resolveAuth(
     return;
   }
 
-  // 5. Validate the presented token against per-user DB records when Prisma
-  //    is available.  This covers tokens issued via `oc auth login` and
-  //    POST /access-tokens without requiring a shared env var.
-  if (prisma && providedToken)
+  // 5. Validate the presented token against per-user DB records when a reader is available.
+  if (reader && providedToken)
   {
     const tokenHash = createHash("sha256").update(providedToken).digest("hex");
-    const dbToken = await prisma.accessToken.findFirst({
+    const dbToken = await reader.accessToken.findFirst({
       where: {
         tokenHash,
         OR: [
@@ -101,7 +107,7 @@ async function _resolveAuth(
     if (dbToken)
     {
       // Fire-and-forget usage timestamp — failure is non-fatal.
-      prisma.accessToken.update({
+      reader.accessToken.update({
         where: { id: dbToken.id },
         data: { lastUsedAt: new Date() },
       }).catch(() => undefined);
@@ -112,8 +118,7 @@ async function _resolveAuth(
   }
 
   // 6. Dev-mode bypass — allow unauthenticated access when OIDC is disabled
-  //    and no env-var token is set.  This prevents a locked-out state on a
-  //    fresh local install with no credentials configured yet.
+  //    and no env-var token is set.
   if (!_envToken && !_oidcConfig.enabled)
   {
     next();

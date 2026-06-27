@@ -34,7 +34,7 @@ async function _buildAuthApp(): Promise<Express>
 {
   vi.resetModules();
 
-  const { ___AuthMiddleware } = await import("../infra/middleware/auth.middleware.js");
+  const { ___AuthMiddleware } = await import("@opencrane/infra-auth");
   const app = express();
   app.use(express.json());
   // Prisma omitted intentionally — tests target the env-var and dev-mode paths.

@@ -1,6 +1,6 @@
 import { Router } from "express";
 
-import { _RequirePlatformOperator } from "../../infra/middleware/require-platform-operator.js";
+import { _RequirePlatformOperator } from "@opencrane/infra-auth";
 import type { ZitadelKeySecretStore } from "../../infra/zitadel/key-secret-store.js";
 import type { ZitadelManagementClient } from "../../infra/zitadel/zitadel-client.types.js";
 import { _log } from "../../log.js";

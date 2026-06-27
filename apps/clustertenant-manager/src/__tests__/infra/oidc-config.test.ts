@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { ___LoadOidcAuthConfig } from "../../infra/auth/oidc.config.js";
+import { ___LoadOidcAuthConfig } from "@opencrane/infra-auth";
 
 /** OIDC env vars this suite mutates, snapshotted so each test starts clean. */
 const _ENV_KEYS = ["OIDC_ISSUER_URL", "OIDC_CLIENT_ID", "OIDC_REDIRECT_URI", "OIDC_SESSION_SECRET", "OIDC_COOKIE_SECURE", "NODE_ENV", "OPENCRANE_PLATFORM_OPERATOR_SEED_EMAIL"] as const;

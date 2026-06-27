@@ -1,27 +1,25 @@
 import type { RequestHandler } from "express";
 
-import { _IsDevAuthMode } from "../auth/auth-mode.js";
+import { _IsDevAuthMode } from "./auth-mode.js";
 
 /**
  * Authorization guard restricting a route to the PLATFORM OPERATOR — the fleet-wide
- * superadmin (env-seeded via `OPENCRANE_PLATFORM_OPERATOR_GROUPS` / seed email; see
- * `_ResolveIdentityClaims`). This is the strongest gate in the control-plane and is the
- * only acceptable gate for the master IdP-credential rotation route: a per-org owner/admin
- * must NEVER be able to rotate the platform's Zitadel service-account key.
+ * superadmin (env-seeded via `OPENCRANE_PLATFORM_OPERATOR_GROUPS` / seed email). This is
+ * the strongest gate and the only acceptable one for the master IdP-credential rotation
+ * route: a per-org owner/admin must NEVER be able to rotate the platform's Zitadel
+ * service-account key.
  *
  * IAM-first: the decision is derived purely from the caller's IdP-verified session
  * (`session.authUser.isPlatformOperator`), never from request input.
  *
  * Posture, mirroring `_RequireOrgAdmin` / `_IsDevAuthMode`:
  *   1. No established session — FAIL OPEN under dev mode (no OIDC and no
- *      `OPENCRANE_API_TOKEN`, so a fresh local install / the OPEN dev backend isn't
- *      locked out); FAIL CLOSED otherwise (403) — a real deployment must never let an
- *      unauthenticated or token-only caller reach a superadmin action.
+ *      `OPENCRANE_API_TOKEN`); FAIL CLOSED otherwise (403) — a real deployment must never
+ *      let an unauthenticated or token-only caller reach a superadmin action.
  *   2. Session present — allow iff `isPlatformOperator`; else 403.
  *
- * TODO (S5): `isPlatformOperator` is the non-presumptuous, config-driven stopgap until
- * OpenCrane has a role model. This MUST tighten to a first-class super-admin role once that
- * model lands — operating the fleet and holding the master IdP credential are distinct grants.
+ * TODO (S5): `isPlatformOperator` is the config-driven stopgap until OpenCrane has a role
+ * model. This MUST tighten to a first-class super-admin role once that model lands.
  *
  * @returns Express middleware that continues for platform operators and rejects others (403).
  */

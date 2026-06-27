@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { PrismaClient } from "@prisma/client";
 
-import { _RequirePlatformOperator } from "../../infra/middleware/require-platform-operator.js";
+import { _RequirePlatformOperator } from "@opencrane/infra-auth";
 import { _DeriveOrgRedirectUri, _DeriveVanityRedirectUri } from "../../infra/zitadel/zitadel-client.js";
 import type { ZitadelManagementClient } from "../../infra/zitadel/zitadel-client.types.js";
 import { _log } from "../../log.js";

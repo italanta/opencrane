@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
 
-import { _ResolveOrgMembershipFacts } from "../../infra/auth/org-membership.js";
+import { _ResolveOrgMembershipFacts } from "@opencrane/infra-auth";
 
 /**
  * Unit coverage for the membership-derived org-admin facts (ORG-ADMIN.5): authority

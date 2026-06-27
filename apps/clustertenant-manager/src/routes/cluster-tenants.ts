@@ -7,8 +7,8 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 
 import type { ClusterTenantCreateRequest, ClusterTenantUpdateRequest } from "./cluster-tenants.models.js";
 import { _IsIsolationTier, _ObservedStatusToContract, _SyncObservedStatusToDb, _ToContract, _ToPrismaCompute, _ToPrismaTier, _ValidateCompute, _ValidateResources } from "./cluster-tenants.service.js";
-import { _IsDevAuthMode } from "../infra/auth/auth-mode.js";
-import { _RequireBillingAccountForOrgCreate, _RequireOrgManager } from "../infra/middleware/cluster-tenant-org-admin.js";
+import { _IsDevAuthMode } from "@opencrane/infra-auth";
+import { _RequireBillingAccountForOrgCreate, _RequireOrgManager } from "@opencrane/infra-auth";
 import { _ApplyClusterTenantCr, _DeleteClusterTenantCr } from "../core/cluster-tenants/cr-bridge.js";
 import { _ReadClusterTenantObservedStatus } from "../core/cluster-tenants/cr-status-reader.js";
 import { _EnsureOwnerDefaultTenant } from "../core/cluster-tenants/default-tenant.js";

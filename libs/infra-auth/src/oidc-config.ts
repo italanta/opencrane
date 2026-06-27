@@ -1,4 +1,4 @@
-import type { OidcAuthConfig } from "./oidc.config.types.js";
+import type { OidcAuthConfig } from "./oidc-config.types.js";
 
 /** Load OIDC session auth configuration from environment variables. */
 export function ___LoadOidcAuthConfig(): OidcAuthConfig

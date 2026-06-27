@@ -3,7 +3,7 @@ import type { PrismaClient } from "@prisma/client";
 
 import type { ClusterTenantScopedResource } from "./cluster-tenant-scope.types.js";
 import { _ResolveCallerClusterTenant } from "../auth/resolve-caller-cluster-tenant.js";
-import { _IsDevAuthMode } from "../auth/auth-mode.js";
+import { _IsDevAuthMode } from "@opencrane/infra-auth";
 
 /**
  * Reusable authorization guard for mutations (POST/PUT/DELETE) on ClusterTenant-scoped

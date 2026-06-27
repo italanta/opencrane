@@ -1,4 +1,4 @@
-/** Runtime configuration for OIDC-backed control-plane sessions. */
+/** Runtime configuration for OIDC-backed manager sessions (fleet or clustertenant). */
 export interface OidcAuthConfig
 {
   /** Whether OIDC is enabled for human login flows. */
@@ -67,11 +67,11 @@ export interface OidcAuthConfig
   platformOperatorGroups: string[];
 
   /**
-   * Lowercased group names that mark a caller as an organisation admin — the role that
-   * may curate the MCP catalogue and approve servers. A caller is an org admin iff their
-   * groups intersect this set (platform operators are always org admins, being a superset).
-   * Empty by default, so nobody is an org admin until configured (fail-closed). Sourced
-   * from `OPENCRANE_ORG_ADMIN_GROUPS`; aligns with Obot's Admin role (P0.1/P0.5).
+   * Lowercased group names that mark a caller as an organisation admin — the role
+   * that may curate the MCP catalogue / manage an organisation they own. A caller
+   * is an org admin iff their groups intersect this set (platform operators are
+   * always org admins, being a superset). Empty by default, so nobody is an org
+   * admin until configured (fail-closed). Sourced from `OPENCRANE_ORG_ADMIN_GROUPS`.
    */
   orgAdminGroups: string[];
 

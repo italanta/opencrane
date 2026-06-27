@@ -2,8 +2,8 @@ import { Router, type Request, type Response } from "express";
 import type { PrismaClient } from "@prisma/client";
 
 import { approveServer, clearCredential, connectOauth, disconnectOauth, getAccessPolicy, getDirectory, installServer, listAllServers, listEntitledCatalog, listInstalled, publishServer, rejectServer, setAccessPolicy, setCredential, setServerEnabled, uninstallServer, type McpOperatorCaller } from "../core/mcp-operator/mcp-operator.logic.js";
-import { _IsDevAuthMode } from "../infra/auth/auth-mode.js";
-import { _RequireOrgAdmin } from "../infra/middleware/require-org-admin.js";
+import { _IsDevAuthMode } from "@opencrane/infra-auth";
+import { _RequireOrgAdmin } from "@opencrane/infra-auth";
 import type { McpAccessPolicyRequest, McpEnabledRequest, McpInstallRequest } from "./mcp-operator.types.js";
 
 /**

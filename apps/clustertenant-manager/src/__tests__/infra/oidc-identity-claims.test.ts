@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { _ResolveIdentityClaims } from "../../infra/auth/oidc.service.js";
+import { _ResolveIdentityClaims } from "@opencrane/infra-auth";
 
 /** Default claim names with one configured operator + one org-admin group, mirroring the loader. */
 const _CONFIG = {

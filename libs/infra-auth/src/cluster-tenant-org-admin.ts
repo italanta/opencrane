@@ -1,7 +1,29 @@
 import type { Request, RequestHandler } from "express";
-import type { PrismaClient } from "@prisma/client";
 
-import { _IsDevAuthMode } from "../auth/auth-mode.js";
+import { _IsDevAuthMode } from "./auth-mode.js";
+
+/**
+ * Minimal `BillingAccount` read surface the org-create billing gate needs. The `findUnique`
+ * argument is typed `unknown` so each manager's full Prisma client is assignable; the lib
+ * supplies the concrete query and relies only on the narrowed return.
+ */
+export interface BillingAccountReader
+{
+  billingAccount: {
+    findUnique(args: unknown): Promise<{ id: string } | null>;
+  };
+}
+
+/**
+ * Minimal `OrgMembership` read surface the org-manager gate needs. Same `unknown`-argument
+ * convention as {@link BillingAccountReader}.
+ */
+export interface OrgManagerReader
+{
+  orgMembership: {
+    findUnique(args: unknown): Promise<{ role: string } | null>;
+  };
+}
 
 /**
  * Resolve the caller's subject from the session, fail-closed. Under the dev-mode
@@ -26,18 +48,15 @@ function _callerSubject(req: Request): string
  * gate that replaces it.
  *
  * Posture:
- *   1. No session — FAIL OPEN under the dev-mode bypass (no OIDC, no env token), so a
- *      fresh local install / the OPEN dev backend still works; FAIL CLOSED otherwise
- *      (401) — an anonymous caller in a real deployment must never create an org.
- *   2. Platform operator (env-seeded superadmin) — always allowed, no billing account
- *      required (they operate the fleet, not a customer billing relationship).
+ *   1. No session — FAIL OPEN under the dev-mode bypass; FAIL CLOSED otherwise (401).
+ *   2. Platform operator — always allowed, no billing account required.
  *   3. Other established session — allow iff a billing account exists for the caller's
  *      subject; otherwise 403 with a code the SPA can use to route the user to billing.
  *
- * @param prisma - Prisma client for the billing-account lookup.
+ * @param reader - A client exposing the minimal `BillingAccount` read surface.
  * @returns Express middleware enforcing the billing gate (401/403 on denial).
  */
-export function _RequireBillingAccountForOrgCreate(prisma: PrismaClient): RequestHandler
+export function _RequireBillingAccountForOrgCreate(reader: BillingAccountReader): RequestHandler
 {
   return function _billingGate(req, res, next)
   {
@@ -55,9 +74,8 @@ export function _RequireBillingAccountForOrgCreate(prisma: PrismaClient): Reques
       return;
     }
 
-    // 2. Exception: the platform operator (the env-seeded superadmin) bootstraps and
-    //    operates the fleet, not a customer billing relationship, so they may create
-    //    organisations without a billing account.
+    // 2. Exception: the platform operator bootstraps and operates the fleet, not a customer
+    //    billing relationship, so they may create organisations without a billing account.
     if (authUser.isPlatformOperator === true)
     {
       next();
@@ -66,7 +84,7 @@ export function _RequireBillingAccountForOrgCreate(prisma: PrismaClient): Reques
 
     // 3. Established non-operator session — require an existing billing account.
     const subject = _callerSubject(req);
-    prisma.billingAccount.findUnique({ where: { subject }, select: { id: true } })
+    reader.billingAccount.findUnique({ where: { subject }, select: { id: true } })
       .then(function _onAccount(account)
       {
         if (account)
@@ -87,8 +105,7 @@ export function _RequireBillingAccountForOrgCreate(prisma: PrismaClient): Reques
  *   - an `owner`/`admin` member of the specific org named in `req.params.name`.
  *
  * For the collection routes (list at `/`, with no `:name`) only a platform operator
- * passes — a per-org member has no business reading the whole fleet. Per-org members
- * reach their own org via `GET /:name`.
+ * passes — a per-org member has no business reading the whole fleet.
  *
  * Authority is derived purely from `OrgMembership` (owner/admin) and the session's
  * `isPlatformOperator` — never request input beyond the resource name in the path.
@@ -98,10 +115,10 @@ export function _RequireBillingAccountForOrgCreate(prisma: PrismaClient): Reques
  *   2. Platform operator — allow.
  *   3. Owner/admin membership of the named org — allow; else 403.
  *
- * @param prisma - Prisma client for the membership lookup.
+ * @param reader - A client exposing the minimal `OrgMembership` read surface.
  * @returns Express middleware enforcing operator-or-owner/admin (401/403 on denial).
  */
-export function _RequireOrgManager(prisma: PrismaClient): RequestHandler
+export function _RequireOrgManager(reader: OrgManagerReader): RequestHandler
 {
   return function _orgManagerGate(req, res, next)
   {
@@ -143,7 +160,7 @@ export function _RequireOrgManager(prisma: PrismaClient): RequestHandler
       return;
     }
 
-    prisma.orgMembership.findUnique({
+    reader.orgMembership.findUnique({
       where: { clusterTenant_subject: { clusterTenant: orgName, subject } },
       select: { role: true },
     })

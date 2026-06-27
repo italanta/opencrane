@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { _RequireOrgAdmin } from "../../infra/middleware/require-org-admin.js";
+import { _RequireOrgAdmin } from "@opencrane/infra-auth";
 
 /** OIDC + token env vars that decide `_IsDevAuthMode`; cleared/restored around each test. */
 const _AUTH_ENV = ["OPENCRANE_API_TOKEN", "OIDC_ISSUER_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_REDIRECT_URI", "OIDC_SESSION_SECRET"] as const;

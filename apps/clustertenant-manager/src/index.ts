@@ -19,7 +19,7 @@ import { _BuildGatewayAdmin } from "./core/connections/gateway-admin.js";
 import { _SeedClusterTenant } from "./infra/cluster-tenant-seed.js";
 import { ___CreateOidcAuthService } from "./infra/auth/oidc.service.js";
 import { ___CreatePrismaClient } from "./infra/db/db.js";
-import { ___AuthMiddleware } from "./infra/middleware/auth.middleware.js";
+import { ___AuthMiddleware } from "@opencrane/infra-auth";
 import { _TransportSecurity } from "./infra/middleware/transport-security.middleware.js";
 import { _ErrorHandler } from "./middleware/error-handler.js";
 
