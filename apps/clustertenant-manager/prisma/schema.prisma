@@ -119,74 +119,6 @@ model AccessPolicy {
   @@map("access_policies")
 }
 
-/// Isolation strength chosen per customer (mirrors ClusterTenantIsolationTier in contracts).
-enum ClusterTenantIsolationTier {
-  Shared           @map("shared")
-  DedicatedNodes   @map("dedicatedNodes")
-  DedicatedCluster @map("dedicatedCluster")
-}
-
-/// Compute placement for a cluster tenant (mirrors ClusterTenantComputeMode in contracts).
-enum ClusterTenantComputeMode {
-  Shared    @map("shared")
-  Dedicated @map("dedicated")
-}
-
-/// The first-class customer / isolation unit that sits above the Tenant/openclaw CRD.
-///
-/// Persisted alongside the cluster-scoped ClusterTenant CRD (dual-write, like
-/// Tenant/AccessPolicy). `quota` mirrors ClusterTenantResourceQuota; status fields
-/// track the provisioning lifecycle. Default single-install installs carry a single
-/// synthetic "default" cluster tenant, so this table is empty until multi-tenancy is opted in.
-model ClusterTenant {
-  /// Stable cluster-scoped identifier (the customer key).
-  name           String                     @id
-  /// Human-readable customer name.
-  displayName    String                     @map("display_name")
-  /// Optional customer-vanity domain CNAMEd onto the org's canonical apex (<name>.<platformBaseDomain>); an overlay, not the org identity. Null → only the derived apex serves the org. Unique (NULLs distinct) so a vanity host resolves to exactly one org for per-org login.
-  vanityDomain   String?                    @unique @map("vanity_domain")
-  /// Isolation strength chosen for this customer.
-  isolationTier  ClusterTenantIsolationTier @default(Shared) @map("isolation_tier")
-  /// Whether the customer shares nodes or gets a dedicated pool.
-  computeMode    ClusterTenantComputeMode   @default(Shared) @map("compute_mode")
-  /// Dedicated node pool name; set when computeMode is Dedicated.
-  nodePool       String?                    @map("node_pool")
-  /// Aggregate resource ceiling ({cpu,memory,pods,storage,gpu}).
-  quota          Json?
-  /// Current lifecycle phase (pending|provisioning|ready|failed).
-  phase          String                     @default("pending")
-  /// Human-readable detail, set on failure or transitional states.
-  message        String?
-  /// Namespace bound to this customer once provisioned.
-  boundNamespace String?                    @map("bound_namespace")
-  /// Identifier of the provisioner that owns this customer's boundary.
-  provisioner    String?
-  /// Zitadel Organization id provisioned for this org's isolated user pool (S3 /
-  /// Phase 2a). Null until the control-plane has provisioned the Org (or when the
-  /// Zitadel management client is unconfigured). The org's end-users live ONLY here.
-  zitadelOrgId       String?                @map("zitadel_org_id")
-  /// Zitadel OIDC application id for this org's login surface at `<org>.<base>`.
-  zitadelAppId       String?                @map("zitadel_app_id")
-  /// OIDC client_id of this org's Zitadel app — the per-org credential login uses to
-  /// authorize against the org's isolated user pool (S3b). Null until provisioned (or
-  /// when Zitadel is unconfigured); a host that resolves to a CT with no client_id
-  /// fail-closes to no per-org login (see oidc.service `_resolvePerOrgClient`).
-  zitadelClientId    String?                @map("zitadel_client_id")
-  /// The redirect URI registered on this org's Zitadel app (`<org>.<base>/api/v1/auth/callback`).
-  zitadelRedirectUri String?                @map("zitadel_redirect_uri")
-  /// Zitadel project id of this org's `opencrane` project (S3b). Needed to update the
-  /// OIDC app's redirect URIs when the org's vanity domain changes (the Zitadel update
-  /// endpoint is project-scoped). Null until provisioned (or when Zitadel is unconfigured).
-  zitadelProjectId   String?                @map("zitadel_project_id")
-  /// Creation timestamp.
-  createdAt      DateTime                   @default(now()) @map("created_at")
-  /// Last update timestamp.
-  updatedAt      DateTime                   @updatedAt @map("updated_at")
-  /// Membership rows binding subjects to this org with a role; cascades on delete.
-  memberships    OrgMembership[]
-
-  @@map("cluster_tenants")
-}
 
 /// Role a subject holds within one organisation (ClusterTenant). `owner` is the
 /// org's root admin created transactionally with the org; `admin` is a delegated
@@ -206,23 +138,10 @@ enum OrgRole {
 /// IdP-verified subject (one account per subject, idempotent on create); the
 /// verified email is recorded for human reconciliation but is NOT the key, since a
 /// subject's email can change while its `sub` is stable.
-model BillingAccount {
-  /// Surrogate key.
-  id        String   @id @default(cuid())
-  /// IdP-verified subject (OIDC `sub`) that owns this billing account; unique.
-  subject   String   @unique
-  /// The caller's IdP-verified email at create time (for human reconciliation; not the key).
-  email     String?
-  /// Optional human-readable billing name (company / individual).
-  displayName String? @map("display_name")
-  /// Creation timestamp.
-  createdAt DateTime @default(now()) @map("created_at")
-  /// Last update timestamp.
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@index([subject])
-  @@map("billing_accounts")
-}
+// NOTE: BillingAccount + ClusterTenant moved to the fleet-manager's registry DB (Stage 4) —
+// the silo no longer owns the fleet registry. OrgMembership stays here as the silo's local
+// read-model (read by /auth/me via @opencrane/infra-auth); its `clusterTenant` is now a soft
+// string ref (no cross-DB FK to the relocated ClusterTenant).
 
 /// Binds a subject to an organisation (ClusterTenant) with a role. Authority is
 /// DERIVED from these rows, never from a global flag: a subject who owns/administers
@@ -244,8 +163,6 @@ model OrgMembership {
   createdAt     DateTime      @default(now()) @map("created_at")
   /// Last update timestamp.
   updatedAt     DateTime      @updatedAt @map("updated_at")
-  /// Owning organisation; cascades on org delete so memberships never linger.
-  org           ClusterTenant @relation(fields: [clusterTenant], references: [name], onDelete: Cascade)
 
   @@unique([clusterTenant, subject])
   @@index([subject])
