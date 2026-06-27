@@ -2,7 +2,7 @@ import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
 
 import type { OpenClawTenantOperatorConfig } from "../../config.js";
-import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "../../shared/crd-constants.js";
+import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "@opencrane/infra-api";
 import { _ComputeLastActivityMs, _ListIdleCandidates, _ShouldSuspend } from "./idle-policy.js";
 import type { Tenant } from "../models/tenant.interface.js";
 

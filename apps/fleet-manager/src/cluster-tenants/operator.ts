@@ -4,7 +4,7 @@ import type { Logger } from "pino";
 import type { OpenClawTenantOperatorConfig } from "../config.js";
 import { __K8sApplyResource } from "../infra/k8s.js";
 import { _RunWatchLoop, K8sWatchEventType } from "../shared/watch-runner.js";
-import { CLUSTER_TENANT_CRD_PLURAL, OPENCRANE_API_GROUP, OPENCRANE_API_VERSION } from "../shared/crd-constants.js";
+import { CLUSTER_TENANT_CRD_PLURAL, OPENCRANE_API_GROUP, OPENCRANE_API_VERSION } from "@opencrane/infra-api";
 import { _BuildClusterTenantNamespace } from "../tenants/deploy/index.js";
 import type { ClusterTenantResource } from "../tenants/internal/cluster-tenant-resolution.types.js";
 

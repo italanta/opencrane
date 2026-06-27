@@ -4,7 +4,7 @@ import * as k8s from "@kubernetes/client-node";
 import { _ApplyPlatformDnsConfig } from "../core/platform-dns/apply-dns-config.js";
 import { _DnsProviderConfigError } from "../core/platform-dns/cluster-issuer.js";
 import type { CertIssuerKind } from "../core/platform-dns/cluster-issuer.types.js";
-import { _IsK8sNotFound } from "../shared/k8s-errors.js";
+import { _IsK8sNotFound } from "@opencrane/infra-api";
 import type { PlatformDnsStatus } from "./platform-dns.types.js";
 
 /** Default issuer name when the request omits one. */

@@ -9,13 +9,12 @@ import { GrantCompilerAccess, GrantCompilerPayloadType } from "../core/grants/gr
 import { _DeriveTenantDatasetMembership } from "../core/grants/derive-dataset-membership.js";
 import { _CutTenant } from "../core/connections/cut-tenant.js";
 import type { OpenClawGatewayAdmin } from "../core/connections/gateway-admin.types.js";
-import { _IsK8sNotFound } from "../shared/k8s-errors.js";
+import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL, _IsK8sNotFound } from "@opencrane/infra-api";
 
 import type { CreateTenantRequest, TenantDatasetsResponse, TenantResponse, UpdateTenantDatasetsRequest } from "../types.js";
 import type { EffectiveContractResponse } from "./tenants.types.js";
 import { _DetectTenantProjectionDrift } from "./internal/projection-drift.js";
 import { _RepairTenantProjection } from "./internal/projection-repair.js";
-import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "../shared/crd-constants.js";
 
 /** Tenant CR appearance SLO constants. */
 const TENANT_CR_APPEARANCE_TIMEOUT_MS = 30_000;

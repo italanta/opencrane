@@ -2,8 +2,7 @@ import * as k8s from "@kubernetes/client-node";
 import { ClusterTenantComputeMode } from "@opencrane/contracts";
 import type { ClusterTenant } from "@opencrane/contracts";
 
-import { CLUSTER_TENANT_CRD_PLURAL, OPENCRANE_API_GROUP, OPENCRANE_API_VERSION } from "../../shared/crd-constants.js";
-import { _IsK8sConflict, _IsK8sNotFound } from "../../shared/k8s-errors.js";
+import { CLUSTER_TENANT_CRD_PLURAL, OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, _IsK8sConflict, _IsK8sNotFound } from "@opencrane/infra-api";
 import type { ClusterTenantCrSpecPatch, ClusterTenantOwner, ClusterTenantSpec } from "./cr-bridge.types.js";
 
 /**

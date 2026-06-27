@@ -1,7 +1,7 @@
 import * as k8s from "@kubernetes/client-node";
 import type { ClusterTenantObservedStatus } from "@opencrane/contracts";
 
-import { CLUSTER_TENANT_CRD_PLURAL, OPENCRANE_API_GROUP, OPENCRANE_API_VERSION } from "../../shared/crd-constants.js";
+import { CLUSTER_TENANT_CRD_PLURAL, OPENCRANE_API_GROUP, OPENCRANE_API_VERSION } from "@opencrane/infra-api";
 
 /**
  * Reader for the OBSERVED status the operator stamps on the cluster-scoped ClusterTenant CR.

@@ -9,7 +9,7 @@ import { TenantPolicyResolutionState, TenantStatusPhase } from "./models/tenant-
 
 import { __K8sApplyResource } from "../infra/k8s.js";
 import { _RunWatchLoop, K8sWatchEventType } from "../shared/watch-runner.js";
-import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "../shared/crd-constants.js";
+import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "@opencrane/infra-api";
 import { _BuildClusterTenantLimitRange, _BuildClusterTenantNamespace, _BuildClusterTenantResourceQuota, _BuildConfigMap, _BuildDeployment, _BuildGatewayNetworkPolicy, _BuildService, _BuildServiceAccount, _BuildSiloBaselineNetworkPolicy, _BuildSiloLinkerdIdentityPolicy, _BuildStatePvc } from "./deploy/index.js";
 import { TenantCleanup } from "./destroy/tenant-cleanup.js";
 import { LinkerdIdentityClient } from "./internal/linkerd-identity.client.js";

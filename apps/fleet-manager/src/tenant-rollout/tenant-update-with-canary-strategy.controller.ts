@@ -3,7 +3,7 @@ import { PatchStrategy, setHeaderOptions } from "@kubernetes/client-node";
 import type { Logger } from "pino";
 
 import type { TenantRolloutConfig, TenantRolloutEntry, TenantRolloutPhase } from "./tenant-update-with-canary-strategy.types.js";
-import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "../shared/crd-constants.js";
+import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "@opencrane/infra-api";
 
 /**
  * Tenant update controller using a canary strategy.

@@ -1,8 +1,7 @@
 import * as k8s from "@kubernetes/client-node";
 import { Prisma, type PrismaClient } from "@prisma/client";
 
-import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "../../shared/crd-constants.js";
-import { _IsK8sConflict, _IsK8sNotFound } from "../../shared/k8s-errors.js";
+import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL, _IsK8sConflict, _IsK8sNotFound } from "@opencrane/infra-api";
 
 /** Suffix appended to an org name to form its first workspace Tenant's name. */
 export const _DEFAULT_TENANT_SUFFIX = "-default";

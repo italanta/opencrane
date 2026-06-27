@@ -2,6 +2,8 @@ packages:
   - libs/contracts
   - libs/awareness
   - libs/observability
+  - libs/infra-api
+  - libs/infra-auth
   - apps/fleet-manager
   - apps/clustertenant-manager
   - apps/harvesting-agent

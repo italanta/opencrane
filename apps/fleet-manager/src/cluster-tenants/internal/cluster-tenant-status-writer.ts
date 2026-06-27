@@ -1,7 +1,7 @@
 import * as k8s from "@kubernetes/client-node";
 import type { Logger } from "pino";
 
-import { CLUSTER_TENANT_CRD_PLURAL, OPENCRANE_API_GROUP, OPENCRANE_API_VERSION } from "../../shared/crd-constants.js";
+import { CLUSTER_TENANT_CRD_PLURAL, OPENCRANE_API_GROUP, OPENCRANE_API_VERSION } from "@opencrane/infra-api";
 import type { ClusterTenantResource } from "../../tenants/internal/cluster-tenant-resolution.types.js";
 
 /** Observed-state fields the reconciler patches onto a ClusterTenant status. */

@@ -18,6 +18,7 @@
   "dependencies": {
     "@kubernetes/client-node": "^1.0.0",
     "@opencrane/awareness": "workspace:*",
+    "@opencrane/infra-api": "workspace:*",
     "@opencrane/contracts": "workspace:*",
     "@opencrane/observability": "workspace:*",
     "@prisma/client": "^6.0.0",
