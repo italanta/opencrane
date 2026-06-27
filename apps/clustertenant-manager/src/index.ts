@@ -24,6 +24,7 @@ import { _ErrorHandler } from "./middleware/error-handler.js";
 
 import { _log as log } from "./log.js";
 import { _RegisterRoutes } from "./routes.js";
+import { TenantProjectionRepairer } from "./infra/tenant-projection-repairer.js";
 
 // Route any stray console.* call (first-party or third-party) through the
 // structured logger so nothing reaches stdout unstructured / uncorrelated.
@@ -109,6 +110,16 @@ const server = app.listen(port, function _onListen()
 // fleet owns the ClusterTenant registry. The silo receives its ClusterTenant read-model via CR
 // projection, not a local boot-seed.
 
+// Periodic Tenant-projection repair (Stage 4). The fleet-manager creates each org's
+// `<org>-default` Tenant CRD on ready; the silo has no operator watch, so this loop reconciles
+// its Postgres projection to the namespace's Tenant CRDs (creating missing rows) so fleet-seeded
+// workspaces appear in the silo's management API. Idempotent + fail-soft; interval from
+// OPENCRANE_PROJECTION_REPAIR_INTERVAL_SECONDS (default 60; 0 disables).
+const _projectionRepairNamespace = process.env.NAMESPACE ?? "default";
+const _projectionRepairIntervalMs = Number(process.env.OPENCRANE_PROJECTION_REPAIR_INTERVAL_SECONDS ?? "60") * 1000;
+const tenantProjectionRepairer = new TenantProjectionRepairer(customApi, prisma, _projectionRepairNamespace, log, _projectionRepairIntervalMs);
+tenantProjectionRepairer.start();
+
 /**
  * Gracefully drain the server, disconnect Prisma, flush telemetry, and restore
  * console before exiting. A hard-exit timer guards against a stuck close so the
@@ -122,6 +133,9 @@ async function _shutdown(signal: string): Promise<void>
   // 1. Force exit if graceful shutdown stalls, so we never exceed the grace period.
   const hardExit = setTimeout(function _force() { process.exit(1); }, 10_000);
   hardExit.unref();
+
+  // Stop the projection-repair loop so no sweep races the Prisma disconnect below.
+  tenantProjectionRepairer.stop();
 
   try
   {
