@@ -10,7 +10,10 @@ COPY libs/contracts/package.json libs/contracts/tsconfig.json libs/contracts/
 COPY libs/awareness/package.json libs/awareness/tsconfig.json libs/awareness/
 COPY libs/observability/package.json libs/observability/tsconfig.json libs/observability/
 COPY apps/clustertenant-operator/scripts apps/clustertenant-operator/scripts
+# @opencrane/contracts generates typed clients from BOTH OpenAPI specs (silo + fleet), so the
+# fleet spec must be present too even though this is the silo image.
 COPY apps/clustertenant-operator/openapi.json apps/clustertenant-operator/openapi.json
+COPY apps/fleet-operator/openapi.json apps/fleet-operator/openapi.json
 COPY apps/clustertenant-operator/package.json apps/clustertenant-operator/tsconfig.json apps/clustertenant-operator/
 COPY apps/clustertenant-operator/prisma apps/clustertenant-operator/prisma
 RUN pnpm install --frozen-lockfile --filter @opencrane/contracts --filter @opencrane/awareness --filter @opencrane/observability --filter @opencrane/clustertenant-operator

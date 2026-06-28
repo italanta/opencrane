@@ -13,9 +13,11 @@ RUN pnpm install --frozen-lockfile --filter @opencrane/observability --filter @o
 
 COPY libs/observability/src libs/observability/src
 COPY libs/contracts/src libs/contracts/src
-# @opencrane/contracts' build regenerates its typed client from the control-plane
-# OpenAPI spec (`pnpm generate` → openapi-typescript), so the spec must be present.
+# @opencrane/contracts' build regenerates its typed clients from BOTH OpenAPI specs — the silo
+# (clustertenant-operator) and the fleet (fleet-operator) — via `pnpm generate` →
+# openapi-typescript, so both specs must be present before contracts builds (below).
 COPY apps/clustertenant-operator/openapi.json apps/clustertenant-operator/openapi.json
+COPY apps/fleet-operator/openapi.json apps/fleet-operator/openapi.json
 COPY apps/fleet-operator/src apps/fleet-operator/src
 RUN pnpm --filter @opencrane/observability build
 RUN pnpm --filter @opencrane/contracts build
