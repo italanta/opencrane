@@ -41,7 +41,7 @@ function _ParseTenantNameFromSubject(subject: string): string | null
  * **This router is NOT behind `___AuthMiddleware`.** Authentication is inline via
  * TokenReview; NetworkPolicy further limits which pods can reach it.
  *
- * @see platform/helm/templates/networkpolicy-planes.yaml — NetworkPolicy.
+ * @see apps/clustertenant-platform/templates/networkpolicy-planes.yaml — NetworkPolicy.
  * @see apps/fleet-operator/src/tenants/deploy/3-deployment.ts — projected-token injection.
  *
  * @param prisma  - Prisma client.

@@ -21,7 +21,7 @@
 
 How the operator actually shapes the cluster (verified June 2026):
 
-- **Six CRDs** in `platform/helm/crds/`: `Tenant`, `ClusterTenant` (cluster-scoped), `AccessPolicy`, `MCPServer`, `SkillRegistry`, `Schedule`. CRDs use `spec`/`status` subresources — spec is user-owned, status is operator-owned (patched via `*StatusWriter` / `patchNamespacedCustomObjectStatus`).
+- **Six CRDs** in `apps/fleet-platform/crds/`: `Tenant`, `ClusterTenant` (cluster-scoped), `AccessPolicy`, `MCPServer`, `SkillRegistry`, `Schedule`. CRDs use `spec`/`status` subresources — spec is user-owned, status is operator-owned (patched via `*StatusWriter` / `patchNamespacedCustomObjectStatus`).
 - **Operator reconcile is an idempotent ~10-step sequence per UserTenant** (`Tenant` CR, `apps/fleet-operator/src/tenants/operator.ts`): resolve parent ClusterTenant → enforce isolation (PSA labels + ResourceQuota + LimitRange) → resolve effective AccessPolicy (precedence: explicit `policyRef` > selector > default > none) → ServiceAccount (+ Workload Identity annotation on GKE) → external storage → per-UserTenant AES-256 key Secret → LiteLLM virtual key (best-effort) → ConfigMap → state volume → single-replica Deployment + Service + Ingress → patch status. **All applies are server-side (fieldManager `openclane-operator`)** so re-runs are safe.
 - **Watch loop auto-reconnects** with 5s backoff (`shared/watch-runner.ts`); the K8s API closes streams every ~5–10 min — treat reconnects as normal, never as an error path.
 - **Namespace isolation is enforced per-ClusterTenant**: PSA *restricted* profile labels, a `ResourceQuota` (cpu/mem/pods/storage/gpu), and a `LimitRange` (per-container defaults — required because the quota constrains `requests.*`). Pod placement: `nodeSelector` + `tolerations` are stamped only when the parent's `compute.mode = dedicated`; shared mode is left unconstrained (byte-for-byte baseline preserved).
@@ -74,9 +74,9 @@ When a route is intentionally excluded from `___AuthMiddleware` and relies on Ku
  * **This router is NOT behind `___AuthMiddleware`.**
  * Access is enforced by Kubernetes NetworkPolicy.
  *
- * @see platform/helm/templates/networkpolicy-planes.yaml — policy restricting
+ * @see apps/clustertenant-platform/templates/networkpolicy-planes.yaml — policy restricting
  *   which pods can reach the control-plane service.
- * @see platform/helm/templates/widget-consumer-deployment.yaml — deployment
+ * @see apps/clustertenant-platform/templates/widget-consumer-deployment.yaml — deployment
  *   that sets WIDGET_URL to this endpoint.
  */
 export function _RegisterInternalWidgets(prisma: PrismaClient): Router { ... }
@@ -85,7 +85,7 @@ export function _RegisterInternalWidgets(prisma: PrismaClient): Router { ... }
 > Network reachability does not imply authorization — see
 > [OpenCrane-Specific Direction](./architecture.md#opencrane-specific-direction).
 
-The plane-to-plane boundary is `platform/helm/templates/networkpolicy-planes.yaml`: control-plane ingress is allowed only from ingress-nginx, the operator, Obot gateway, skill-registry, and tenant pods (for contract re-pull); the OCI store accepts the control-plane only. Because `/api/internal/*` has no auth middleware, this NetworkPolicy is the **only** boundary protecting it — path-based filtering is impossible, so never widen these selectors casually.
+The plane-to-plane boundary is `apps/clustertenant-platform/templates/networkpolicy-planes.yaml`: control-plane ingress is allowed only from ingress-nginx, the operator, Obot gateway, skill-registry, and tenant pods (for contract re-pull); the OCI store accepts the control-plane only. Because `/api/internal/*` has no auth middleware, this NetworkPolicy is the **only** boundary protecting it — path-based filtering is impossible, so never widen these selectors casually.
 
 ## Workload Identity & Projected Tokens
 

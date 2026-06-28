@@ -30,14 +30,14 @@ oc CLI / API ──▶ Control plane (McpServer rows + grants)
 
 ## Deployment & network posture
 
-- **Workload:** `platform/helm/templates/obot-mcp-gateway-deployment.yaml` +
+- **Workload:** `apps/clustertenant-platform/templates/obot-mcp-gateway-deployment.yaml` +
   `mcp-gateway-service.yaml`; configured by the `mcpGateway` block in
-  `platform/helm/values.yaml` (image `ghcr.io/obot-platform/obot`, 1 replica, port
+  `apps/clustertenant-platform/values.yaml` (image `ghcr.io/obot-platform/obot`, 1 replica, port
   8080). Requires a per-instance, release-prefixed `<release>-obot` Secret (resolved by
   the `opencrane.obotSecretName` Helm helper) with key `dsn` for Obot's own Postgres.
 - **Auth disabled, network-gated.** `OBOT_SERVER_ENABLE_AUTHENTICATION=false` — Obot
   itself runs no auth. Access is enforced at the network layer: the
-  `mcp-gateway-ingress` policy in `platform/helm/templates/networkpolicy-planes.yaml`
+  `mcp-gateway-ingress` policy in `apps/clustertenant-platform/templates/networkpolicy-planes.yaml`
   admits port 8080 **only** from tenant, control-plane, and operator pods. There is
   no external ingress; the browser never reaches Obot.
 - **Kubernetes runtime backend.** `OBOT_SERVER_MCPRUNTIME_BACKEND=kubernetes` — Obot

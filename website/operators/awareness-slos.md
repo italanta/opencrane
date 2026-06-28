@@ -1,7 +1,7 @@
 # Runbook — Fleet Awareness SLOs
 
 Operational runbook for the OpenCrane fleet-awareness SLO alerts (P4B.6). Alerts
-are defined in `platform/helm/templates/awareness-prometheusrule.yaml` and fire on
+are defined in `apps/fleet-platform/templates/awareness-prometheusrule.yaml` and fire on
 metrics from the control-plane `/prom` endpoint (`opencrane_awareness_*`). The
 dashboard is "OpenCrane — Fleet Awareness SLOs" (uid `opencrane-awareness-slo`).
 

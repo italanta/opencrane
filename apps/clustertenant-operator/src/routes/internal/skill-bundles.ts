@@ -60,9 +60,9 @@ export async function _ResolveBundleContent(ociStore: OciBundleStore | null, dig
  * reach this path because the Kubernetes NetworkPolicy restricts ingress to
  * the control-plane from known platform components only.
  *
- * @see platform/helm/templates/networkpolicy-planes.yaml — NetworkPolicy
+ * @see apps/clustertenant-platform/templates/networkpolicy-planes.yaml — NetworkPolicy
  *   template that governs pod-to-pod reachability for the runtime planes.
- * @see platform/helm/templates/skill-registry-deployment.yaml — where the
+ * @see apps/clustertenant-platform/templates/skill-registry-deployment.yaml — where the
  *   skill-registry's `CONTROL_PLANE_URL` is wired to this endpoint.
  *
  * @param prisma   - Prisma client for database access.

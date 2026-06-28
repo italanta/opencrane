@@ -38,13 +38,13 @@ This document covers the essential operational procedures for deploying, verifyi
 k3d cluster create opencrane --agents 1 --port "8080:80@loadbalancer"
 
 # 2. Bootstrap the full local stack (PostgreSQL + LiteLLM + control-plane + operator)
-./platform/tests/k3d-local.sh
+libs/k8s-platform/tests/k3d-local.sh
 
 # 3. Verify all pods are running
 kubectl get pods -n opencrane
 
 # 4. Run smoke tests
-./platform/tests/k3d-e2e.sh
+libs/k8s-platform/tests/k3d-e2e.sh
 ```
 
 ### Production installation (fleet + silos)
@@ -54,12 +54,12 @@ profiles for the fleet and silo releases. See [Silo deployment model](/operators
 
 ```bash
 # Step 1: install the fleet release (opencrane-system namespace)
-./platform/deploy-multi-tenant.sh \
+apps/fleet-platform/deploy.sh \
     --base-domain prod.example.com \
     --cert-manager --acme-email ops@example.com --dns01-provider clouddns
 
 # Step 2: install one silo per ClusterTenant
-./platform/deploy-silo.sh \
+apps/clustertenant-platform/deploy.sh \
     --base-domain prod.example.com \
     --cluster-tenant acme
 ```
@@ -75,7 +75,7 @@ export GOOGLE_CLOUD_PROJECT=your-project-id
 export GOOGLE_CLOUD_REGION=us-central1
 
 # 3. Apply Terraform infrastructure
-cd platform/terraform
+cd libs/k8s-platform/terraform
 terraform init
 terraform apply -var-file environments/prod/terraform.tfvars
 
@@ -131,8 +131,8 @@ curl http://litellm.opencrane-acme.svc.cluster.local:4000/health
 # Fleet-manager logs
 kubectl logs -n opencrane-system deployment/opencrane-fleet-manager --tail 50
 
-# Silo operator logs (replace <ct> with the ClusterTenant name)
-kubectl logs -n opencrane-<ct> deployment/opencrane-fleet-manager --tail 50
+# Silo clustertenant-manager logs (replace <ct> with the ClusterTenant name)
+kubectl logs -n opencrane-<ct> deployment/opencrane-clustertenant-manager --tail 50
 
 # List all tenants and their phases (in a specific silo)
 kubectl get tenants -n opencrane-<ct>
@@ -145,7 +145,7 @@ kubectl describe tenant acme -n opencrane-<ct>
 
 ```bash
 # Run the full k3d e2e smoke test
-./platform/tests/k3d-e2e.sh
+libs/k8s-platform/tests/k3d-e2e.sh
 
 # Run workspace unit tests
 pnpm test
@@ -184,13 +184,12 @@ Use the deploy scripts to upgrade — they set the correct value profiles. Upgra
 
 ```bash
 # Upgrade the fleet release
-./platform/deploy-multi-tenant.sh \
+apps/fleet-platform/deploy.sh \
     --base-domain prod.example.com \
-    [any cert-manager flags] \
     --reuse-values
 
 # Upgrade a silo release
-./platform/deploy-silo.sh \
+apps/clustertenant-platform/deploy.sh \
     --base-domain prod.example.com \
     --cluster-tenant acme \
     --reuse-values
@@ -203,18 +202,17 @@ For manual Helm upgrades (with `helm diff` review):
 git pull origin main
 
 # 2. Review changes for the fleet release
-helm diff upgrade opencrane-fleet platform/helm/ \
+helm diff upgrade opencrane-fleet apps/fleet-platform/ \
   --namespace opencrane-system \
   --reuse-values
 
 # 3. Apply the fleet upgrade
-helm upgrade opencrane-fleet platform/helm/ \
+helm upgrade opencrane-fleet apps/fleet-platform/ \
   --namespace opencrane-system \
   --reuse-values --wait --timeout 10m
 
 # 4. Verify rollout
 kubectl rollout status deployment/opencrane-fleet-manager -n opencrane-system
-kubectl rollout status deployment/opencrane-clustertenant-manager -n opencrane-system
 ```
 
 ### Fleet-manager rolling restart
@@ -230,13 +228,13 @@ kubectl rollout status deployment/opencrane-fleet-manager -n opencrane-system --
 ### OpenClaw Version Update for a Tenant
 
 ```bash
-# Pin a tenant to a specific OpenClaw version
-kubectl patch tenant acme -n opencrane \
+# Pin a tenant to a specific OpenClaw version (replace <ct> with the ClusterTenant name)
+kubectl patch tenant acme -n opencrane-<ct> \
   --type merge \
   --patch '{"spec":{"openclawVersion":"2026.5.1"}}'
 
 # The operator reconciles on next event or restart the pod to trigger immediately
-kubectl delete pod -n opencrane -l opencrane.io/tenant=acme
+kubectl delete pod -n opencrane-<ct> -l opencrane.io/tenant=acme
 ```
 
 ---
@@ -246,23 +244,26 @@ kubectl delete pod -n opencrane -l opencrane.io/tenant=acme
 ### Helm Chart Rollback
 
 ```bash
-# View Helm release history
-helm history opencrane -n opencrane
+# View fleet release history
+helm history opencrane-fleet -n opencrane-system
 
-# Roll back to the previous release
-helm rollback opencrane -n opencrane --wait
+# Roll back fleet release to the previous revision
+helm rollback opencrane-fleet -n opencrane-system --wait
 
-# Roll back to a specific revision
-helm rollback opencrane 3 -n opencrane --wait
+# View a silo release history (replace <ct> with the ClusterTenant name)
+helm history opencrane-<ct> -n opencrane-<ct>
+
+# Roll back a silo release to the previous revision
+helm rollback opencrane-<ct> -n opencrane-<ct> --wait
 ```
 
 ### Database Migration Rollback
 
 Prisma migrations do not have automatic down-migrations. For critical data rollbacks:
 
-1. **Stop the control-plane** to prevent write conflicts:
+1. **Stop the clustertenant-manager** in the affected silo to prevent write conflicts:
    ```bash
-   kubectl scale deployment/control-plane -n opencrane --replicas 0
+   kubectl scale deployment/opencrane-clustertenant-manager -n opencrane-<ct> --replicas 0
    ```
 
 2. **Restore from backup** (GCP Cloud SQL):
@@ -272,22 +273,23 @@ Prisma migrations do not have automatic down-migrations. For critical data rollb
      --backup-instance=opencrane-db
    ```
 
-3. **Redeploy the previous control-plane version**:
+3. **Redeploy the previous version**:
    ```bash
-   helm rollback opencrane -n opencrane
-   kubectl scale deployment/control-plane -n opencrane --replicas 1
+   helm rollback opencrane-<ct> -n opencrane-<ct>
+   kubectl scale deployment/opencrane-clustertenant-manager -n opencrane-<ct> --replicas 1
    ```
 
 ### Tenant Rollback (OpenClaw Version Pin)
 
 ```bash
 # If a new OpenClaw version is causing failures, pin to the last known good version
-kubectl patch tenant acme -n opencrane \
+# (replace <ct> with the ClusterTenant name)
+kubectl patch tenant acme -n opencrane-<ct> \
   --type merge \
   --patch '{"spec":{"openclawVersion":"2026.4.15"}}'
 
 # Delete the pod to force an immediate restart with the pinned version
-kubectl delete pod -n opencrane -l opencrane.io/tenant=acme
+kubectl delete pod -n opencrane-<ct> -l opencrane.io/tenant=acme
 ```
 
 ---
@@ -320,14 +322,14 @@ kubectl delete pod -n opencrane -l opencrane.io/tenant=acme
 **Symptoms**: `kubectl get tenants -n opencrane-<ct>` shows tenants stuck in `Pending` or `Error` phase.
 
 **Response**:
-1. Check operator logs: `kubectl logs -n opencrane-<ct> deployment/opencrane-fleet-manager --tail 100`
-2. Verify RBAC: `kubectl auth can-i get tenants.opencrane.io --as system:serviceaccount:opencrane-<ct>:opencrane-fleet-manager -n opencrane-<ct>`
+1. Check operator logs: `kubectl logs -n opencrane-<ct> deployment/opencrane-clustertenant-operator --tail 100`
+2. Verify RBAC: `kubectl auth can-i get tenants.opencrane.io --as system:serviceaccount:opencrane-<ct>:opencrane-clustertenant-operator -n opencrane-<ct>`
 3. Check Kubernetes API server reachability from the operator pod
 4. Force reconcile by annotating the tenant:
    ```bash
    kubectl annotate tenant acme opencrane.io/reconcile-at=$(date -u +%s) -n opencrane-<ct>
    ```
-5. Restart the operator if needed: `kubectl rollout restart deployment/opencrane-fleet-manager -n opencrane-<ct>`
+5. Restart the operator if needed: `kubectl rollout restart deployment/opencrane-clustertenant-operator -n opencrane-<ct>`
 
 ### P1: LiteLLM is unreachable
 
@@ -340,7 +342,7 @@ kubectl delete pod -n opencrane -l opencrane.io/tenant=acme
 4. Check database connectivity from LiteLLM
 5. If LiteLLM is permanently unavailable, disable it for recovery on the affected silo:
    ```bash
-   helm upgrade opencrane-<ct> platform/helm/ \
+   helm upgrade opencrane-<ct> apps/clustertenant-platform/ \
      --namespace opencrane-<ct> \
      --reuse-values \
      --set litellm.enabled=false \
@@ -374,7 +376,8 @@ kubectl delete pod -n opencrane -l opencrane.io/tenant=acme
 2. Discuss with tenant owner whether to increase budget or wait for reset
 3. Increase the budget by patching the Tenant CRD and revoking/regenerating the key:
    ```bash
-   kubectl patch tenant acme -n opencrane \
+   # replace <ct> with the ClusterTenant name
+   kubectl patch tenant acme -n opencrane-<ct> \
      --type merge \
      --patch '{"spec":{"monthlyBudgetUsd":500}}'
    

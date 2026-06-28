@@ -1,6 +1,6 @@
 # GCP / GKE values for OpenCrane — PLAIN-KUBERNETES baseline.
 #
-# Usage: helm install opencrane platform/helm -f platform/helm/values/gcp.yaml
+# Usage: helm install opencrane apps/fleet-platform -f libs/k8s-platform/values/gcp.yaml
 #
 # This file deliberately keeps a GKE deploy identical to a plain Kubernetes
 # cluster: standard PVC storage (GKE default StorageClass), in-cluster
@@ -9,9 +9,9 @@
 # Manager, Cloud DNS) are enabled here.
 #
 # To opt in to the GCP-native extras, layer the optional overlay ON TOP:
-#   helm install opencrane platform/helm \
-#     -f platform/helm/values/gcp.yaml \
-#     -f platform/helm/values/gcp-extras.yaml \
+#   helm install opencrane apps/fleet-platform \
+#     -f libs/k8s-platform/values/gcp.yaml \
+#     -f libs/k8s-platform/values/gcp-extras.yaml \
 #     --set hosting.gcp.projectId=YOUR_PROJECT_ID
 
 global:
@@ -29,7 +29,7 @@ clustertenantManager:
 
 litellm:
   enabled: true
-  # endpoint is derived by opencrane.litellmEndpoint (see platform/helm/values.yaml).
+  # endpoint is derived by opencrane.litellmEndpoint (see apps/fleet-platform/values.yaml).
   existingSecret: opencrane-litellm
   generateMasterKey: false
   existingDatabaseSecret: opencrane-litellm-db

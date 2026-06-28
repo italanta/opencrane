@@ -63,7 +63,7 @@ binding, never a per-controller copy:
 When Terraform owns the Cloud DNS zone, delegate your domain to that zone's name servers
 (the `dns_name_servers` Terraform output) at your **registrar** — an NS delegation. Until
 that resolves, both DNS-01 issuance and external-dns reconciliation will hang. The
-`./platform/k8s-deploy.sh --preflight` check verifies the delegation resolves before you
+`apps/fleet-platform/deploy.sh --preflight` check verifies the delegation resolves before you
 install.
 
 ### Why a provider token is still needed

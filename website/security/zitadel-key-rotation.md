@@ -199,7 +199,7 @@ key is untouched. Check:
 
 `ZITADEL_MGMT_SECRET_NAME` is not set on the fleet-manager deployment. Set the Helm value
 `fleetManager.zitadel.existingSecret` (pointing at the Secret holding the SA key JSON)
-and re-run the fleet deploy (`deploy-multi-tenant.sh`) before retrying.
+and re-run the fleet deploy (`apps/fleet-platform/deploy.sh`) before retrying.
 
 ### Key was revoked before rotation completed
 

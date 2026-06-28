@@ -1,9 +1,9 @@
 # Reference values — OpenCrane instance "acme" (native multi-instance, single cluster).
 #
 # Install (CRDs are installed ONCE cluster-wide first — see docs/multi-instance.md):
-#   kubectl apply -f platform/helm/crds/
-#   helm install oc-acme platform/helm -n oc-acme --create-namespace --skip-crds \
-#     -f platform/helm/values/multi-instance/oc-acme.yaml
+#   kubectl apply -f apps/fleet-platform/crds/
+#   helm install oc-acme apps/fleet-platform -n oc-acme --create-namespace --skip-crds \
+#     -f libs/k8s-platform/values/multi-instance/oc-acme.yaml
 #
 # Pairs with oc-globex.yaml to demonstrate two strictly-isolated instances in one
 # cluster (brief §5 acceptance). Validate statically with

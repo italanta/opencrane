@@ -60,7 +60,7 @@ Exactly two host classes ever receive external traffic. Everything else is Clust
 | Control-plane host | `dev.opencrane.ai` | LoadBalancer IP | control-plane Service :8080 |
 | Per-org host | `acme.dev.opencrane.ai` | LoadBalancer IP | gateway-proxy :8090 (WebSocket) + control-plane :8080 (`/api/*`) |
 
-The control-plane host is either the apex (`<base>`) or a dedicated `platform.<base>`, controlled by the chart value `ingress.controlPlaneHost`. The dev cluster uses the apex directly (`dev.opencrane.ai`). The wildcard Ingress is rendered only when both `ingress.enabled` and `gatewayProxy.enabled` are true (see [`platform/helm/templates/gateway-ingress.yaml`](https://github.com/italanta/opencrane/blob/main/platform/helm/templates/gateway-ingress.yaml)).
+The control-plane host is either the apex (`<base>`) or a dedicated `platform.<base>`, controlled by the chart value `ingress.controlPlaneHost`. The dev cluster uses the apex directly (`dev.opencrane.ai`). The wildcard Ingress is rendered only when both `ingress.enabled` and `gatewayProxy.enabled` are true (see [`apps/clustertenant-platform/templates/gateway-ingress.yaml`](https://github.com/italanta/opencrane/blob/main/apps/clustertenant-platform/templates/gateway-ingress.yaml)).
 
 There are **no per-user subdomains**. Every user in an org connects through one org host; the identity-routing proxy resolves each session to its own pod.
 
@@ -150,7 +150,7 @@ The security argument for this three-layer seam is detailed in [connection secur
 
 ### Plane ingress NetworkPolicies
 
-The chart renders per-plane ingress NetworkPolicies when `networkPolicy.enabled` is true (see [`platform/helm/templates/networkpolicy-planes.yaml`](https://github.com/italanta/opencrane/blob/main/platform/helm/templates/networkpolicy-planes.yaml)).
+The silo chart renders per-plane ingress NetworkPolicies when `networkPolicy.enabled` is true (see [`apps/clustertenant-platform/templates/networkpolicy-planes.yaml`](https://github.com/italanta/opencrane/blob/main/apps/clustertenant-platform/templates/networkpolicy-planes.yaml)).
 
 | Policy | Protects | Admits ingress from |
 |--------|----------|---------------------|

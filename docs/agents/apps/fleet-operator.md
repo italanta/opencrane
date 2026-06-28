@@ -1,4 +1,4 @@
-# App: operator (`@opencrane/fleet-operator`)
+# App: fleet-operator (`@opencrane/fleet-operator`)
 
 > Deep-dive for `apps/fleet-operator`. Index: [`../app-specific.md`](../app-specific.md). Cluster context:
 > [`../cluster-architecture.md`](../cluster-architecture.md). Verified June 2026.

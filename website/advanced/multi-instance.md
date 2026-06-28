@@ -19,7 +19,7 @@ cluster-wide and decoupled from each per-instance Helm release (multi-instance b
 fleet uses to plan rolling upgrades.
 
 For the RBAC / watch-namespace isolation defaults, see the `multiInstance.*` block in
-`platform/helm/values.yaml`.
+`apps/fleet-platform/values.yaml`.
 
 ---
 
@@ -56,11 +56,11 @@ with `--skip-crds`.
 
 ### 2.1 Single-install (default — no change)
 
-The default path is untouched. Helm auto-applies everything under `platform/helm/crds/`
-as part of the release, so CRDs land with no extra step:
+The default path is untouched. Helm auto-applies everything under `apps/fleet-platform/crds/`
+as part of the fleet release, so CRDs land with no extra step:
 
 ```bash
-helm install opencrane platform/helm
+apps/fleet-platform/deploy.sh --base-domain <your-domain>
 ```
 
 Do **not** pass `--skip-crds` on the single-install path — the instance would come up with
@@ -69,20 +69,20 @@ no schema to reconcile against.
 ### 2.2 Multi-instance (opt-in) — install CRDs once, cluster-wide
 
 Install the shared CRD bundle **once per cluster**, before (or independently of) any
-instance release. `platform/helm/crds/` is the single canonical source of the 5 CRDs, so
+instance release. `apps/fleet-platform/crds/` is the single canonical source of the CRDs, so
 both paths render byte-identical schemas — there is no second copy to drift.
 
 ```bash
 # 1. Install / upgrade the shared CRD bundle once for the whole cluster.
-kubectl apply -f platform/helm/crds/
+kubectl apply -f apps/fleet-platform/crds/
 ```
 
 `kubectl apply` is intentional rather than `create`: it is idempotent and is also the
 **upgrade** verb when the bundle version is rolled forward (see §3). Server-side apply
-(`kubectl apply --server-side -f platform/helm/crds/`) is recommended for large schemas to
+(`kubectl apply --server-side -f apps/fleet-platform/crds/`) is recommended for large schemas to
 avoid the client-side annotation size limit.
 
-The bundle installs 5 cluster-scoped CRDs, all in the `opencrane.io` group:
+The bundle installs the cluster-scoped CRDs in the `opencrane.io` group:
 
 | CRD | Kind | Served version |
 |-----|------|----------------|
@@ -91,36 +91,44 @@ The bundle installs 5 cluster-scoped CRDs, all in the `opencrane.io` group:
 | `mcpservers.opencrane.io` | `MCPServer` | `v1alpha1` |
 | `schedules.opencrane.io` | `Schedule` | `v1alpha1` |
 | `skillregistries.opencrane.io` | `SkillRegistry` | `v1alpha1` |
+| `clustertenants.opencrane.io` | `ClusterTenant` | `v1alpha1` |
 
 To preview exactly what will be applied (e.g. in CI before a fleet rollout), render the
 bundle through Helm with CRDs included:
 
 ```bash
-helm template opencrane platform/helm --include-crds \
+helm template opencrane-fleet apps/fleet-platform --include-crds \
   | yq 'select(.kind == "CustomResourceDefinition")'
 ```
 
 ### 2.3 Multi-instance — per-instance releases (CRDs skipped)
 
-Each instance is its own release in its own namespace, installed with `--skip-crds` so it
-neither owns nor mutates the shared bundle:
+Each instance is its own pair of releases (one fleet + one or more silos) in its own
+namespace, installed with `--skip-crds` so they neither own nor mutate the shared bundle:
 
 ```bash
-# Instance "acme" — owns namespace oc-acme, skips the shared CRDs.
-helm install oc-acme platform/helm \
+# Fleet instance "acme" — owns opencrane-system-acme, skips the shared CRDs.
+helm install oc-acme-fleet apps/fleet-platform \
+  --namespace oc-acme-system --create-namespace \
+  --skip-crds \
+  --set multiInstance.enabled=true \
+  --set 'multiInstance.instanceNamespaces={oc-acme-system}' \
+  --set operator.watchNamespace=oc-acme-system
+
+# Silo for the acme fleet instance.
+helm install oc-acme apps/clustertenant-platform \
   --namespace oc-acme --create-namespace \
   --skip-crds \
   --set multiInstance.enabled=true \
-  --set 'multiInstance.instanceNamespaces={oc-acme}' \
-  --set operator.watchNamespace=oc-acme
+  --set 'multiInstance.instanceNamespaces={oc-acme}'
 
-# Instance "globex" — independent release, same shared CRD bundle.
-helm install oc-globex platform/helm \
-  --namespace oc-globex --create-namespace \
+# Fleet instance "globex" — independent release, same shared CRD bundle.
+helm install oc-globex-fleet apps/fleet-platform \
+  --namespace oc-globex-system --create-namespace \
   --skip-crds \
   --set multiInstance.enabled=true \
-  --set 'multiInstance.instanceNamespaces={oc-globex}' \
-  --set operator.watchNamespace=oc-globex
+  --set 'multiInstance.instanceNamespaces={oc-globex-system}' \
+  --set operator.watchNamespace=oc-globex-system
 ```
 
 Because the chart's only cluster-scoped singleton was the CRD set, and that is now skipped,
@@ -139,7 +147,7 @@ The fleet plans rolling upgrades against this matrix.
 - **CRD bundle version** — the schema version of the 5 CRDs as a set. It tracks the served
   apiVersion plus any backward-compatible schema additions. It is *not* per-CRD; the bundle
   moves as one unit so the fleet has a single number to reason about.
-- **Control-plane / operator chart version** — `platform/helm/Chart.yaml` `appVersion`
+- **Control-plane / operator chart version** — `apps/fleet-platform/Chart.yaml` `appVersion`
   (the image tag the instance runs).
 
 ### 3.2 Compatibility matrix
@@ -150,7 +158,7 @@ The fleet plans rolling upgrades against this matrix.
 
 Notes:
 
-1. **`v1alpha1` is the current bundle.** All 5 CRDs serve and store `v1alpha1` only; there
+1. **`v1alpha1` is the current bundle.** All CRDs serve and store `v1alpha1` only; there
    is no conversion webhook yet, so the served and storage versions are the same.
 2. As the schema evolves, add a row per bundle version and list the `appVersion` range that
    can both read and write it. A control-plane/operator build is "compatible" with a bundle
@@ -160,7 +168,7 @@ Notes:
 ### 3.3 Compatibility rules
 
 1. **Forward-compatible additions only, within a served version.** New *optional* fields may
-   be added to `v1alpha1` and applied via `kubectl apply -f platform/helm/crds/` while
+   be added to `v1alpha1` and applied via `kubectl apply -f apps/fleet-platform/crds/` while
    instances keep running. Older instances ignore fields they don't know about. Never make a
    previously-optional field required, never narrow an enum, and never tighten validation
    within an existing served version — those are breaking and require a new served version.
@@ -174,10 +182,10 @@ Notes:
 > **CRDs lead, instances follow. Expand before you contract.**
 
 1. **Apply the new CRD bundle first**, cluster-wide:
-   `kubectl apply -f platform/helm/crds/` (or `--server-side`). For additive changes this is
+   `kubectl apply -f apps/fleet-platform/crds/` (or `--server-side`). For additive changes this is
    transparent to running instances.
-2. **Roll the instances** one at a time (`helm upgrade <release> platform/helm --skip-crds
-   ...`). Each instance must run an `appVersion` listed as compatible with the **new** bundle
+2. **Roll the instances** one at a time (re-run the relevant deploy script with `--reuse-values`).
+   Each instance must run an `appVersion` listed as compatible with the **new** bundle
    in §3.2. A canary instance first, then the rest, lets the fleet halt on regression.
 3. **Never** let an instance run an `appVersion` newer than the cluster's applied CRD bundle
    supports — that instance would emit fields the schema rejects. If a rollback is needed,
@@ -205,26 +213,26 @@ A note on Helm's flags, because they behave differently for `template` vs `insta
   commands below verify the *contents* of each path.
 
 ```bash
-# Single-install / shared-bundle CONTENTS: the chart carries the 5 CRDs.
-# `helm install opencrane platform/helm` applies these automatically (no flag).
-# Expect 5.
-helm template opencrane platform/helm --include-crds \
+# Fleet chart CRD contents: verify the CRDs are present.
+# `apps/fleet-platform/deploy.sh` applies these automatically (no flag needed).
+helm template opencrane-fleet apps/fleet-platform --include-crds \
   | grep -c 'kind: CustomResourceDefinition'
 
-# The shared CRD bundle (what `kubectl apply -f platform/helm/crds/` installs). Expect 5.
-ls platform/helm/crds/*.yaml | wc -l
+# The shared CRD bundle (what `kubectl apply -f apps/fleet-platform/crds/` installs).
+ls apps/fleet-platform/crds/*.yaml | wc -l
 
-# Per-instance release CONTENTS excluding CRDs (what `--skip-crds` applies at install
-# time): render the namespaced objects only, no --include-crds. Expect 0 CRDs, >0 objects.
-helm template oc-acme platform/helm \
-  --namespace oc-acme \
+# Per-instance fleet release CONTENTS excluding CRDs (what `--skip-crds` applies at
+# install time): render the namespaced objects only, no --include-crds. Expect 0 CRDs.
+helm template oc-acme-fleet apps/fleet-platform \
+  --namespace oc-acme-system \
   --set multiInstance.enabled=true \
-  --set 'multiInstance.instanceNamespaces={oc-acme}' \
-  --set operator.watchNamespace=oc-acme \
+  --set 'multiInstance.instanceNamespaces={oc-acme-system}' \
+  --set operator.watchNamespace=oc-acme-system \
   | grep -c 'kind: CustomResourceDefinition'   # → 0
 
 # At install time, prove --skip-crds is honoured against a real (or kind) cluster:
-helm install oc-acme platform/helm --namespace oc-acme --create-namespace --skip-crds \
+helm install oc-acme-fleet apps/fleet-platform \
+  --namespace oc-acme-system --create-namespace --skip-crds \
   --set multiInstance.enabled=true --dry-run=server \
   | grep -c 'kind: CustomResourceDefinition'   # → 0 (CRDs not in the release manifest)
 ```
@@ -233,8 +241,8 @@ helm install oc-acme platform/helm --namespace oc-acme --create-namespace --skip
 
 Two ready-to-use instance value files demonstrate strict isolation in one cluster:
 
-- `platform/helm/values/multi-instance/oc-acme.yaml`
-- `platform/helm/values/multi-instance/oc-globex.yaml`
+- `libs/k8s-platform/values/multi-instance/oc-acme.yaml`
+- `libs/k8s-platform/values/multi-instance/oc-globex.yaml`
 
 Each enables `multiInstance` with namespaced RBAC, fail-closed watch scoping, and a
 per-instance cert Issuer + SecretStore, scoped to its own namespace.
@@ -242,7 +250,7 @@ per-instance cert Issuer + SecretStore, scoped to its own namespace.
 Validate the static isolation guarantees (no cluster — uses `helm template`):
 
 ```bash
-platform/tests/multi-instance-conformance.sh
+libs/k8s-platform/tests/multi-instance-conformance.sh
 ```
 
 It asserts, per instance: fail-closed watch scope, namespaced RBAC with no
@@ -341,5 +349,5 @@ plaintext.
 `ClusterTenant` CRD but **no** provisioner env on the control-plane Deployment; setting
 `clusterTenant.provisionerWebhook.url` renders the env block. The per-`ClusterTenant` namespace,
 quota, and scheduling are reconciled at runtime by the operator (the live-infra seam), and the
-conformance script (`platform/tests/multi-instance-conformance.sh`) carries the in-cluster
+conformance script (`libs/k8s-platform/tests/multi-instance-conformance.sh`) carries the in-cluster
 assertions for them (CT.5a–CT.5d).

@@ -1,9 +1,9 @@
 # Reference values — OpenCrane instance "globex" (native multi-instance, single cluster).
 #
 # Install (CRDs are installed ONCE cluster-wide first — see docs/multi-instance.md):
-#   kubectl apply -f platform/helm/crds/
-#   helm install oc-globex platform/helm -n oc-globex --create-namespace --skip-crds \
-#     -f platform/helm/values/multi-instance/oc-globex.yaml
+#   kubectl apply -f apps/fleet-platform/crds/
+#   helm install oc-globex apps/fleet-platform -n oc-globex --create-namespace --skip-crds \
+#     -f libs/k8s-platform/values/multi-instance/oc-globex.yaml
 #
 # Pairs with oc-acme.yaml to demonstrate two strictly-isolated instances in one
 # cluster (brief §5 acceptance). Validate statically with

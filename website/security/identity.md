@@ -172,7 +172,7 @@ per-cluster bootstrap for exactly this gap:
 - It is **fail-closed**: an empty/unset seed grants operator to nobody, and an email the
   IdP marks **unverified** never matches (login already rejects an unverified email).
 - It is a **per-cluster install parameter** — never hardcoded. Set it at install time
-  (the wizard prompts for it; `./platform/k8s-deploy.sh --platform-operator-seed-email …`
+  (the wizard prompts for it; `apps/fleet-platform/deploy.sh --platform-operator-seed-email …`
   or the `OPENCRANE_PLATFORM_OPERATOR_SEED_EMAIL` env accept it; the Helm value is
   `controlPlane.oidc.platformOperatorSeedEmail`). Once a Zitadel group mapping is in
   place, **remove the seed** and rely on groups.

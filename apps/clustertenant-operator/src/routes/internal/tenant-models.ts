@@ -52,7 +52,7 @@ function _resolveDefaultModel(ctDefault: string | null, globalDefault: string | 
  * than a 404/500, because the operator calls it on a reconcile hot path and
  * must always get a usable answer.
  *
- * @see platform/helm/templates/networkpolicy-planes.yaml — NetworkPolicy that
+ * @see apps/clustertenant-platform/templates/networkpolicy-planes.yaml — NetworkPolicy that
  *   governs which pods may reach this endpoint.
  *
  * @param prisma - Prisma client for database access.

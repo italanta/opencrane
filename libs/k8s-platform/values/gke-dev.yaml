@@ -1,9 +1,9 @@
 # Dev GKE overlay — layer on top of gcp.yaml.
 #
 # Usage:
-#   helm upgrade --install opencrane platform/helm -n opencrane-system \
-#     -f platform/helm/values/gcp.yaml \
-#     -f platform/helm/values/gke-dev.yaml
+#   helm upgrade --install opencrane apps/fleet-platform -n opencrane-system \
+#     -f libs/k8s-platform/values/gcp.yaml \
+#     -f libs/k8s-platform/values/gke-dev.yaml
 
 global:
   environment: dev

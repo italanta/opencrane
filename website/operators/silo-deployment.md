@@ -24,7 +24,7 @@ The silo model eliminates both problems in the same move: each ClusterTenant get
 ┌───────────────────────────────────────────────────────────────┐
 │  FLEET release (one per cluster)                              │
 │  namespace: opencrane-system                                  │
-│  script: deploy-multi-tenant.sh                               │
+│  script: apps/fleet-platform/deploy.sh                        │
 │                                                               │
 │  ┌──────────────────────────────────────────────────┐         │
 │  │  fleet-manager                                   │         │
@@ -45,7 +45,7 @@ The silo model eliminates both problems in the same move: each ClusterTenant get
 ┌───────────────────────────────────────────────────────────────┐
 │  SILO release (one per ClusterTenant)                         │
 │  namespace: opencrane-<cluster-tenant>                        │
-│  script: deploy-silo.sh --cluster-tenant <name>               │
+│  script: apps/clustertenant-platform/deploy.sh --cluster-tenant <name>  │
 │                                                               │
 │  ┌───────────────────┐  ┌──────────┐  ┌─────────────────┐    │
 │  │ clustertenant-    │  │ operator │  │ Obot / MCP      │    │
@@ -80,8 +80,8 @@ The silo model eliminates both problems in the same move: each ClusterTenant get
 | Per-silo Postgres | No | Yes — one CNPG `Cluster` CR per silo namespace |
 | Cluster-wide infra (ingress-nginx, external-dns, CNPG operator, cert-manager) | Installed here (once) | Reused from fleet release |
 
-::: tip One chart, two install profiles
-Both releases use the same Helm chart. The deploy scripts set `clusterTenantManagement.enabled`, `billing.enabled`, and the namespace. There is no `deploymentRole` flag — both the fleet-manager and clustertenant-manager are always rendered by the chart; what differs is which features each exposes and what each is pointed at.
+::: tip Two charts, two install profiles
+The fleet release uses the `opencrane-fleet` chart (`apps/fleet-platform`) and the silo release uses the `opencrane-silo` chart (`apps/clustertenant-platform`). The deploy scripts set the appropriate profile flags (`fleetManager.clusterTenantApi.enabled`, `billing.enabled`, namespace) for each role.
 :::
 
 ---
@@ -93,7 +93,7 @@ You must install the fleet release first. The fleet release installs the cluster
 ### Step 1 — install the fleet release
 
 ```bash
-./platform/deploy-multi-tenant.sh \
+apps/fleet-platform/deploy.sh \
     --base-domain dev.opencrane.ai \
     [--cert-manager --acme-email ops@example.com --dns01-provider clouddns] \
     [--ingress-ip 34.1.2.3]
@@ -101,12 +101,12 @@ You must install the fleet release first. The fleet release installs the cluster
 
 Required flags: `--base-domain`. Optional: `--ingress-ip` (derived automatically from the ingress-nginx LoadBalancer when omitted), `--cert-manager` and its TLS sub-flags.
 
-This installs into `opencrane-system` with `clusterTenantManagement.enabled=true` and `billing.enabled=true`. The fleet-manager, Zitadel, and all cluster-wide infrastructure are installed here. No runtime planes (Obot, skill-registry, LiteLLM, Cognee) are part of this release — those live in silos.
+This installs the `opencrane-fleet` chart into `opencrane-system` with `fleetManager.clusterTenantApi.enabled=true` and `billing.enabled=true`. The fleet-manager and all cluster-wide infrastructure (CRDs, ingress-nginx, external-dns, CNPG operator, cert-manager) are installed here. No runtime planes (Obot, skill-registry, LiteLLM, Cognee) are part of this release — those live in silos.
 
 ### Step 2 — install one silo per ClusterTenant
 
 ```bash
-./platform/deploy-silo.sh \
+apps/clustertenant-platform/deploy.sh \
     --base-domain dev.opencrane.ai \
     --cluster-tenant acme \
     [--namespace opencrane-acme] \
@@ -128,7 +128,7 @@ Each silo gets its own CNPG `Cluster` in its own namespace. The silo's clusterte
 
 ### Upgrade
 
-Re-run the relevant deploy script with `--reuse-values` to inherit the current Helm values and apply only your overrides. Upgrade the fleet release and each silo release independently — they share a chart but are separate Helm releases.
+Re-run the relevant deploy script with `--reuse-values` to inherit the current Helm values and apply only your overrides. Upgrade the fleet release and each silo release independently — they use separate charts and are separate Helm releases.
 
 ---
 
@@ -151,7 +151,7 @@ Both the fleet-manager and clustertenant-manager deployments are always rendered
 - **Fleet-manager** renders its ClusterTenant lifecycle, billing, Zitadel-admin, and platform-DNS routes only when `clusterTenantManagement.enabled=true`. The fleet-manager's cluster-scoped RBAC and the Zitadel rotation `Role`/`RoleBinding` are gated on the same flag.
 - **Clustertenant-manager** renders the tenant-facing surface (tenants, policies, groups, budgets, model routing, sessions) and holds ClusterTenant/OrgMembership as local read-models projected from the fleet.
 
-Source: [`platform/helm/templates/fleet-manager-deployment.yaml`](https://github.com/italanta/opencrane/blob/main/platform/helm/templates/fleet-manager-deployment.yaml) and [`platform/helm/templates/clustertenant-manager-deployment.yaml`](https://github.com/italanta/opencrane/blob/main/platform/helm/templates/clustertenant-manager-deployment.yaml).
+Source: [`apps/fleet-platform/templates/fleet-manager-deployment.yaml`](https://github.com/italanta/opencrane/blob/main/apps/fleet-platform/templates/fleet-manager-deployment.yaml) and [`apps/clustertenant-platform/templates/clustertenant-manager-deployment.yaml`](https://github.com/italanta/opencrane/blob/main/apps/clustertenant-platform/templates/clustertenant-manager-deployment.yaml).
 
 ---
 

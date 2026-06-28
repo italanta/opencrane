@@ -76,8 +76,8 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
   // Internal routes — mounted before ___AuthMiddleware and not behind any token check.
   // Access is enforced by Kubernetes NetworkPolicy: only the Obot, skill-registry, and
   // tenant pods can reach the control-plane service on the cluster network.
-  // @see platform/helm/templates/networkpolicy-planes.yaml — runtime-plane policies.
-  // @see platform/helm/templates/obot-mcp-gateway-deployment.yaml — OBOT_SERVER_PROVIDER_REGISTRIES wiring.
+  // @see apps/clustertenant-platform/templates/networkpolicy-planes.yaml — runtime-plane policies.
+  // @see apps/clustertenant-platform/templates/obot-mcp-gateway-deployment.yaml — OBOT_SERVER_PROVIDER_REGISTRIES wiring.
   // Optional OCI store for skill-bundle content (P4D.2); null → DB-only delivery.
   const ociBundleStore = _BuildOciBundleStore();
 

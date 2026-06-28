@@ -14,7 +14,7 @@ import type { Logger } from "pino";
  * field in the structured log allows downstream alerting rules to fire on
  * repeated failures without generating noise on transient blips.
  *
- * @see platform/helm/templates/obot-mcp-gateway-deployment.yaml — deployment
+ * @see apps/clustertenant-platform/templates/obot-mcp-gateway-deployment.yaml — deployment
  *   spec and liveness probe configuration for the Obot gateway pod.
  */
 export class ObotHealthChecker
@@ -87,7 +87,7 @@ export class ObotHealthChecker
    * Perform a single health-check request against the gateway's `/api/healthz` endpoint.
    *
    * The path must match the liveness/readiness probe in the Obot Deployment
-   * (`platform/helm/templates/obot-mcp-gateway-deployment.yaml`), which Obot
+   * (`apps/clustertenant-platform/templates/obot-mcp-gateway-deployment.yaml`), which Obot
    * serves at `/api/healthz` — NOT `/healthz`. A mismatch here would make every
    * poll report the gateway as unhealthy even when it is fine.
    *

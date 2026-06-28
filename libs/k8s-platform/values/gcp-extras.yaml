@@ -5,9 +5,9 @@
 # GKE install — the baseline in values/gcp.yaml runs as standard k8s.
 #
 # Usage:
-#   helm install opencrane platform/helm \
-#     -f platform/helm/values/gcp.yaml \
-#     -f platform/helm/values/gcp-extras.yaml \
+#   helm install opencrane apps/fleet-platform \
+#     -f libs/k8s-platform/values/gcp.yaml \
+#     -f libs/k8s-platform/values/gcp-extras.yaml \
 #     --set hosting.gcp.projectId=YOUR_PROJECT_ID
 #
 # This overlay enables:

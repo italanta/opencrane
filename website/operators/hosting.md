@@ -404,7 +404,7 @@ The same on-prem-default / cloud-override split applies to deployment, in mirror
 ### 6.1 Terraform
 
 ```
-platform/terraform/
+libs/k8s-platform/terraform/
 ├── core/                      # cloud-agnostic: namespace, opencrane Helm release, CRDs,
 │                              #   optional in-cluster PostgreSQL. Runs against ANY cluster.
 ├── modules/                   # reusable building blocks
@@ -417,19 +417,27 @@ platform/terraform/
     └── aws/                   # (future)
 ```
 
-- **On-prem install** runs `core/` only (or just `helm install` — no Terraform required).
+- **On-prem install** runs `core/` only (or just the deploy scripts — no Terraform required).
 - **Cloud install** runs `cloud/<provider>/`, which provisions the managed cluster + data services, then applies `core/` onto it.
 - The Crossplane module is removed from the default. If anyone still wants Crossplane-managed cloud resources, it becomes an optional component under `cloud/gcp/` — never in `core/`.
 
 ### 6.2 Helm
 
+The platform is split into two charts:
+
 ```
-platform/helm/
-├── Chart.yaml
-├── values.yaml                # ON-PREM DEFAULTS: hosting.provider=onprem, storage.mode=pvc,
-│                              #   ingress.className=nginx, ingress.tls.enabled=false,
-│                              #   certManager.enabled=false, NO cloud blocks set.
-└── values/
+apps/fleet-platform/      # chart: opencrane-fleet
+├── Chart.yaml            # fleet-manager + cluster-wide bootstrap (CRDs, cert-manager,
+│                         #   ingress-nginx, external-dns, CNPG operator, otel, monitoring)
+└── values.yaml           # ON-PREM DEFAULTS: hosting.provider=onprem, storage.mode=pvc,
+                          #   ingress.className=nginx, certManager.enabled=false.
+
+apps/clustertenant-platform/   # chart: opencrane-silo
+├── Chart.yaml                 # per-org control-plane + runtime planes (Obot, skill-registry,
+│                              #   LiteLLM, Cognee) + per-silo CNPG Cluster CR
+└── values.yaml
+
+libs/k8s-platform/values/      # shared value overlays
     ├── gcp.yaml               # hosting.provider=gcp, gcsfuse CSI, gce ingress, workloadIdentity
     ├── azure.yaml             # (future)
     └── aws.yaml               # (future)
@@ -437,16 +445,21 @@ platform/helm/
 
 Install examples:
 ```bash
-# On-prem / self-hosted (default — no override file needed)
-helm install opencrane platform/helm
+# On-prem / self-hosted — fleet release (cluster bootstrap + fleet-manager)
+apps/fleet-platform/deploy.sh --base-domain <your-domain>
 
-# GCP
-helm install opencrane platform/helm -f platform/helm/values/gcp.yaml
+# On-prem — silo release per org
+apps/clustertenant-platform/deploy.sh \
+  --base-domain <your-domain> --cluster-tenant <org-name>
+
+# GCP — fleet release with GCP value overlay
+apps/fleet-platform/deploy.sh \
+  --base-domain <your-domain> \
+  --values libs/k8s-platform/values/gcp.yaml
 ```
 
 The chart's `hosting` block maps 1:1 onto the operator's `hostingProvider` + per-cloud config, so the Helm value selects the adapter.
 
-Both examples above are **single-install** (one instance + its CRDs, applied in one step).
 To run **multiple isolated instances in one cluster**, the CRDs are installed once
 cluster-wide and each per-instance release is installed with `--skip-crds`. See
 [`docs/multi-instance.md`](/advanced/multi-instance) for the procedure and the CRD-version
@@ -464,8 +477,8 @@ certs, so the same mechanism works on-prem and on any cloud.
 - A **per-org vanity cert** (HTTP-01, SAN = the customer-vanity host) is issued by the
   operator only when `vanityDomain` is set on a ClusterTenant. HTTP-01 is sufficient here
   because the vanity host is a non-wildcard name.
-- The chart renders a `ClusterIssuer` + wildcard `Certificate`
-  (`platform/helm/templates/cluster-issuer.yaml`) when `certManager.enabled=true` —
+- The fleet chart renders a `ClusterIssuer` + wildcard `Certificate`
+  (`apps/fleet-platform/templates/cluster-issuer.yaml`) when `certManager.enabled=true` —
   `mode: selfSigned` for dev/local, `mode: acme` with a DNS-01 solver for production.
 - **Install-time cert modes (the deploy core's Step 2.5)** — three explicit modes, picked
   by the deploy scripts / wizard:

@@ -14,7 +14,7 @@
 #     --ingress-ip 34.22.213.142 \
 #     --operator-tag <new-operator-image-tag> \
 #     --reuse-values \
-#     --values platform/helm/values/opencrane-dev.yaml
+#     --values libs/k8s-platform/values/opencrane-dev.yaml
 
 global:
   environment: dev

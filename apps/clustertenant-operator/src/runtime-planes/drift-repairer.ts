@@ -48,8 +48,8 @@ interface _PlaneSpec
  * **What is NOT repaired:** image tags, replica counts, resource limits, or
  * any field not declared in `_EnvSpec`.  Use Helm for those.
  *
- * @see platform/helm/templates/obot-mcp-gateway-deployment.yaml
- * @see platform/helm/templates/skill-registry-deployment.yaml
+ * @see apps/clustertenant-platform/templates/obot-mcp-gateway-deployment.yaml
+ * @see apps/clustertenant-platform/templates/skill-registry-deployment.yaml
  */
 export class RuntimePlaneDriftRepairer
 {

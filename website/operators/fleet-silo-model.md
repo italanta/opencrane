@@ -123,7 +123,7 @@ fleetManager:
     serviceAccountKeyKey: service-account-key
 ```
 
-When `existingSecret` is set and `clusterTenantManagement.enabled` is true, the chart renders a namespaced `Role` + `RoleBinding` granting the fleet-manager's ServiceAccount `patch` on that single named Secret — the minimum RBAC surface for in-place key rotation. Source: [`platform/helm/templates/fleet-manager-zitadel-rotation-rbac.yaml`](https://github.com/italanta/opencrane/blob/main/platform/helm/templates/fleet-manager-zitadel-rotation-rbac.yaml).
+When `existingSecret` is set and `clusterTenantManagement.enabled` is true, the chart renders a namespaced `Role` + `RoleBinding` granting the fleet-manager's ServiceAccount `patch` on that single named Secret — the minimum RBAC surface for in-place key rotation. Source: [`apps/fleet-platform/templates/fleet-manager-zitadel-rotation-rbac.yaml`](https://github.com/italanta/opencrane/blob/main/apps/fleet-platform/templates/fleet-manager-zitadel-rotation-rbac.yaml).
 
 ### Per-silo OIDC (clustertenant-manager)
 

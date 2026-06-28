@@ -92,12 +92,12 @@ UserTenant pods are **not** exposed on their own public host.
 
 ## Physical Cluster
 
-- **Cloud target: GKE Autopilot** (`platform/terraform/cloud/gcp/`) — Google-managed nodes, pay-per-pod, private nodes, VPC-native with secondary IP ranges for pods/services, Cloud NAT egress, an install-time Cloud DNS wildcard (`*.<base>`, covering org hosts `<org>.<base>`) pointing at a reserved static global IP. Per-org `<org>.<base>` A records are emitted at runtime by the operator as external-dns `DNSEndpoint` CRs. Provisioned in phases: networking → cluster → Artifact Registry → in-cluster Bitnami PostgreSQL + the chart → DNS.
-- **Cloud-agnostic target** (`platform/terraform/core/`) — assumes a ready kubeconfig and applies only the chart; works on k3d (local dev/e2e), EKS, AKS, on-prem. `hosting.provider: onprem` makes cloud storage/identity no-ops.
+- **Cloud target: GKE Autopilot** (`libs/k8s-platform/terraform/cloud/gcp/`) — Google-managed nodes, pay-per-pod, private nodes, VPC-native with secondary IP ranges for pods/services, Cloud NAT egress, an install-time Cloud DNS wildcard (`*.<base>`, covering org hosts `<org>.<base>`) pointing at a reserved static global IP. Per-org `<org>.<base>` A records are emitted at runtime by the operator as external-dns `DNSEndpoint` CRs. Provisioned in phases: networking → cluster → Artifact Registry → in-cluster Bitnami PostgreSQL + the chart → DNS.
+- **Cloud-agnostic target** (`libs/k8s-platform/terraform/core/`) — assumes a ready kubeconfig and applies only the chart; works on k3d (local dev/e2e), EKS, AKS, on-prem. `hosting.provider: onprem` makes cloud storage/identity no-ops.
 
 ## Helm Template Inventory
 
-Everything the chart can deploy lives in `platform/helm/templates/` (`_helpers.tpl` holds the scope-resolution logic):
+The deployable templates are split across two charts: the central **fleet** chart `apps/fleet-platform/templates/` (`opencrane-fleet` — operator, control-plane, CRDs, cert issuer, external-secrets) and the per-silo **silo** chart `apps/clustertenant-platform/templates/` (`opencrane-silo` — litellm, obot gateway, skill-registry, OCI store, plane NetworkPolicies). Both pull shared named-templates from the `k8s-platform` Helm **library** chart `libs/k8s-platform/templates/` (`_helpers.tpl` holds the scope-resolution logic):
 
 | Template | Creates |
 |----------|---------|
@@ -115,7 +115,7 @@ Everything the chart can deploy lives in `platform/helm/templates/` (`_helpers.t
 | `awareness-prometheusrule.yaml` / `awareness-grafana-dashboard.yaml` | Awareness SLO alerts + Grafana dashboard ConfigMap |
 | `validate-config.yaml` | Pre-install validation hook (rejects unsafe non-dev config) |
 
-CRDs are shipped separately under `platform/helm/crds/` (see below), not in `templates/`.
+CRDs are shipped separately under `apps/fleet-platform/crds/` (see below), not in `templates/`.
 
 ## The Planes, Wired
 
@@ -187,7 +187,7 @@ The provisioner seam is a registry (`apps/clustertenant-operator/src/core/cluste
 
 ## Multi-Instance Cluster Shape
 
-`multiInstance.enabled` flips these safety defaults (conformance-tested statically by `platform/tests/multi-instance-conformance.sh`):
+`multiInstance.enabled` flips these safety defaults (conformance-tested statically by `libs/k8s-platform/tests/multi-instance-conformance.sh`):
 
 | Concern | Single-install | Multi-instance |
 |---------|---------------|----------------|
@@ -204,7 +204,7 @@ The provisioner seam is a registry (`apps/clustertenant-operator/src/core/cluste
 
 ## CRDs
 
-Six CRDs in `platform/helm/crds/`, across **two API groups**:
+Six CRDs in `apps/fleet-platform/crds/`, across **two API groups**:
 
 | CRD | Group | Scope |
 |-----|-------|-------|

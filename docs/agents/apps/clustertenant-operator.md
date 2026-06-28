@@ -1,4 +1,4 @@
-# App: control-plane (`@opencrane/clustertenant-operator`)
+# App: clustertenant-operator (`@opencrane/clustertenant-operator`)
 
 > Deep-dive for `apps/clustertenant-operator`. Index: [`../app-specific.md`](../app-specific.md). Identity model:
 > [`../architecture.md`](../architecture.md). Verified June 2026.

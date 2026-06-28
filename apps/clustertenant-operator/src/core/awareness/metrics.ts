@@ -6,7 +6,7 @@ import type { FleetParticipationReport } from "./participation.types.js";
  *
  * Pure: derived entirely from the fleet participation report + rollout state so
  * it is unit-testable without a scrape. These feed the awareness Grafana
- * dashboard and the SLO alerts (`platform/helm/templates/awareness-prometheusrule.yaml`):
+ * dashboard and the SLO alerts (`apps/fleet-platform/templates/awareness-prometheusrule.yaml`):
  *   - `opencrane_awareness_policy_violations_total` → critical/page (locked: rate must be 0)
  *   - drift + non-participation gauges → warning
  *   - rollout frontier/info gauges for the canary dashboard
