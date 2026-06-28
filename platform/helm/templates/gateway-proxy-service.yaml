@@ -1,0 +1,25 @@
+{{- /* ClusterIP exposing the in-process identity-routing gateway proxy (DOMAIN.T4), now
+       SILO-local (Stage 5): the proxy runs in the clustertenant-manager pod, so this Service
+       selects that component and renders whenever gatewayProxy.enabled — INDEPENDENT of
+       fleetManager.enabled, so a per-silo install (fleetManager.enabled=false) still exposes
+       it. The wildcard Ingress routes the gateway WS upgrade to this Service; it forwards to
+       each user's pod by resolved identity. */ -}}
+{{- if .Values.gatewayProxy.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "opencrane.fullname" . }}-gateway-proxy
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway-proxy
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.gatewayProxy.port }}
+      targetPort: gateway-proxy
+      protocol: TCP
+      name: gateway-proxy
+  selector:
+    {{- include "opencrane.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: clustertenant-manager
+{{- end }}

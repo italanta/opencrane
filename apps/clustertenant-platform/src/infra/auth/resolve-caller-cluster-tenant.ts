@@ -1,5 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 
+import { _log } from "../../log.js";
+
 /**
  * Resolve the caller's ClusterTenant from their IdP-verified email, fail-closed. At most one tenant
  * may match, and its `clusterTenantRef` is returned; null on a missing/ambiguous email or any lookup
@@ -55,8 +57,12 @@ export async function _ResolveCallerClusterTenant(
     }
     return matches[0].clusterTenantRef ?? null;
   }
-  catch
+  catch (err)
   {
+    // Fail closed (deny) AND surface it: a lookup error here is an anomaly (DB down / schema
+    // drift), not a legitimate "no tenant" — distinguish it from the empty-match return above
+    // so an operator debugging unexpected denials isn't blind to a database problem.
+    _log.warn({ err, scope: scope || undefined }, "caller ClusterTenant resolution failed; failing closed (deny)");
     return null;
   }
 }

@@ -164,7 +164,10 @@ async function _startInSiloControllers(): Promise<void>
     log.info({ watchNamespace: config.watchNamespace }, "starting in-silo controllers");
 
     // Seed this silo's own `<org>-default` workspace Tenant from its ClusterTenant CR owner.
-    void _SeedOwnDefaultTenant(customApi, prisma, _projectionRepairNamespace, log);
+    // Use config.watchNamespace (the namespace the operators below reconcile in) so the seed
+    // lands where the TenantOperator will pick it up — not the projection-repair namespace,
+    // which is derived independently and could diverge under manual env overrides.
+    void _SeedOwnDefaultTenant(customApi, prisma, config.watchNamespace, log);
 
     const tenantOperator = _CreateTenantOperator(kc, config, log);
     const policyOperator = new PolicyOperator(kc, config, log);
