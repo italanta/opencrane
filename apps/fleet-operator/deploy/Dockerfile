@@ -25,6 +25,9 @@ COPY libs/infra-http/src libs/infra-http/src
 COPY apps/clustertenant-operator/openapi.json apps/clustertenant-operator/openapi.json
 COPY apps/fleet-operator/openapi.json apps/fleet-operator/openapi.json
 COPY apps/fleet-operator/src apps/fleet-operator/src
+# scripts/emit-openapi.mts runs at the tail of the fleet build (`tsx scripts/emit-openapi.mts`),
+# so the scripts dir must be present.
+COPY apps/fleet-operator/scripts apps/fleet-operator/scripts
 # Prisma schema + migrations: `prisma generate` (in the fleet build below) needs the schema,
 # and the runtime db-migrate initContainer runs `prisma migrate deploy` over the migrations.
 COPY apps/fleet-operator/prisma apps/fleet-operator/prisma
