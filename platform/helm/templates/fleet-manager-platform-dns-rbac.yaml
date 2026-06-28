@@ -9,11 +9,11 @@
   In namespaced cert-issuer mode (MI.4) it upserts a per-namespace Issuer + Secret in the fleet's
   own namespace instead.
 
-  Rendered only when clusterTenantManagement.enabled (the platform-DNS router is mounted) AND
+  Rendered only when fleetManager.clusterTenantApi.enabled (the platform-DNS router is mounted) AND
   cert-manager is enabled. These grants moved here from the clustertenant-manager (the silo no
   longer serves platform DNS).
 */}}
-{{- if and .Values.fleetManager.enabled .Values.clusterTenantManagement.enabled .Values.certManager.enabled }}
+{{- if and .Values.fleetManager.enabled .Values.fleetManager.clusterTenantApi.enabled .Values.certManager.enabled }}
 {{- if ne (include "opencrane.namespacedCertIssuer" .) "true" }}
 ---
 # Cluster-issuer mode: the cluster-scoped ClusterIssuer the platform-DNS endpoint upserts.

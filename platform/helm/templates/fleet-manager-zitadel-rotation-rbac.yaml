@@ -7,7 +7,7 @@
   API, so no `get` is needed — least privilege.)
 
   Rendered ONLY when:
-    - clusterTenantManagement.enabled is true  (the management/Zitadel surface is mounted here)
+    - fleetManager.clusterTenantApi.enabled is true  (the management/Zitadel surface is mounted here)
     - fleetManager.zitadel.existingSecret is set  (there is a Secret to rotate)
 
   The Role is scoped to a single named Secret via `resourceNames`, so the fleet-manager SA
@@ -17,7 +17,7 @@
   Stage 4: Zitadel management/provisioning moved wholly to the fleet-manager — a silo never holds
   the Zitadel SA key, so this RBAC is rendered for the fleet plane only.
 */}}
-{{- if and .Values.fleetManager.enabled .Values.clusterTenantManagement.enabled .Values.fleetManager.zitadel.existingSecret }}
+{{- if and .Values.fleetManager.enabled .Values.fleetManager.clusterTenantApi.enabled .Values.fleetManager.zitadel.existingSecret }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

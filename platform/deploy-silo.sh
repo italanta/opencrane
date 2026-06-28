@@ -87,7 +87,7 @@ PROFILE_SET=(
   # A silo NEVER runs the cluster-wide fleet-manager — that singleton lives in the fleet install
   # (deploy-multi-tenant.sh). Two fleet-managers would contend over the ClusterTenant CRs + IAM.
   --set "fleetManager.enabled=false"
-  --set "clusterTenantManagement.enabled=false"
+  --set "fleetManager.clusterTenantApi.enabled=false"
   --set "billing.enabled=false"
   --set "multiInstance.enabled=false"
   --set "ingress.tls.enabled=true"

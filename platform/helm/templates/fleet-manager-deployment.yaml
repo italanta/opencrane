@@ -39,7 +39,7 @@ spec:
             - name: OPENCRANE_BILLING_ENABLED
               value: {{ ternary "true" "false" .Values.billing.enabled | quote }}
             - name: OPENCRANE_CLUSTER_TENANT_MANAGER_ENABLED
-              value: {{ ternary "true" "false" .Values.clusterTenantManagement.enabled | quote }}
+              value: {{ ternary "true" "false" .Values.fleetManager.clusterTenantApi.enabled | quote }}
             {{- if .Values.clusterTenant.seed.name }}
             # -- Single-tenant org seed, read at boot by the fleet's _SeedClusterTenant: creates the
             #    ClusterTenant registry row + CR + its `owner` OrgMembership directly (idempotent,

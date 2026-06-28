@@ -111,6 +111,14 @@ fleetManager:
   #    two fleet-managers would contend over the cluster-scoped ClusterTenant CRs + IAM ownership.
   #    Default true so a single-box `helm install` runs both managers co-located.
   enabled: true
+  # -- Fleet self-service surface gate (a fleet-manager sub-feature; nested here to be
+  #    unmistakably distinct from the `clustertenantManager` COMPONENT key). Wired to the
+  #    fleet-manager as OPENCRANE_CLUSTER_TENANT_MANAGER_ENABLED; when false the ClusterTenant
+  #    management + Zitadel-admin + platform-DNS routers are not mounted and the fleet's
+  #    cluster-scoped management/issuer RBAC is not rendered. Single-tenant: false (the one org
+  #    is seeded directly at boot — see `clusterTenant.seed`).
+  clusterTenantApi:
+    enabled: true
   image:
     repository: ghcr.io/italanta/opencrane-fleet-manager
     tag: latest
@@ -155,13 +163,13 @@ fleetManager:
   #    holder) provisions a per-org Zitadel Organization + OIDC app on ClusterTenant create
   #    and rotates its own SA key in-place. Empty mgmtApiUrl → org provisioning is a no-op.
   #
-  #    Key rotation: when existingSecret is set AND clusterTenantManagement.enabled is true,
+  #    Key rotation: when existingSecret is set AND fleetManager.clusterTenantApi.enabled is true,
   #    the chart renders a namespaced Role + RoleBinding (fleet-manager-zitadel-rotation-rbac.yaml)
   #    granting the fleet-manager ServiceAccount `patch` on that single named Secret. The Secret
   #    name + data key are surfaced to the pod as ZITADEL_MGMT_SECRET_NAME / ZITADEL_MGMT_SECRET_KEY.
   zitadel:
     # -- Zitadel instance base URL (e.g. https://weownai-oidc-8dwlat.eu1.zitadel.cloud).
-    #    REQUIRED when clusterTenantManagement.enabled (the fleet hard-commits to Zitadel).
+    #    REQUIRED when fleetManager.clusterTenantApi.enabled (the fleet hard-commits to Zitadel).
     mgmtApiUrl: ""
     # -- Existing K8s Secret carrying the service-account key JSON (jwt-bearer auth). The
     #    service account MUST hold instance-level IAM_OWNER. When set, also enables the
@@ -951,16 +959,9 @@ observability:
 #    single-tenant box. Wired to the control-plane as OPENCRANE_BILLING_ENABLED /
 #    OPENCRANE_CLUSTER_TENANT_MANAGER_ENABLED; when false the matching self-service router
 #    is not mounted. `multiInstance` is a separate, lower-level switch and stays OFF here.
-# -- Fleet self-service surface gate (renamed from `clusterTenantManager` to disambiguate from
-#    the `clustertenantManager` COMPONENT key). Wired to the fleet-manager as
-#    OPENCRANE_CLUSTER_TENANT_MANAGER_ENABLED; when false the ClusterTenant management +
-#    Zitadel-admin + platform-DNS routers are not mounted and the fleet's cluster-scoped
-#    management/issuer RBAC is not rendered.
-clusterTenantManagement:
-  # -- Expose the ClusterTenant management API (POST/PATCH/DELETE /cluster-tenants) + Zitadel
-  #    admin + platform DNS on the fleet plane. Single-tenant: false (the one org is seeded
-  #    directly at boot).
-  enabled: true
+# NOTE: the fleet ClusterTenant-management surface gate moved UP into `fleetManager.clusterTenantApi`
+# (it is a fleet-manager sub-feature) so it is unmistakably distinct from the `clustertenantManager`
+# COMPONENT key. See the `fleetManager:` block above.
 billing:
   # -- Expose the self-service billing-accounts API (the gate for org creation).
   #    Single-tenant: false (no billing relationship on a single-tenant install).

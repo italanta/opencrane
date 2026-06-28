@@ -59,7 +59,7 @@ done
 # multi-TENANT (many orgs in one install) is distinct from multi-INSTANCE (many isolated
 # installs in one cluster).
 PROFILE_SET=(
-  --set "clusterTenantManagement.enabled=true"
+  --set "fleetManager.clusterTenantApi.enabled=true"
   --set "billing.enabled=true"
   --set "ingress.tls.enabled=true"
 )

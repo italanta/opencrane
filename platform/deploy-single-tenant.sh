@@ -60,7 +60,7 @@ done
 # multi-cluster/fleet OFF (multiInstance stays at its default off). The shared core
 # applies these via Helm exactly as the multi-tenant profile applies its own.
 PROFILE_SET=(
-  --set "clusterTenantManagement.enabled=false"
+  --set "fleetManager.clusterTenantApi.enabled=false"
   --set "billing.enabled=false"
   --set "multiInstance.enabled=false"
   --set "clusterTenant.seed.name=$ORG_NAME"

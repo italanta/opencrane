@@ -54,7 +54,7 @@ All resources here are namespaced, so the same rule list is valid in a Role.
 # ClusterTenant CR — the fleet-manager's ONLY watch (Stage 5: it stops at ClusterTenant
 # lifecycle and touches nothing inside a silo). The ClusterTenantOperator drives each org
 # pending→ready and patches its status. Ungated: the operator always runs, independent of
-# whether the management ROUTES (clusterTenantManagement.enabled) are mounted.
+# whether the management ROUTES (fleetManager.clusterTenantApi.enabled) are mounted.
 - apiGroups: ["opencrane.io"]
   resources: ["clustertenants", "clustertenants/status"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
