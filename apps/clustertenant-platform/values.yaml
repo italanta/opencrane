@@ -1,5 +1,9 @@
 # OpenCrane Platform configuration
 
+# -- Pin resource names to `opencrane-*` regardless of the per-role chart name
+#    (opencrane-fleet / opencrane-silo), so k8s resource names + fullname never drift.
+nameOverride: opencrane
+
 # -- Global chart settings
 global:
   # -- Deployment environment used for Helm validations (`dev`, `staging`, `prod`).

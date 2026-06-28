@@ -1,0 +1,13 @@
+apiVersion: v2
+name: k8s-platform
+description: >-
+  Shared OpenCrane Kubernetes platform substrate — a Helm library chart of named templates
+  (labels, fullname, RBAC rule sets, DB/observability/endpoint env helpers) consumed by both
+  the fleet chart (apps/fleet-platform) and the per-silo chart (apps/clustertenant-platform).
+  Holds no installable resources of its own. The shared deploy engine (k8s-deploy.sh,
+  gke-deploy.sh), terraform, and conformance tests also live alongside it.
+type: library
+version: 0.1.0
+appVersion: "0.1.0"
+maintainers:
+  - name: OpenCrane

@@ -1,0 +1,9 @@
+dependencies:
+- name: k8s-platform
+  repository: file://../../libs/k8s-platform
+  version: 0.1.0
+- name: langfuse
+  repository: https://langfuse.github.io/langfuse-k8s
+  version: 1.5.36
+digest: sha256:75b23f24af24d4022cda9e385edb8900b0374eccd2a796c60efdc0054507ab83
+generated: "2026-06-28T12:25:21.050514+02:00"

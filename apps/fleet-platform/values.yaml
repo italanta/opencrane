@@ -1,0 +1,1119 @@
+# OpenCrane Platform configuration
+
+# -- Pin resource names to `opencrane-*` regardless of the per-role chart name
+#    (opencrane-fleet / opencrane-silo), so k8s resource names + fullname never drift.
+nameOverride: opencrane
+
+# -- Global chart settings
+global:
+  # -- Deployment environment used for Helm validations (`dev`, `staging`, `prod`).
+  environment: dev
+
+# -- Per-ClusterTenant tenant DB (S6 / ADR 0002 decision 3). Each silo runs ONE CNPG cluster
+#    IN ITS OWN NAMESPACE, serving that silo's control-plane + runtime planes — so the silo's
+#    database holds exactly one ClusterTenant's data and the control-plane API never has to
+#    disambiguate which tenant a row belongs to (the silo IS the scope). That per-namespace
+#    cluster + its credentials Secret are provisioned by the deploy scripts (deploy-silo.sh →
+#    k8s-deploy.sh), and the control-plane consumes it via controlPlane.database.existingSecret —
+#    identically to the central release, just scoped to the silo namespace. No chart-side
+#    per-CT DB block is needed.
+
+# -- Native multi-instance mode (run N strictly-isolated OpenCrane instances in
+#    one cluster). Off by default → the legacy single-install path is unchanged.
+#    When enabled, the chart flips the isolation-safe defaults below.
+#    Per-instance releases must be installed with `--skip-crds`; the shared CRD
+#    bundle is installed once cluster-wide. See docs/multi-instance.md (CRD
+#    lifecycle + version compatibility contract, blocker B3).
+multiInstance:
+  # -- Turn on the per-instance isolation defaults (namespaced RBAC, fail-closed watch).
+  enabled: false
+  # -- The namespace(s) this instance owns. Namespaced RBAC is rendered for each.
+  #    Empty → defaults to the release namespace.
+  instanceNamespaces: []
+  # -- Operator/control-plane RBAC mode: `namespaced` (Role/RoleBinding, isolated)
+  #    or `cluster` (legacy ClusterRole/ClusterRoleBinding). Forced `namespaced`
+  #    semantics when `enabled` and `namespaced`.
+  rbac: namespaced
+  # -- When true the operator fails closed (refuses to start) if WATCH_NAMESPACE is
+  #    empty, so an instance can never reconcile another instance's Tenants (brief B2).
+  #    Default false (single-instance installs watch all namespaces with an empty
+  #    WATCH_NAMESPACE). Set true only when multiInstance.enabled is also true.
+  requireWatchNamespace: false
+  # -- Cert issuance scope (brief B4): `cluster` renders a cluster-singleton
+  #    ClusterIssuer (legacy default — shared across instances) or `namespaced`
+  #    renders a per-instance-namespace Issuer so instances never collide on one
+  #    issuer. Only honoured when `enabled`; legacy installs always get a ClusterIssuer.
+  certIssuer: cluster
+  # -- External-secrets store scope (brief B4): `cluster` renders a cluster-singleton
+  #    ClusterSecretStore (legacy default) or `namespaced` renders a per-instance-namespace
+  #    SecretStore. Only honoured when `enabled`; legacy installs always get a ClusterSecretStore.
+  secretStore: cluster
+
+# -- Per-component instance-vs-shared scope (multi-instance blocker B5).
+#    Sharing is an explicit, documented OPT-IN. The default for every component is
+#    `instance`, which preserves today's behaviour exactly: each component is
+#    deployed release-locally and referenced through release-prefixed names
+#    (`{{ include "opencrane.fullname" . }}-…`), so two instances in one cluster
+#    never collide.
+#
+#    Set a component to `shared` only when an external, centrally-operated endpoint
+#    serves every instance. ⚠️ ISOLATION/TRUST IMPLICATION: a shared component sits
+#    OUTSIDE this instance's isolation boundary. Every instance pointed at it trusts
+#    the same backend, so a shared endpoint can leak data or budget across instances
+#    unless the shared component itself enforces per-instance tenancy (separate DBs,
+#    scoped credentials, per-instance auth). The chart cannot enforce that for you —
+#    only flip to `shared` for components you have verified are multi-tenant-safe.
+sharedPlatform:
+  # -- LiteLLM cost-routing gateway scope.
+  litellm:
+    # -- `instance` (default): use the release-local LiteLLM Deployment + Service.
+    #    `shared`: reference an external LiteLLM at `shared.endpoint` and skip the
+    #    in-release Deployment/Service. The master-key Secret still resolves via the
+    #    existing `litellm.existingSecret` path (a shared LiteLLM needs a shared key).
+    mode: instance
+    shared:
+      # -- Base endpoint of the shared LiteLLM (e.g. http://litellm.platform.svc:4000).
+      #    Required when mode=shared; consumed by the operator as LITELLM_ENDPOINT.
+      endpoint: ""
+  # -- Skill-registry delivery plane scope.
+  skillRegistry:
+    # -- `instance` (default): use the release-local skill-registry Deployment + Service.
+    #    `shared`: reference an external skill-registry at `shared.url` and skip the
+    #    in-release Deployment/Service/RBAC.
+    mode: instance
+    shared:
+      # -- Base URL of the shared skill-registry (e.g. http://skill-registry.platform.svc:5000).
+      #    Required when mode=shared; consumed by the operator as SKILL_REGISTRY_URL.
+      url: ""
+  # -- Obot MCP gateway plane scope.
+  mcpGateway:
+    # -- `instance` (default): use the release-local Obot Deployment + Service.
+    #    `shared`: reference an external Obot at `shared.url` and skip the in-release
+    #    Deployment/Service.
+    mode: instance
+    shared:
+      # -- Base URL of the shared Obot gateway (e.g. http://mcp-gateway.platform.svc:8080).
+      #    Required when mode=shared; consumed by the operator as MCP_GATEWAY_URL.
+      url: ""
+  # -- External Secrets Operator integration scope.
+  externalSecrets:
+    # -- `instance` (default): render this release's own ClusterSecretStore +
+    #    ExternalSecret. `shared`: reference an externally-managed ClusterSecretStore
+    #    by name at `shared.secretStoreName` and skip rendering the store here (the
+    #    per-instance ExternalSecret still targets this release's `orgSecrets.secretName`).
+    mode: instance
+    shared:
+      # -- Name of the externally-provided ClusterSecretStore to bind ExternalSecrets to.
+      #    Required when mode=shared.
+      secretStoreName: ""
+
+# -- Operator settings
+fleetManager:
+  # -- Render the cluster-wide fleet-manager (the singleton operator + fleet/super-admin API +
+  #    registry DB + Zitadel IAM). MUST be true in exactly ONE release per cluster (the fleet
+  #    install via deploy-multi-tenant.sh) and FALSE in every per-silo install (deploy-silo.sh) —
+  #    two fleet-managers would contend over the cluster-scoped ClusterTenant CRs + IAM ownership.
+  #    Default true so a single-box `helm install` runs both managers co-located.
+  enabled: true
+  # -- Fleet self-service surface gate (a fleet-manager sub-feature; nested here to be
+  #    unmistakably distinct from the `clustertenantManager` COMPONENT key). Wired to the
+  #    fleet-manager as OPENCRANE_CLUSTER_TENANT_MANAGER_ENABLED; when false the ClusterTenant
+  #    management + Zitadel-admin + platform-DNS routers are not mounted and the fleet's
+  #    cluster-scoped management/issuer RBAC is not rendered. Single-tenant: false (the one org
+  #    is seeded directly at boot — see `clusterTenant.seed`).
+  clusterTenantApi:
+    enabled: true
+  image:
+    repository: ghcr.io/italanta/opencrane-fleet-manager
+    tag: latest
+    pullPolicy: IfNotPresent
+  # -- Fleet registry database (the cluster-wide singleton's OWN Postgres holding the
+  #    ClusterTenant catalogue, billing accounts, and org memberships — distinct from each
+  #    silo's per-CT DB). The installer points the fleet-manager at it via existingSecret
+  #    (a libpq-style DATABASE_URL Secret) or an inline url. Empty → no DB wired.
+  database:
+    existingSecret: ""
+    url: ""
+    secretKey: DATABASE_URL
+  # -- OIDC human-login for the FLEET plane. This is the fleet's OWN Zitadel project with
+  #    fleet-level roles (billing identity + platform operator) — SEPARATE from each silo's
+  #    per-org OIDC (clustertenantManager.oidc). Rendered into fleet-manager only when
+  #    issuerUrl is set; otherwise the fleet API stays in token/development auth mode.
+  oidc:
+    issuerUrl: ""
+    clientId: ""
+    # -- Callback URL on the fleet-manager (OIDC_REDIRECT_URI), e.g.
+    #    https://<fleet-host>/api/v1/auth/callback.
+    redirectUri: ""
+    # -- Existing K8s Secret carrying the OIDC client secret + session secret (preferred).
+    existingSecret: ""
+    clientSecretKey: OIDC_CLIENT_SECRET
+    sessionSecretKey: OIDC_SESSION_SECRET
+    # -- Inline fallbacks used ONLY for dev when no existingSecret is set. Leave empty in prod.
+    clientSecret: ""
+    sessionSecret: ""
+    groupsClaim: "groups"
+    rolesClaim: "roles"
+    # -- Comma-separated, lowercased group names granting platform-operator
+    #    (OPENCRANE_PLATFORM_OPERATOR_GROUPS) and org-admin (OPENCRANE_ORG_ADMIN_GROUPS) on
+    #    the fleet plane. Empty → nobody is granted via groups (fail-closed).
+    platformOperatorGroups: ""
+    orgAdminGroups: ""
+    # -- Per-cluster platform-operator SEED email (OPENCRANE_PLATFORM_OPERATOR_SEED_EMAIL).
+    #    Bootstraps the FIRST fleet operator before any IdP group mapping exists. MUST stay
+    #    empty unless seeding an operator (empty → nobody, fail-closed).
+    platformOperatorSeedEmail: ""
+  # -- Zitadel Management API. The fleet-manager (cluster-wide singleton, sole IAM_OWNER
+  #    holder) provisions a per-org Zitadel Organization + OIDC app on ClusterTenant create
+  #    and rotates its own SA key in-place. Empty mgmtApiUrl → org provisioning is a no-op.
+  #
+  #    Key rotation: when existingSecret is set AND fleetManager.clusterTenantApi.enabled is true,
+  #    the chart renders a namespaced Role + RoleBinding (fleet-manager-zitadel-rotation-rbac.yaml)
+  #    granting the fleet-manager ServiceAccount `patch` on that single named Secret. The Secret
+  #    name + data key are surfaced to the pod as ZITADEL_MGMT_SECRET_NAME / ZITADEL_MGMT_SECRET_KEY.
+  zitadel:
+    # -- Zitadel instance base URL (e.g. https://weownai-oidc-8dwlat.eu1.zitadel.cloud).
+    #    REQUIRED when fleetManager.clusterTenantApi.enabled (the fleet hard-commits to Zitadel).
+    mgmtApiUrl: ""
+    # -- Existing K8s Secret carrying the service-account key JSON (jwt-bearer auth). The
+    #    service account MUST hold instance-level IAM_OWNER. When set, also enables the
+    #    key-rotation Role/RoleBinding.
+    existingSecret: ""
+    serviceAccountKeyKey: service-account-key
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      # 512Mi gives the Node heap headroom over a watch reconnect that replays every
+      # CR at once; the per-org reconcile coalescing keeps steady-state usage well under
+      # this, so the limit is a safety margin, not the fix for the historical OOMKills.
+      memory: 512Mi
+  # -- Namespace to watch for Tenant CRs (empty = all namespaces)
+  watchNamespace: ""
+  # -- Minutes of inactivity before auto-suspending a tenant (0 = disabled)
+  idleTimeoutMinutes: 30
+  # -- How often (seconds) the idle-checker scans for inactive tenants
+  idleCheckIntervalSeconds: 60
+  # -- Linkerd identity substrate (S5 / ADR 0001). DEFAULT OFF. When true the silo
+  #    reconcile annotates each silo namespace for Linkerd mesh injection and emits a
+  #    per-silo deny-by-default Server + MeshTLSAuthentication + AuthorizationPolicy
+  #    (the meshed mTLS-identity analogue of the S2 default-deny NetworkPolicy), layered
+  #    ADDITIVELY on top of the Cilium/Dataplane-V2 L3/4 floor. Requires Linkerd installed
+  #    in the cluster; if its policy CRDs are absent the operator fails closed (skips the
+  #    objects) so flipping this on without Linkerd is a safe no-op.
+  linkerdMeshEnabled: false
+
+# -- Control plane settings
+clustertenantManager:
+  # NOTE: a `clustertenantManager.enabled` gate (to suppress the silo manager + its idle planes in
+  # the cluster-wide fleet install) is deferred — it needs the fleet↔silo cross-references untangled
+  # first (the fleet-manager's CLUSTERTENANT_MANAGER_INTERNAL_URL + the shared LiteLLM secret).
+  # Today the fleet install renders an idle clustertenant-manager + planes (waste, not harm). The
+  # correctness-critical gate — never running a SECOND fleet-manager in a silo — is `fleetManager.enabled`.
+  image:
+    repository: ghcr.io/italanta/opencrane-clustertenant-manager
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    port: 8080
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # -- PostgreSQL database connection
+  database:
+    # -- Direct connection string (use existingSecret in production)
+    url: ""
+    # -- Name of an existing K8s Secret containing DATABASE_URL
+    existingSecret: ""
+    # -- Key within the Secret that holds the connection string
+    secretKey: DATABASE_URL
+  # -- Prisma migration Helm hook. Runs `prisma migrate deploy` as a
+  #    pre-install/pre-upgrade Job so EVERY deploy reconciles the schema, even when
+  #    the control-plane pod template is unchanged (a plain `helm upgrade` won't roll
+  #    the pod, so the db-migrate initContainer alone can leave the schema behind when
+  #    the database is recreated under a running pod). The initContainer remains a
+  #    belt-and-suspenders guard so a pod never serves an un-migrated database.
+  migrationJob:
+    enabled: true
+    # -- Retries before the migration hook is considered failed (fails the deploy).
+    backoffLimit: 3
+  # -- Cognee integration for control-plane permission synchronization
+  cognee:
+    # -- Install an in-cluster Cognee as part of this release. Cognee is a REQUIRED
+    #    service (the control-plane's permission sync + the awareness retrieval ACL
+    #    both depend on it), so this defaults true — a fresh cluster gets a working
+    #    Cognee with no extra step. Set false to bring your own (BYO): the endpoint
+    #    below then points at your external/shared Cognee and no workload is rendered.
+    #    Separate from `backendAccessControl` (the runtime enforcement switch) so an
+    #    operator can BYO Cognee while still enforcing the backend ACL.
+    install: true
+    # -- Cognee HTTP endpoint used by control-plane permission sync routes. When
+    #    `install` is true the in-chart Service is reachable at this name; point it
+    #    elsewhere only when BYO (`install: false`).
+    endpoint: "http://cognee:8000"
+    # -- Enable Cognee backend access controls (tenant isolation + RBAC enforcement).
+    #    Defaults true: the bundled Cognee makes this a real, enforced default rather
+    #    than a latent fresh-cluster gap pointing at a service nobody installed.
+    backendAccessControl: true
+    # -- Permission sync timeout in milliseconds
+    permissionsTimeoutMs: 5000
+    # -- In-chart Cognee workload settings (only consumed when `install` is true).
+    image:
+      repository: cognee/cognee
+      # -- Pinned to an audited stable tag for supply-chain integrity + reproducible
+      #    deploys. Bump deliberately after re-auditing; never use a rolling `latest`.
+      tag: "1.2.1"
+      pullPolicy: IfNotPresent
+    service:
+      port: 8000
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+  # -- OIDC human-login session config for the control-plane. Zitadel is the single
+  #    trusted issuer (Mode-2 broker, no upstream Entra), but nothing here is
+  #    Zitadel-specific — any spec-compliant issuer works. OIDC is OFF unless
+  #    `issuerUrl` is set; when set, supply the client id + a session secret
+  #    (use `existingSecret` in production — never inline secrets in values).
+  oidc:
+    # -- Issuer URL used for OIDC discovery (OIDC_ISSUER_URL). Empty → OIDC disabled.
+    issuerUrl: ""
+    # -- Registered OAuth client id (OIDC_CLIENT_ID).
+    clientId: ""
+    # -- Callback URL on the control-plane (OIDC_REDIRECT_URI), e.g.
+    #    https://<control-plane-host>/api/v1/auth/callback.
+    redirectUri: ""
+    # -- Existing K8s Secret carrying the OIDC client secret + session secret. Strongly
+    #    preferred over inline values in production. Keys are configurable below.
+    existingSecret: ""
+    clientSecretKey: OIDC_CLIENT_SECRET
+    sessionSecretKey: OIDC_SESSION_SECRET
+    # -- Inline fallbacks used ONLY for dev when no existingSecret is set (rendered as
+    #    plain env). Leave empty in production and use existingSecret instead.
+    clientSecret: ""
+    sessionSecret: ""
+    # -- Claim names carrying the caller's group memberships and roles. Defaults match
+    #    the loader (`groups` / `roles`); override for your Zitadel claim mapping
+    #    (OIDC_GROUPS_CLAIM / OIDC_ROLES_CLAIM).
+    groupsClaim: "groups"
+    rolesClaim: "roles"
+    # -- Comma-separated, lowercased group names that grant platform-operator
+    #    (OPENCRANE_PLATFORM_OPERATOR_GROUPS) and org-admin (OPENCRANE_ORG_ADMIN_GROUPS).
+    #    Empty → nobody is granted via groups (fail-closed).
+    platformOperatorGroups: ""
+    orgAdminGroups: ""
+    # -- Per-cluster platform-operator SEED email (OPENCRANE_PLATFORM_OPERATOR_SEED_EMAIL).
+    #    Bootstraps the FIRST platform operator before any IdP group mapping exists: a
+    #    caller whose VERIFIED email equals this (case-insensitive) becomes a platform
+    #    operator, OR-ed with the group check above. MUST stay empty unless you are
+    #    seeding an operator — an empty seed grants operator to NOBODY (fail-closed). Set
+    #    it per cluster at install (the wizard/installer can prompt for it); never commit
+    #    a real owner email into values.
+    platformOperatorSeedEmail: ""
+  # NOTE: Zitadel MANAGEMENT (per-org provisioning + SA-key rotation) moved to
+  # `fleetManager.zitadel` (Stage 4) — the silo's OIDC above is for per-org LOGIN only and
+  # never holds the IAM_OWNER SA key. The silo uses standards-only OIDC discovery at
+  # `clustertenantManager.oidc.issuerUrl`; it makes no Zitadel management API calls.
+
+# -- LiteLLM integration settings
+litellm:
+  # -- Cost routing is enabled by default as part of platform setup.
+  enabled: true
+  # NOTE: the LiteLLM endpoint is no longer set here. It is derived per scope by the
+  # `opencrane.litellmEndpoint` helper — release-prefixed in-cluster Service in
+  # instance mode, or `sharedPlatform.litellm.shared.endpoint` in shared mode.
+  # -- Existing Secret containing LITELLM_MASTER_KEY for operator and control-plane
+  existingSecret: ""
+  secretKey: LITELLM_MASTER_KEY
+  # -- Auto-generate and persist a random master key in chart-managed Secret when not using existingSecret.
+  generateMasterKey: true
+  # -- Default budget used by operator when tenant does not define monthlyBudgetUsd
+  defaultMonthlyBudgetUsd: 50
+  # -- Default spend path template for control-plane to query tenant spend from LiteLLM (tenant_id placeholder: {tenant})
+  spendPathTemplate: "/spend/tenant/{tenant}"
+  image:
+    # -- non_root variant: ships PRE-GENERATED Prisma engine binaries (baked at
+    #    build) and runs as a non-root user. The default `litellm` image generates
+    #    Prisma at runtime, which fails on its Chainguard/wolfi base in restricted/
+    #    non-root k8s with `NotConnectedError: Not connected to the query engine`
+    #    (wolfi ships OpenSSL 3 only; the runtime-fetched debian-openssl-1.1.x query
+    #    engine can't load libssl.so.1.1). Confirmed fix per BerriAI/litellm#11864.
+    repository: ghcr.io/berriai/litellm-non_root
+    # -- Pinned to the audited stable tag (matches the k3d overlays) for
+    #    supply-chain integrity + reproducible deploys. Do NOT use a rolling
+    #    `main-latest` tag in production — bump deliberately after re-auditing.
+    tag: main-v1.81.0-stable
+    pullPolicy: IfNotPresent
+  service:
+    port: 4000
+  # -- Persist model/router config in Postgres (LiteLLM STORE_MODEL_IN_DB). Lets
+  #    you manage models/keys at runtime via the admin API instead of static
+  #    config. REQUIRES a DATABASE_URL (set existingDatabaseSecret/databaseUrl), so
+  #    it is OFF by default and must NOT be enabled on DB-less profiles. Enabled in
+  #    values/gcp.yaml (which provisions Postgres).
+  storeModelInDb: false
+  # -- Encryption salt for provider keys stored in the DB (LITELLM_SALT_KEY). Only
+  #    consumed when storeModelInDb=true. Leave empty to auto-generate + persist in
+  #    the chart-managed litellm Secret (stable across upgrades). MUST stay constant
+  #    once set — rotating it makes already-stored keys unreadable.
+  saltKey: ""
+  # -- Existing Secret holding LITELLM_SALT_KEY (preferred in production). When set,
+  #    the chart does not manage/generate the salt.
+  existingSaltSecret: ""
+  saltSecretKey: LITELLM_SALT_KEY
+  # -- Redis backend for cross-replica budget + rate-limit consistency. Needed for
+  #    HA / multi-replica installs so spend tracking and rate limits are shared
+  #    across pods (not per-replica). OFF by default — single-replica installs do
+  #    not need it. No Redis is deployed by the chart; point this at an existing one.
+  redis:
+    enabled: false
+    host: ""
+    port: 6379
+  podAnnotations: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  # -- Optional direct DATABASE_URL for LiteLLM. Prefer existingDatabaseSecret in production.
+  databaseUrl: ""
+  existingDatabaseSecret: ""
+  databaseSecretKey: DATABASE_URL
+  # -- Optional explicit master key override. Leave empty to auto-generate when generateMasterKey=true.
+  #    Placeholder is ignored when auto-generation is enabled.
+  masterKey: "change-me-in-production"
+  # -- Trace capture (AIR.6): emit per-call traces from LiteLLM to a Langfuse
+  #    instance via LiteLLM's native langfuse success callback. This is the "log"
+  #    half of the shadow-measurement loop — it records {prompt, model, cost,
+  #    latency} per call so the optimizer (AIR.6/7) can read those traces back out
+  #    of Langfuse and join them by skill.
+  #    Two modes:
+  #      in-cluster (recommended): set langfuse.inCluster.enabled=true. The chart
+  #        deploys Langfuse as a subchart and auto-configures LiteLLM + control-plane.
+  #        Leave litellm.langfuse.enabled=false in that case (auto-wired by templates).
+  #      external: set litellm.langfuse.enabled=true and supply host/keys below.
+  #    OFF by default: a default render is byte-identical with this disabled.
+  langfuse:
+    # -- Master switch. When false, no LANGFUSE_* / LITELLM_SUCCESS_CALLBACK env is
+    #    rendered and LiteLLM behaviour is unchanged.
+    enabled: false
+    # -- Base URL of the external Langfuse (e.g. https://langfuse.example.com).
+    #    Set on the container as LANGFUSE_HOST.
+    host: ""
+    # -- Inline Langfuse API keys. Used only when `enabled` and no `existingSecret`
+    #    is given; persisted into the chart-managed litellm Secret. Prefer
+    #    `existingSecret` in production.
+    publicKey: ""
+    secretKey: ""
+    # -- Existing Secret holding the Langfuse keys (preferred in production). When
+    #    set, the chart does not manage/persist the inline keys.
+    existingSecret: ""
+    # -- Keys within `existingSecret` (and the chart-managed Secret) for the public
+    #    and secret Langfuse keys.
+    publicKeyKey: LANGFUSE_PUBLIC_KEY
+    secretKeyKey: LANGFUSE_SECRET_KEY
+
+# -- Default tenant pod settings (can be overridden per Tenant CR)
+tenant:
+  defaultImage:
+    repository: ghcr.io/italanta/opencrane-tenant
+    tag: latest
+    pullPolicy: IfNotPresent
+  defaultResources:
+    requests:
+      cpu: 250m
+      memory: 4Gi
+    limits:
+      cpu: "1"
+      memory: 4Gi
+  # -- OpenClaw gateway port inside tenant pods
+  gatewayPort: 18789
+  # -- OpenClaw gateway trusted-proxy auth (OC-2 / CONN.4).
+  gateway:
+    # -- CIDR(s)/IP(s) the gateway trusts the X-Forwarded-User identity header from
+    #    — the ingress controller's pod source range. The control-plane brokers every
+    #    gateway WebSocket upgrade (auth_request → /auth/gateway-verify → 204 +
+    #    X-Forwarded-User), so the gateway honours that header only from a trusted source.
+    #
+    #    FAIL-CLOSED: an EMPTY list means **trust nothing** — the gateway honours no
+    #    proxy source and no connection authenticates. It is NEVER read as trust-all.
+    #    Leave empty for installs that have not pinned their ingress source range; set
+    #    it to the cluster's ingress-nginx pod CIDR for trusted-proxy auth to work. A
+    #    NetworkPolicy independently locks the gateway port to the ingress namespace, so
+    #    a wide CIDR here still can't be abused by other pods. A malformed entry crashes
+    #    the operator at startup rather than silently shifting the trust boundary.
+    #
+    #    OPT-IN convenience: the single literal entry `[auto]` asks the operator to derive
+    #    a pod-range CIDR from its own POD_IP (downward API), killing the "forgot the CIDR
+    #    ⇒ all pods fail-closed" footgun. This trusts the whole pod range, so it stays
+    #    opt-in and is logged loudly; empty still means trust-nothing.
+    trustedProxies: []
+    # -- Prefix length `[auto]` masks POD_IP to (e.g. 14 → /14, the GKE pod range).
+    #    Empty ⇒ operator default (/14). Only consulted when trustedProxies is `[auto]`.
+    trustedProxiesAutoMask: ""
+  # -- OpenClaw npm package version installed into each tenant pod. Pinned (not `latest`)
+  # so the gateway can't silently roll across breaking changes; bump deliberately. A
+  # Tenant CR's `spec.openclawVersion` overrides this per-tenant.
+  defaultOpenclawVersion: "2026.6.9"
+
+# -- Hosting provider: onprem (default), gcp, azure, aws.
+# Override with values/gcp.yaml etc. for cloud installs.
+hosting:
+  # -- Active hosting substrate. Defaults to on-prem; no cloud env vars required.
+  provider: onprem
+  # -- GCP-specific settings (required when provider=gcp)
+  gcp:
+    projectId: ""
+    bucketPrefix: ""
+    # -- CSI driver for GCS Fuse mounts; defaults to the standard GKE driver.
+    csiDriver: gcsfuse.csi.storage.gke.io
+    # -- GKE cluster location (region or zone) for the External Secrets Workload
+    #    Identity binding. Optional: when empty, external-secrets discovers it from
+    #    the GKE metadata server. Only consumed when externalSecrets is enabled.
+    clusterLocation: ""
+
+# -- ingress-nginx controller bundling (a cluster singleton, like cert-manager). The
+#    deploy scripts install ingress-nginx by default so a fresh cluster has a working
+#    ingress class with no extra step, and auto-skip when a controller is already
+#    present. `install` is the bundling switch (deploy-script only); it is deliberately
+#    SEPARATE from `ingress.enabled` below (whether the chart renders Ingress objects)
+#    so an operator can BYO their own controller (`install: false`) while the chart
+#    still renders Ingress against it. Not consumed by Helm templates — the scripts
+#    read `--set ingressNginx.install=…` / the wizard's choice.
+ingressNginx:
+  # -- Install the upstream ingress-nginx controller from the deploy scripts. Default
+  #    true; set false to BYO an existing controller (the install step is skipped).
+  install: true
+  # -- Namespace the controller is installed into (matches networkPolicy.ingressNamespace).
+  namespace: ingress-nginx
+
+# -- Ingress settings
+ingress:
+  enabled: true
+  # -- Ingress class is set by the hosting adapter; override here only for custom setups.
+  className: nginx
+  # -- The platform org-wildcard BASE domain for this install (fixed-wildcard topology).
+  #    Orgs (ClusterTenants) are served at `<org>.<domain>` and their users at
+  #    `<user>.<org>.<domain>`; the platform wildcard `*.<domain>` covers the org apexes.
+  #    This is wired to the operator as INGRESS_DOMAIN (the wildcard base it derives
+  #    UserTenant hosts from). See docs/agents/cluster-architecture.md → "Tenancy Model".
+  domain: opencrane.local
+  # -- The FIXED super-operator / control-plane host (the management API above every
+  #    org). DISTINCT from the org-wildcard base above — it is its own host, never an
+  #    org under `*.<domain>`. Defaults to `platform.<domain>` when left empty so a
+  #    default render still produces a sane, separate host. Set it to a dedicated name
+  #    (e.g. `platform.weownai.eu`) in production.
+  controlPlaneHost: ""
+  annotations: {}
+  # -- Cluster ingress external IP the per-org wildcard A records point at. Leave empty
+  #    on-prem or until the LoadBalancer IP is assigned; the operator then skips the
+  #    per-org DNS side effect (the Certificate is still applied). Wired to the operator
+  #    as INGRESS_IP.
+  externalIp: ""
+  tls:
+    enabled: false
+    # -- Secret name for the platform wildcard TLS cert (`*.<domain>`, covering every
+    #    org apex `<org>.<domain>`) that per-UserTenant Ingresses reference by default.
+    #    NOTE: this wildcard does NOT cover the per-user level `<user>.<org>.<domain>`
+    #    (DNS wildcards match one label) — each org gets its own `*.<org>.<domain>`
+    #    cert at provision time. See docs/agents/cluster-architecture.md → "Multi-level
+    #    wildcard TLS".
+    secretName: opencrane-wildcard-tls
+
+# -- Documentation site (optional). When enabled, serves the VitePress docs build
+# from an in-cluster, unprivileged nginx. OFF by default, so existing installs are
+# unchanged. Build/push the image with `pnpm docker:build:docs`.
+docs:
+  enabled: false
+  image:
+    repository: ghcr.io/italanta/docs
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    port: 80
+  ingress:
+    enabled: false
+    # -- Docs host. Defaults to `docs.<ingress.domain>` when left empty.
+    host: ""
+    # -- Ingress class. Falls back to `ingress.className` when empty.
+    className: ""
+    annotations: {}
+    tls:
+      enabled: false
+      # -- TLS Secret for the docs host. Required when ingress.tls.enabled.
+      secretName: ""
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+# -- cert-manager TLS issuance (CONN.8). When enabled, renders a ClusterIssuer +
+# a wildcard Certificate (*.ingress.domain, plus the apex) into ingress.tls.secretName.
+# k8s-native, cloud-agnostic + on-prem. Requires cert-manager installed in-cluster.
+# -- Fleet awareness SLO monitoring (P4B.6). When enabled, renders a PrometheusRule
+# (SLO alerts) and a Grafana dashboard ConfigMap. Requires the Prometheus Operator
+# CRDs (monitoring.coreos.com) + a Grafana sidecar that imports labelled ConfigMaps.
+monitoring:
+  enabled: false
+  # -- Severity label applied to the policy-violation alert (paging route in your AM).
+  pageSeverity: critical
+  # -- Severity label for drift / non-participation alerts (non-paging).
+  warnSeverity: warning
+  # -- Base URL prefix for runbook links embedded in alert annotations.
+  runbookBaseUrl: https://github.com/opencrane/opencrane/blob/main/docs/runbooks
+
+# -- external-dns integration (DOMAIN.T1). When enabled, the operator is granted RBAC to
+# create namespaced `DNSEndpoint` CRs (externaldns.k8s.io/v1alpha1); its ClusterTenant
+# reconciler declares the per-org `*.<org>.<domain>` + apex A records as a DNSEndpoint and
+# the external-dns controller reconciles them into whatever DNS provider the platform runs
+# (Cloud DNS, Route53, Cloudflare, RFC2136, …) — so the operator talks to no cloud DNS API.
+# external-dns itself is a PREREQUISITE (like cert-manager): install it with `--source=crd`
+# and access to the platform's DNS zone. When disabled (or its CRD is absent) the operator
+# skips the per-org DNS side effect at runtime; the Certificate is still applied.
+externalDns:
+  # -- Grant the operator RBAC to create `DNSEndpoint` CRs and have its ClusterTenant
+  #    reconciler declare per-org records. This is the CHART/operator switch (consumed by
+  #    Helm templates). DELIBERATELY SEPARATE from `install` below — an operator can BYO an
+  #    external-dns controller (`install: false`) while the chart still wires against it.
+  enabled: false
+  # -- Install the upstream external-dns controller + its CRDs (incl. `DNSEndpoint`) from
+  #    the deploy scripts, as a cluster singleton like ingress-nginx / cert-manager.
+  #    Default true so a fresh cluster reconciles the operator's DNSEndpoint CRs into Cloud
+  #    DNS with no extra step; auto-skips when a controller is already present. Set false to
+  #    BYO a controller. Not consumed by Helm templates — the scripts read
+  #    `--set externalDns.install=…` / the wizard's choice (mirrors `ingressNginx.install`).
+  install: true
+  # -- Namespace the bundled external-dns controller is installed into.
+  namespace: external-dns
+
+certManager:
+  enabled: false
+  # -- Issuer mode: "acme" (production, public CA via DNS-01) or "selfSigned" (dev/local).
+  mode: selfSigned
+  # -- Include the bare `<ingress.domain>` apex as a SAN on the platform wildcard
+  # Certificate. OFF by default: many installs use the apex as a marketing site
+  # hosted elsewhere (Webflow, Vercel, etc.) and the platform's DNS-01 solver
+  # cannot answer `_acme-challenge.<domain>` in that zone — adding the SAN would
+  # stall the whole cert at `pending`. Set true only when the platform actually
+  # serves the apex AND its DNS zone is wired to certManager.acme.dns01.
+  includeApex: false
+  # -- Name of the ClusterIssuer this chart creates and the Certificate references.
+  issuerName: opencrane-issuer
+  # -- cert-manager controller namespace. The `oc platform dns set` endpoint writes
+  # the DNS-01 credentials Secret here (cert-manager reads ClusterIssuer solver
+  # Secrets only from its own namespace), and the control-plane gets a namespaced
+  # Role here for that write (see control-plane-rbac.yaml). Wired to the control-plane
+  # as CERT_MANAGER_NAMESPACE so the runtime write target matches the Role.
+  namespace: cert-manager
+  # -- Namespace the wildcard Certificate (and its Secret) are created in. Defaults to
+  # the release namespace. TLS Secrets are namespace-scoped and an Ingress can only
+  # reference a Secret in its OWN namespace, so this MUST equal the namespace tenant
+  # Ingresses run in — i.e. the operator watchNamespace, where Tenant CRs are created.
+  # If tenants are ever split across namespaces, a cert-reflector / per-namespace
+  # Certificate is required instead (CONN.8 follow-up b).
+  certificateNamespace: ""
+  acme:
+    # -- ACME directory URL (Let's Encrypt prod by default).
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # -- Contact email for the ACME account (required in acme mode).
+    email: ""
+    # -- Secret name cert-manager stores the ACME account private key in.
+    privateKeySecretName: opencrane-acme-account-key
+    # -- DNS-01 solver. Wildcards require DNS-01 (HTTP-01 cannot issue them).
+    # Set the block matching your provider; cloudflare shown as an example.
+    # On-prem: use rfc2136 (BIND/PowerDNS + TSIG). See cluster-issuer.yaml.
+    dns01:
+      # -- Provider key: cloudflare | route53 | clouddns | azuredns | rfc2136 | "".
+      provider: ""
+      # -- Provider-specific solver config, rendered verbatim under solvers[].dns01.
+      config: {}
+      # -- Raw service-account key (JSON string) for the DNS-01 solver Secret.
+      # When non-empty the chart renders a Secret in certManager.namespace so the
+      # solver can authenticate against the DNS provider (e.g. GCP CloudDNS SA key).
+      # Stopgap — prefer GCP-SM + ESO + CMEK for production credential delivery.
+      secretData: ""
+
+# -- Obot MCP gateway plane settings.
+# Uses the upstream obot-platform/obot image. Requires a per-instance, release-prefixed
+# `<release>-obot` k8s Secret (resolved by the `opencrane.obotSecretName` helper) with
+# key `dsn` containing the PostgreSQL DSN for Obot's own database. The release prefix
+# stops two instances in one cluster colliding on a fixed `opencrane-obot` name (B5).
+# By default authentication is disabled and access is controlled by NetworkPolicy
+# (in-cluster only); enable `auth.enabled` for per-user credentials + access policies.
+# The MCP catalogue is loaded from `catalog.path` (a local filesystem dir of entry YAMLs)
+# and/or Git Source URLs added at runtime via Obot Admin — NOT from a control-plane poll.
+mcpGateway:
+  enabled: true
+  image:
+    repository: ghcr.io/obot-platform/obot
+    # Pinned to the latest stable Obot tag (verified pullable on ghcr). Bump deliberately;
+    # `latest` would silently roll the gateway across breaking changes.
+    tag: v0.23.1
+    pullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    port: 8080
+  # -- Authentication & per-user isolation (P0.1). Default OFF preserves the in-cluster-only
+  # posture (NetworkPolicy is the only gate; shared-credential multi-user servers ONLY — NO
+  # per-user credentials or access policies).
+  #
+  # Set enabled=true for the per-user model. Obot can only differentiate users it
+  # authenticates, so after enabling you MUST complete a one-time RUNTIME bootstrap:
+  #   1. Log in with the bootstrap token (set `bootstrapTokenSecret`, or let Obot autogenerate
+  #      one and read it from the pod logs) and configure an OIDC auth provider federated to
+  #      OpenCrane's IdP — Obot has no env-only OIDC provider.
+  #   2. Grant Admin to the platform/org admins (also pre-set here via `adminEmails`).
+  #   3. With registry auth on, the registry returns per-user-accessible servers instead of the
+  #      default wildcard "everyone" access — restrict/remove that default access policy in Obot
+  #      Admin so nothing is open by default.
+  # Tenant end-users map to Obot Basic User (connect only; NEVER Power-User+, which can run code
+  # on the host).
+  auth:
+    enabled: false
+    # Comma-separated emails granted the Obot Admin / Owner role on first login.
+    adminEmails: ""
+    ownerEmails: ""
+    # Optional Secret holding OBOT_BOOTSTRAP_TOKEN (>=8 chars); unset ⇒ Obot autogenerates one.
+    bootstrapTokenSecret: ""
+    bootstrapTokenSecretKey: bootstrap-token
+  # -- Default MCP catalogue (P0.2). A LOCAL FILESYSTEM directory of catalogue-entry YAMLs
+  # that Obot loads for all users (Obot's `default-mcpcatalog-path`). Empty (default) renders
+  # no env var. For GitOps, sync a catalogue git repo into this path (e.g. a git-sync sidecar);
+  # alternatively add Git Source URLs at runtime in Obot Admin once `auth.enabled` is true.
+  catalog:
+    path: ""
+  # -- Encryption-at-rest for Obot's credential/token store (P0.3). Default OFF.
+  # When enabled, an `encryptionsetup` init container (replicated verbatim from obot
+  # v0.23.1) materialises an apiserver EncryptionConfiguration from the key below into a
+  # Memory-backed volume, and the gateway reads it via OBOT_SERVER_ENCRYPTION_CONFIG_FILE
+  # (provider=custom never consumes the bare key directly). Provision the key Secret
+  # out-of-band, e.g. `kubectl create secret generic opencrane-obot-enc \
+  #   --from-literal=encryption-key=$(openssl rand -base64 32)`.
+  encryptionAtRest:
+    enabled: false
+    # Secret holding the encryption key (operator-provisioned; not templated here).
+    secretName: opencrane-obot-enc
+    secretKey: encryption-key
+  podAnnotations: {}
+  podSecurityContext:
+    runAsNonRoot: false
+    seccompProfile:
+      type: RuntimeDefault
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: false
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+# -- Skill registry delivery plane settings (self-built; source in apps/skill-registry).
+skillRegistry:
+  enabled: true
+  image:
+    # Built and published by .github/workflows/docker.yml (SKILL_REGISTRY_IMAGE), matching
+    # the opencrane-<service> naming of the other first-party images.
+    repository: ghcr.io/italanta/opencrane-skill-registry
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    port: 5000
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  # -- OCI registry (Zot) for digest-pinned skill-bundle storage (P4D.2). Default off;
+  # enable once the publish/delivery cutover lands. The control plane reaches it via
+  # SKILL_OCI_REGISTRY_URL (wired in the cutover slice).
+  ociStore:
+    enabled: false
+    image:
+      repository: ghcr.io/project-zot/zot-linux-amd64
+      tag: latest
+      pullPolicy: IfNotPresent
+    service:
+      port: 5000
+    # -- Repository path bundles are stored under (registry name).
+    repository: skills
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClass: ""
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+
+# -- Identity-routing gateway proxy (DOMAIN.T4). A thin, logic-free WS reverse proxy
+# that serves every user in an org through the org's SINGLE host (`<org>.<domain>`)
+# instead of per-user subdomains: on a gateway WS upgrade it delegates auth to the
+# control plane (`/auth/gateway-resolve`), enforces an Origin allowlist (CSWSH), and
+# forwards to the resolved `openclaw-<user>.<ns>.svc` pod. OFF by default — enabling
+# it is the per-org-host cutover (see website/security/connection-security.md); until
+# then the operator keeps minting per-user Ingresses.
+# -- Identity-routing gateway proxy (DOMAIN.T4), folded IN-PROCESS into the operator
+# (interim — can be split into its own pod later). When enabled, the operator runs a WS
+# proxy on `port`: the per-org host's gateway WS upgrade is path-routed here, the proxy
+# delegates auth to the control plane (/auth/gateway-resolve), injects X-Forwarded-User,
+# and reverse-proxies to the user's pod. OFF by default — enabling it makes the operator
+# pod internet-facing (via the wildcard Ingress), a deliberate interim trade-off.
+gatewayProxy:
+  enabled: false
+  # -- TCP port the operator's proxy server listens on (distinct from the gateway port).
+  port: 8090
+  # -- Exact `Origin` values allowed on a gateway WS upgrade (CSWSH), for vanity hosts.
+  allowedOrigins: []
+  # -- Platform base domains; any `https://<org>.<base>` host is allowed without
+  #    enumeration. Defaults to [ingress.domain] when empty. Empty AND no exact origins
+  #    = fail closed (every browser upgrade refused). CORS does not cover WebSockets.
+  allowedOriginBaseDomains: []
+  # -- Max gateway sockets one identity may open per minute (per operator replica).
+  rateLimitPerMinute: 60
+
+# -- Audience-bound projected token settings for tenant access into ingress planes
+projectedIdentity:
+  ttlSeconds: 600
+
+# -- Network policy (default egress control for tenant pods and ingress control
+# for internal platform services)
+networkPolicy:
+  enabled: true
+  # -- Allow DNS resolution (still consumed by the multi-instance cross-namespace policy)
+  allowDNS: true
+  # -- Reserved for a future FQDN egress policy (requires Cilium). The per-silo egress
+  #    baseline is now emitted by the OPERATOR per ClusterTenant namespace
+  #    (_BuildSiloBaselineNetworkPolicy), replacing the retired install-namespace
+  #    `opencrane-tenant-default` policy that mis-selected tenant pods cluster-wide.
+  defaultAllowedDomains:
+    - api.openai.com
+    - api.anthropic.com
+  # -- Reserved for CIDR-based egress rules (future per-silo egress refinement).
+  egressAllowCIDRs: []
+  # -- Namespace where the ingress controller runs. Used by the control-plane
+  # ingress NetworkPolicy to permit external API traffic routed through it.
+  # Override for non-standard ingress namespaces (e.g. "traefik", "gateway").
+  ingressNamespace: ingress-nginx
+
+  # -- Default-deny baseline for the shared platform namespace (opencrane-system).
+  #
+  #    CONTEXT: S2 ships per-silo (per-ClusterTenant-namespace) default-deny policies
+  #    emitted by the operator. The PLATFORM namespace — where control-plane, LiteLLM,
+  #    Cognee, Obot (mcp-gateway), skill-registry, and the CNPG Postgres cluster run —
+  #    has no such policy by default. This section adds one as a gated, additive block.
+  #
+  #    GATE: `enabled` defaults to FALSE. The whole template is a no-op until an operator
+  #    explicitly sets this to true. Enable ONLY after validating that ALL plane-to-plane
+  #    connectivity is unaffected in your deployment profile:
+  #
+  #      1. Deploy with the flag off (current default) — all planes work normally.
+  #      2. Set enabled=true in a staging/dev cluster and run your full smoke test
+  #         (API calls, model routing, agent skill delivery, Obot MCP connections).
+  #      3. If any path breaks, check whether the missing allow-list entry is in this
+  #         template or in networkpolicy-planes.yaml / cognee-deployment.yaml.
+  #      4. Once all planes pass, promote to production.
+  #
+  #    RELATION TO S2: the per-silo operator policies restrict what TENANT pods can
+  #    reach OUTBOUND. This policy restricts what can reach PLATFORM pods INBOUND, and
+  #    what platform pods can reach OUTBOUND. The two complement each other.
+  #
+  #    FQDN-BASED EGRESS: the HTTPS egress rules (rules 7, 8) allow port 443 to ANY
+  #    external destination (conservative). If your cluster runs Cilium, replace those
+  #    with CiliumNetworkPolicy objects scoped to the exact FQDNs
+  #    (api.openai.com, api.anthropic.com, your Zitadel host, etc.).
+  mainNetworkDefaultDeny:
+    # -- Set to true ONLY after validating platform connectivity in a non-production
+    #    environment. Enabling this without validation can break all planes simultaneously.
+    enabled: false
+    # -- Set to true to also render the OTEL collector HTTPS egress rule (rule 11).
+    #    Only needed when observability.otel.enabled=true AND the OTEL exporter sends
+    #    to an external backend (e.g. GCP Cloud Trace). Ignored when enabled=false.
+    allowOtelEgress: false
+
+# -- Org-wide secrets injected into all tenant pods
+orgSecrets:
+  # -- Name of the Kubernetes Secret containing org-wide API keys
+  secretName: org-shared-secrets
+  # -- Keys to inject as env vars (key in Secret -> env var name)
+  envMappings: {}
+  #   openai-api-key: OPENAI_API_KEY
+  #   anthropic-api-key: ANTHROPIC_API_KEY
+
+# -- External Secrets Operator integration
+externalSecrets:
+  enabled: false
+  # -- Secret store provider: gcp-secret-manager, azure-key-vault, aws-secrets-manager
+  provider: ""
+  # -- Annotations placed on the `<fullname>-external-secrets` ServiceAccount the
+  #    (Cluster)SecretStore's Workload-Identity ref points at. On GKE set
+  #    `iam.gke.io/gcp-service-account: <gsa>@<project>.iam.gserviceaccount.com` to bind
+  #    the GSA that holds Secret Manager access. The ServiceAccount itself is always
+  #    rendered when enabled (the store references it), so external-secrets can bind it.
+  serviceAccountAnnotations: {}
+
+# -- Cloud-native observability (no in-cluster stack needed)
+observability:
+  # -- Enable structured logging for Cloud Logging (GKE auto-ingests)
+  cloudLogging: false
+  # -- Enable Cloud Error Reporting integration
+  cloudErrorReporting: false
+  # -- OpenTelemetry: every OpenCrane service emits structured JSON logs (trace-correlated)
+  #    and execution traces. An in-cluster OTEL Collector receives the traces over OTLP and
+  #    scrapes pod-stdout logs, then exports both to GCP Cloud Logging + Cloud Trace (or any
+  #    OTLP backend). Disabled by default — apps log to stdout regardless; turning this on
+  #    wires them to the collector and deploys it.
+  otel:
+    enabled: false
+    # -- Per-app pino level (debug|info|warn|error). Consumed via LOG_LEVEL.
+    logLevel: info
+    # -- NODE_ENV for the app containers (production = JSON logs, no pretty transport).
+    nodeEnv: production
+    collector:
+      # -- Topology: "daemonset" scrapes each node's pod stdout via the filelog receiver
+      #    (needed for the log pipeline); "deployment" runs a single collector for traces
+      #    only (use on GKE Autopilot, where hostPath DaemonSets are restricted — rely on
+      #    the platform's native stdout→Cloud Logging and set logs.collector=platform).
+      mode: daemonset
+      # -- Collector image (contrib distro carries the googlecloud + filelog components).
+      image: otel/opentelemetry-collector-contrib:0.115.0
+      # -- OTLP/HTTP port apps export traces to.
+      otlpPort: 4318
+      # -- Collector container resource requests/limits.
+      resources: {}
+    exporter:
+      # -- Export backend: "googlecloud" (Cloud Logging + Cloud Trace) or "otlp" (forward to
+      #    an external OTLP endpoint such as Tempo/Loki/another collector).
+      backend: googlecloud
+      otlp:
+        # -- Downstream OTLP endpoint when exporter.backend=otlp.
+        endpoint: ""
+    logs:
+      # -- Log pipeline: "filelog" (collector scrapes pod stdout — requires collector.mode=daemonset)
+      #    or "platform" (rely on the cloud's native stdout collection, e.g. GKE Autopilot →
+      #    Cloud Logging; the collector then handles traces only).
+      collector: filelog
+
+# -- ClusterTenant provisioner (Track CT). The native `shared` and `dedicatedNodes`
+#    isolation tiers need NO configuration here — the operator enforces them inline.
+#    To additionally serve the `dedicatedCluster` tier, point this at an external,
+#    out-of-process provisioner webhook (e.g. a private vendor backend). Left empty
+#    (the default), `dedicatedCluster` stays unavailable and the control-plane API
+#    rejects it with 422 TIER_UNAVAILABLE (fail-closed). The control plane refuses a
+#    non-`https://` URL so the bearer token is never sent in plaintext.
+# -- Tenancy profile toggles (Chunk 4). Default ON = the MULTI-tenant profile: callers
+#    self-serve a billing account then create their own organisations (ClusterTenants).
+#    The SINGLE-tenant profile sets BOTH to false and seeds ONE org instead (see
+#    `clusterTenant.seed` below) — there is no self-service billing or org management on a
+#    single-tenant box. Wired to the control-plane as OPENCRANE_BILLING_ENABLED /
+#    OPENCRANE_CLUSTER_TENANT_MANAGER_ENABLED; when false the matching self-service router
+#    is not mounted. `multiInstance` is a separate, lower-level switch and stays OFF here.
+# NOTE: the fleet ClusterTenant-management surface gate moved UP into `fleetManager.clusterTenantApi`
+# (it is a fleet-manager sub-feature) so it is unmistakably distinct from the `clustertenantManager`
+# COMPONENT key. See the `fleetManager:` block above.
+billing:
+  # -- Expose the self-service billing-accounts API (the gate for org creation).
+  #    Single-tenant: false (no billing relationship on a single-tenant install).
+  enabled: true
+
+clusterTenant:
+  # -- Single-tenant SEED (Chunk 4). When `name` is set the control-plane seeds ONE org
+  #    DIRECTLY at boot — the ClusterTenant CR + its `owner` OrgMembership — bypassing the
+  #    billing-gated POST. The #50 reconciler then provisions it. Idempotent and
+  #    fail-soft; a re-run converges. Leave `name` empty (the default, multi-tenant
+  #    profile) to seed nothing. Wired as OPENCRANE_SEED_CLUSTER_TENANT_*.
+  seed:
+    # -- Stable org name (the ClusterTenant id + CR name). Empty → no seed.
+    name: ""
+    # -- Human-readable org display name; defaults to `name` when empty.
+    displayName: ""
+    # -- Owner email, recorded as the org's single `owner` membership subject (the
+    #    OIDC-sub-else-email fallback, since the owner has not logged in at install).
+    ownerEmail: ""
+    # -- Isolation tier for the seeded org: shared | dedicatedNodes | dedicatedCluster.
+    tier: shared
+  provisionerWebhook:
+    # -- HTTPS base URL of the external provisioner (must start with https://).
+    url: ""
+    # -- Stable provisioner id used for capability routing (defaults to "external").
+    id: ""
+    # -- Existing Secret holding the bearer token presented to the webhook.
+    existingSecret: ""
+    # -- Key within that Secret holding the token.
+    secretKey: CLUSTER_TENANT_PROVISIONER_WEBHOOK_TOKEN
+
+# -- In-cluster Langfuse LLM observability.
+#    When inCluster.enabled=true, the official Langfuse Helm subchart (v1.x) is deployed
+#    inside this release. The control-plane metrics proxy and LiteLLM trace callback
+#    are auto-wired to the in-cluster service — no manual host/key configuration needed.
+#    k8s-deploy.sh creates the `opencrane-langfuse` Secret (stable across upgrades) and
+#    adds the `langfuse` database to the shared CNPG cluster before the Helm install.
+#
+#    Structure: `langfuse.inCluster` is an OpenCrane-level switch consumed by our templates.
+#    All other keys (`langfuse.langfuse`, `langfuse.postgresql`, etc.) are forwarded verbatim
+#    to the langfuse subchart — see https://langfuse.github.io/langfuse-k8s for the full API.
+langfuse:
+  inCluster:
+    # -- Deploy Langfuse in-cluster as a Helm subchart. Disabled by default.
+    enabled: false
+    # -- k8s Secret created by k8s-deploy.sh containing stable generated credentials.
+    #    Required keys: NEXTAUTH_SECRET, SALT, ENCRYPTION_KEY,
+    #    LANGFUSE_INIT_PROJECT_PUBLIC_KEY, LANGFUSE_INIT_PROJECT_SECRET_KEY,
+    #    LANGFUSE_INIT_USER_PASSWORD.
+    existingSecret: "opencrane-langfuse"
+    # -- First-boot admin seeding (idempotent; values stored in DB after first run).
+    adminEmail: "admin@opencrane.ai"
+    adminName: "Admin"
+    orgId: "opencrane"
+    orgName: "OpenCrane"
+    projectId: "opencrane-llm"
+    projectName: "OpenCrane LLM"
+
+  # -- Langfuse app configuration (forwarded to the langfuse subchart's `langfuse:` key).
+  langfuse:
+    nextauth:
+      # -- NEXTAUTH_URL: the public URL Langfuse is served at.
+      #    k8s-deploy.sh sets this to https://langfuse.<base-domain> via --set.
+      url: "http://localhost:3000"
+      # -- NEXTAUTH_SECRET: pulled from the opencrane-langfuse Secret (stable).
+      secret:
+        secretKeyRef:
+          name: opencrane-langfuse
+          key: NEXTAUTH_SECRET
+    # -- SALT (hashes API keys). Pulled from the opencrane-langfuse Secret.
+    salt:
+      secretKeyRef:
+        name: opencrane-langfuse
+        key: SALT
+    # -- ENCRYPTION_KEY (256-bit hex, encrypts sensitive data). Pulled from Secret.
+    encryptionKey:
+      secretKeyRef:
+        name: opencrane-langfuse
+        key: ENCRYPTION_KEY
+    # -- Init-seeding env vars. Non-sensitive values inline; secrets from opencrane-langfuse.
+    #    Langfuse seeds org/project/user on first boot only; idempotent on subsequent starts.
+    additionalEnv:
+      - name: LANGFUSE_INIT_ORG_ID
+        value: "opencrane"
+      - name: LANGFUSE_INIT_ORG_NAME
+        value: "OpenCrane"
+      - name: LANGFUSE_INIT_PROJECT_ID
+        value: "opencrane-llm"
+      - name: LANGFUSE_INIT_PROJECT_NAME
+        value: "OpenCrane LLM"
+      - name: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
+        valueFrom:
+          secretKeyRef:
+            name: opencrane-langfuse
+            key: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
+      - name: LANGFUSE_INIT_PROJECT_SECRET_KEY
+        valueFrom:
+          secretKeyRef:
+            name: opencrane-langfuse
+            key: LANGFUSE_INIT_PROJECT_SECRET_KEY
+      - name: LANGFUSE_INIT_USER_EMAIL
+        value: "admin@opencrane.ai"
+      - name: LANGFUSE_INIT_USER_NAME
+        value: "Admin"
+      - name: LANGFUSE_INIT_USER_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: opencrane-langfuse
+            key: LANGFUSE_INIT_USER_PASSWORD
+    # -- Disable public sign-up: the seeded user is the only entry point.
+    features:
+      signUpDisabled: true
+
+  # -- PostgreSQL: DISABLED bundled instance. k8s-deploy.sh provisions the `langfuse`
+  #    database inside the shared CNPG cluster; host is injected via --set at deploy time.
+  postgresql:
+    deploy: false
+    # -- Hostname injected by k8s-deploy.sh: <release>-postgres-rw.<namespace>.svc.cluster.local
+    host: ""
+    auth:
+      username: "opencrane"
+      # -- Reuse the CNPG cluster creds Secret (created by k8s-deploy.sh, never rotated
+      #    without also recreating the CNPG cluster).
+      existingSecret: "opencrane-postgres-creds"
+      secretKeys:
+        userPasswordKey: "password"
+        adminPasswordKey: "password"
+      database: "langfuse"
+
+  # -- ClickHouse: bundled single-node for trace/event storage (Langfuse v3 requirement).
+  #    replicaCount=1 + clusterEnabled=false = standalone mode (no ZooKeeper needed).
+  clickhouse:
+    deploy: true
+    replicaCount: 1
+    clusterEnabled: false
+    shards: 1
+    auth:
+      username: default
+      existingSecret: "opencrane-langfuse"
+      existingSecretKey: "CLICKHOUSE_PASSWORD"
+
+  # -- Redis (Valkey): bundled, single-node. Required by Langfuse for background jobs.
+  #    The `--maxmemory-policy noeviction` flag is included in the chart's default extraFlags.
+  redis:
+    deploy: true
+
+  # -- MinIO: bundled S3-compatible store for trace event blobs and exports.
+  s3:
+    deploy: true
+    forcePathStyle: true
+    bucket: langfuse

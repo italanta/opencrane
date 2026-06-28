@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OpenCrane Helm values coherence guards",
+  "description": "Fail-fast guards for the demo-able shared-tier install (S1 / task_bbafd7e9). Deliberately PERMISSIVE: only the keys below are constrained, every other value passes through untouched. Helm validates the MERGED values on every install/template/lint, so an incoherent overlay (e.g. gatewayProxy enabled with no ingress IP) is rejected before the rollout half-installs.",
+  "type": "object",
+  "properties": {
+    "ingress": {
+      "type": "object",
+      "properties": {
+        "externalIp": { "type": "string" }
+      }
+    },
+    "gatewayProxy": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "tenant": {
+      "type": "object",
+      "properties": {
+        "gateway": {
+          "type": "object",
+          "properties": {
+            "trustedProxies": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "trustedProxiesAutoMask": {
+              "type": ["string", "integer"]
+            }
+          }
+        }
+      }
+    }
+  },
+  "if": {
+    "required": ["gatewayProxy"],
+    "properties": {
+      "gatewayProxy": {
+        "required": ["enabled"],
+        "properties": {
+          "enabled": { "const": true }
+        }
+      }
+    }
+  },
+  "then": {
+    "description": "When the per-org gateway proxy is enabled, the wildcard A records need an ingress IP and the tenant gateway needs at least one trusted proxy source (use [auto] to derive one) — otherwise every per-org host fails to resolve or every connection fails closed.",
+    "required": ["ingress", "tenant"],
+    "properties": {
+      "ingress": {
+        "required": ["externalIp"],
+        "properties": {
+          "externalIp": {
+            "type": "string",
+            "minLength": 7
+          }
+        }
+      },
+      "tenant": {
+        "required": ["gateway"],
+        "properties": {
+          "gateway": {
+            "required": ["trustedProxies"],
+            "properties": {
+              "trustedProxies": {
+                "type": "array",
+                "minItems": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

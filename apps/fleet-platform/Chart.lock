@@ -1,0 +1,6 @@
+dependencies:
+- name: k8s-platform
+  repository: file://../../libs/k8s-platform
+  version: 0.1.0
+digest: sha256:a3a1c42167c406069f35c961bbb8e00eb50dbe9dfa9e59dc8252965ebc28072d
+generated: "2026-06-28T12:25:06.39797+02:00"

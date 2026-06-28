@@ -1,0 +1,27 @@
+apiVersion: v2
+name: opencrane-silo
+description: >-
+  OpenCrane SILO install — one per ClusterTenant, into the org's own namespace: the
+  clustertenant-manager (per-silo control plane + in-silo controllers) plus its dedicated
+  runtime planes (Cognee, LiteLLM, Obot/MCP gateway, skill-registry, Langfuse), per-silo
+  NetworkPolicies, and the identity-routing gateway. Installed after the fleet
+  (deploy-silo.sh); depends on the fleet having established CRDs + the cert-manager issuer.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - openclaw
+  - multi-tenant
+  - ai-gateway
+maintainers:
+  - name: OpenCrane
+dependencies:
+  # Shared named-template substrate (labels, fullname, RBAC rule sets, env helpers).
+  - name: k8s-platform
+    version: 0.1.0
+    repository: "file://../../libs/k8s-platform"
+  # Langfuse LLM observability — a per-silo plane, deployed when langfuse.inCluster.enabled.
+  - name: langfuse
+    version: ">=0.6.0"
+    repository: https://langfuse.github.io/langfuse-k8s
+    condition: langfuse.inCluster.enabled

@@ -1,0 +1,22 @@
+apiVersion: v2
+name: opencrane-fleet
+description: >-
+  OpenCrane FLEET install — the cluster-wide singleton: the fleet-manager (ClusterTenant
+  lifecycle + super-admin API + registry) plus the once-per-cluster bootstrap (CRDs,
+  cert-manager ClusterIssuer, external-secrets, otel-collector, monitoring, docs site,
+  main-network default-deny). Installed once per cluster (deploy-multi-tenant.sh); silos
+  (apps/clustertenant-platform) install after it into their own namespaces.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - openclaw
+  - multi-tenant
+  - ai-gateway
+maintainers:
+  - name: OpenCrane
+dependencies:
+  # Shared named-template substrate (labels, fullname, RBAC rule sets, env helpers).
+  - name: k8s-platform
+    version: 0.1.0
+    repository: "file://../../libs/k8s-platform"
