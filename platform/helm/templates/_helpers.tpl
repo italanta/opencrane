@@ -51,70 +51,35 @@ Operator RBAC rules — shared by the cluster-scoped (legacy) and namespaced
 All resources here are namespaced, so the same rule list is valid in a Role.
 */}}
 {{- define "opencrane.fleetManagerRbacRules" -}}
-# Tenant, ClusterTenant, and AccessPolicy CRDs
-- apiGroups: ["opencrane.io"]
-  resources: ["tenants", "tenants/status", "accesspolicies"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-{{- if .Values.clusterTenantManagement.enabled }}
+# ClusterTenant CR — the fleet-manager's ONLY watch (Stage 5: it stops at ClusterTenant
+# lifecycle and touches nothing inside a silo). The ClusterTenantOperator drives each org
+# pending→ready and patches its status. Ungated: the operator always runs, independent of
+# whether the management ROUTES (clusterTenantManagement.enabled) are mounted.
 - apiGroups: ["opencrane.io"]
   resources: ["clustertenants", "clustertenants/status"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-# The ClusterTenant reconciler provisions each org's isolation boundary: it creates the
-# bound namespace `opencrane-<org>` with Pod Security Admission labels, and stamps a
-# ResourceQuota + LimitRange into it. `namespaces` is CLUSTER-scoped, so this grant is only
-# effective via the legacy ClusterRole; in namespaced multi-instance mode a Role cannot
-# grant it and cluster-tenant provisioning requires the cluster-scoped operator. Without
-# this the reconcile 403s on createNamespace and never reaches `ready`.
+# Org isolation boundary: the reconciler creates the bound namespace `opencrane-<org>` with
+# Pod Security Admission labels (and the ResourceQuota/LimitRange boundary). `namespaces` is
+# CLUSTER-scoped, so this is only effective via the legacy ClusterRole; namespaced
+# multi-instance mode cannot grant it and cluster-tenant provisioning requires the
+# cluster-scoped operator. Without this the reconcile 403s on createNamespace.
 - apiGroups: [""]
   resources: ["namespaces"]
   verbs: ["get", "list", "watch", "create", "update", "patch"]
 - apiGroups: [""]
   resources: ["resourcequotas", "limitranges"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-{{- end }}
-# Per-tenant resources the operator manages
-- apiGroups: ["apps"]
-  resources: ["deployments"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-- apiGroups: [""]
-  resources: ["services", "configmaps", "persistentvolumeclaims"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-# ServiceAccounts for Workload Identity
-- apiGroups: [""]
-  resources: ["serviceaccounts"]
-  verbs: ["get", "list", "create", "update", "patch"]
-# Secrets for encryption keys
-- apiGroups: [""]
-  resources: ["secrets"]
-  verbs: ["get", "list", "create", "update", "patch"]
-- apiGroups: ["networking.k8s.io"]
-  resources: ["ingresses", "networkpolicies"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-# Cilium policies (optional, if Cilium is installed)
-- apiGroups: ["cilium.io"]
-  resources: ["ciliumnetworkpolicies"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-{{- if .Values.fleetManager.linkerdMeshEnabled }}
-# Linkerd identity-layer policy CRs the silo reconcile applies per silo namespace (S5):
-# a deny-by-default Server + MeshTLSAuthentication allow-list + the AuthorizationPolicy
-# binding them. Granted only when the Linkerd mesh gate is on; without it the operator
-# never builds or applies these objects, and an absent Linkerd CRD makes the apply skip.
-- apiGroups: ["policy.linkerd.io"]
-  resources: ["servers", "meshtlsauthentications", "authorizationpolicies"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-{{- end }}
 {{- if .Values.certManager.enabled }}
-# Per-org wildcard TLS Certificates the ClusterTenant reconciler applies into each
-# org's bound namespace (fixed-wildcard topology). Granted only when cert-manager is
-# enabled; without it the operator skips the cert side effect at runtime anyway.
+# Per-org wildcard TLS Certificates the ClusterTenant reconciler applies into each org's
+# bound namespace (fixed-wildcard topology). Granted only when cert-manager is enabled;
+# without it the reconciler skips the cert side effect at runtime anyway.
 - apiGroups: ["cert-manager.io"]
   resources: ["certificates"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 {{- end }}
 {{- if .Values.externalDns.enabled }}
-# Per-org DNSEndpoint CRs the ClusterTenant reconciler declares into each org's bound
-# namespace; external-dns reconciles them into the configured DNS provider. Granted only
-# when external-dns is enabled; without it the operator skips the DNS side at runtime.
+# Per-org DNSEndpoint CRs the ClusterTenant reconciler declares for external-dns. Granted
+# only when external-dns is enabled; without it the reconciler skips the DNS side.
 - apiGroups: ["externaldns.k8s.io"]
   resources: ["dnsendpoints"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -134,29 +99,63 @@ Role, so it stays in a minimal residual ClusterRole (see control-plane-rbac.yaml
 and is folded into the per-namespace Role by MI.4's namespaced cert Issuer.
 */}}
 {{- define "opencrane.clustertenantManagerRbacRules" -}}
-# Read and write Tenant and AccessPolicy CRDs — the control-plane API creates,
-# patches, and deletes these directly (dual-write alongside PostgreSQL).
+# Tenant + AccessPolicy CRDs — the control-plane API dual-writes them (alongside PostgreSQL)
+# AND the in-silo TenantOperator/PolicyOperator (Stage 5) watch + reconcile them in this
+# silo's own namespace.
 - apiGroups: ["opencrane.io"]
   resources: ["tenants", "tenants/status", "accesspolicies"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-# Mint short-lived, audience-bound tokens for a tenant's pod ServiceAccount via
-# the TokenRequest subresource (POST /api/v1/auth/pod-token — single sign-on
-# across the control plane and the tenant pod, see docs/auth.md). `create` on
-# serviceaccounts/token is the only verb required; RBAC has no wildcard
-# resourceNames so it cannot be pinned to the `openclaw-*` set — tighten to a
-# namespaced Role in the tenants namespace if tenants do not span namespaces.
+# Per-tenant workloads the TenantOperator stamps into this namespace.
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["services", "configmaps", "persistentvolumeclaims"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Per-tenant ResourceQuota + LimitRange the TenantOperator stamps for its workloads.
+- apiGroups: [""]
+  resources: ["resourcequotas", "limitranges"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# ServiceAccounts for Workload Identity.
+- apiGroups: [""]
+  resources: ["serviceaccounts"]
+  verbs: ["get", "list", "create", "update", "patch"]
+# Mint short-lived, audience-bound tokens for a tenant's pod ServiceAccount via the
+# TokenRequest subresource (POST /api/v1/auth/pod-token — SSO across the control plane and
+# the tenant pod, see docs/auth.md).
 - apiGroups: [""]
   resources: ["serviceaccounts/token"]
   verbs: ["create"]
-# Force-disconnect a tenant's live OpenClaw sockets for the connection
-# kill-switch (CONN.5): deleting the pod severs every established WebSocket
-# and is CNI-independent (a deny NetworkPolicy only helps if the CNI drops
-# *established* flows). `deletecollection` lets the control-plane cut by the
-# `opencrane.io/tenant=<name>` label selector in one call; `get`/`list` back
-# the pre-delete lookup. No create/update — the operator owns pod creation.
+# Secrets for tenant encryption keys + per-tenant LiteLLM keys.
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "create", "update", "patch"]
+# Pods: the idle-checker reads them, and the connection kill-switch (CONN.5) force-deletes by
+# the `opencrane.io/tenant=<name>` label to sever live OpenClaw sockets (CNI-independent).
+# No create/update — Deployments own pod creation.
 - apiGroups: [""]
   resources: ["pods"]
-  verbs: ["get", "list", "delete", "deletecollection"]
+  verbs: ["get", "list", "watch", "delete", "deletecollection"]
+# Per-tenant Ingress (serving) + NetworkPolicy (the S2 default-deny silo baseline + gateway).
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses", "networkpolicies"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Cilium policies (optional, if Cilium is installed).
+- apiGroups: ["cilium.io"]
+  resources: ["ciliumnetworkpolicies"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+{{- if .Values.fleetManager.linkerdMeshEnabled }}
+# Linkerd identity-layer policy CRs the silo reconcile applies per namespace (S5): a
+# deny-by-default Server + MeshTLSAuthentication allow-list + the binding AuthorizationPolicy.
+# Granted only when the mesh gate is on; an absent Linkerd CRD makes the apply skip.
+- apiGroups: ["policy.linkerd.io"]
+  resources: ["servers", "meshtlsauthentications", "authorizationpolicies"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+{{- end }}
+# Events for audit trail.
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
 {{- end }}
 
 {{/*

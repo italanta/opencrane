@@ -23,26 +23,12 @@ spec:
         - name: operator
           image: "{{ .Values.fleetManager.image.repository }}:{{ .Values.fleetManager.image.tag }}"
           imagePullPolicy: {{ .Values.fleetManager.image.pullPolicy }}
-          {{- if .Values.gatewayProxy.enabled }}
-          ports:
-            - name: gateway-proxy
-              containerPort: {{ .Values.gatewayProxy.port }}
-          {{- end }}
           env:
-            # -- This pod's own namespace (downward API). Used only as the safe
-            #    fallback host for runtime-plane URLs when their env is unset, so a
-            #    fallback never points at another instance's namespace (B5).
+            # -- This pod's own namespace (downward API). Carried for log/trace attribution.
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            # -- This pod's own IP (downward API). Used ONLY to expand the opt-in
-            #    `auto` trusted-proxy token into a pod-range CIDR (task_845dd617); the
-            #    operator shares the cluster pod network with the ingress controller.
-            - name: POD_IP
-              valueFrom:
-                fieldRef:
-                  fieldPath: status.podIP
             {{- include "opencrane.observabilityEnv" (dict "ctx" $ "component" "fleet-manager") | nindent 12 }}
             # -- Fleet registry DB (Stage 3): the fleet-manager's HTTP API + registry live here.
             #    Resolved from fleetManager.database.* (installer-provisioned); empty → no DB wired.
@@ -145,25 +131,18 @@ spec:
             {{- end }}
             {{- end }}
             {{- end }}
-            - name: WATCH_NAMESPACE
-              value: {{ .Values.fleetManager.watchNamespace | quote }}
-            # -- Multi-instance fail-closed guard (brief B2): when true the operator
-            #    refuses to start with an empty WATCH_NAMESPACE, so it can never
-            #    reconcile another instance's Tenants cluster-wide.
-            - name: REQUIRE_WATCH_NAMESPACE
-              value: {{ .Values.multiInstance.requireWatchNamespace | quote }}
-            - name: TENANT_DEFAULT_IMAGE
-              value: "{{ .Values.tenant.defaultImage.repository }}:{{ .Values.tenant.defaultImage.tag }}"
-            - name: DEFAULT_OPENCLAW_VERSION
-              value: {{ .Values.tenant.defaultOpenclawVersion | quote }}
+            # -- ClusterTenant lifecycle: the fleet's ONLY reconcile loop (the
+            #    ClusterTenantOperator) binds each org's namespace and provisions its per-org
+            #    domain. These four fields are all `_LoadFleetOperatorConfig` reads — every other
+            #    operator env moved to the per-silo clustertenant-manager with the in-silo
+            #    controllers (Stage 5).
             - name: INGRESS_DOMAIN
               value: {{ .Values.ingress.domain | quote }}
-            # -- Per-org domain provisioning (fixed-wildcard topology). The operator's
-            #    ClusterTenant reconciler applies a per-org `*.<org>.<domain>` Certificate
-            #    (cert-manager) and, when externalIp is set, declares a per-org DNSEndpoint
-            #    CR (reconciled by external-dns) for the `*.<org>.<domain>` A records. Both
-            #    optional: an unset externalIp / absent CRD makes the operator skip the
-            #    affected side effect at runtime rather than fail.
+            # -- Per-org domain provisioning (fixed-wildcard topology). The ClusterTenant
+            #    reconciler applies a per-org `*.<org>.<domain>` Certificate (cert-manager) and,
+            #    when externalIp is set, declares a per-org DNSEndpoint CR (reconciled by
+            #    external-dns). Both optional: an unset externalIp / absent CRD makes the
+            #    reconciler skip the affected side effect at runtime rather than fail.
             - name: INGRESS_IP
               value: {{ .Values.ingress.externalIp | quote }}
             - name: CERT_MANAGER_ISSUER_NAME
@@ -172,102 +151,6 @@ spec:
             #    cluster-singleton ClusterIssuer.
             - name: CERT_MANAGER_ISSUER_KIND
               value: {{ if eq (include "opencrane.namespacedCertIssuer" .) "true" }}"Issuer"{{ else }}"ClusterIssuer"{{ end }}
-            - name: INGRESS_TLS_ENABLED
-              value: {{ .Values.ingress.tls.enabled | quote }}
-            - name: INGRESS_TLS_SECRET_NAME
-              value: {{ .Values.ingress.tls.secretName | quote }}
-            - name: GATEWAY_PORT
-              value: {{ .Values.tenant.gatewayPort | quote }}
-            # -- OC-2 / CONN.4 trusted-proxy allowlist: the CIDR(s)/IP(s) the OpenClaw
-            #    gateway trusts the X-Forwarded-User identity header from (the ingress
-            #    source range). Comma-joined for the operator's fail-closed parser.
-            #    EMPTY ⇒ trust nothing (the gateway honours no proxy source); a NetworkPolicy
-            #    additionally locks the gateway port to the ingress so this range can't be
-            #    abused by other pods. Set to the ingress controller's pod source range, or the
-            #    opt-in literal `auto` to derive a pod-range CIDR from POD_IP (task_845dd617).
-            - name: GATEWAY_TRUSTED_PROXIES
-              value: {{ join "," .Values.tenant.gateway.trustedProxies | quote }}
-            {{- with .Values.tenant.gateway.trustedProxiesAutoMask }}
-            # -- Prefix length the `auto` token masks POD_IP to (defaults to /14 in the
-            #    operator when unset). Only consulted when trustedProxies contains `auto`.
-            - name: GATEWAY_TRUSTED_PROXIES_AUTO_MASK
-              value: {{ . | quote }}
-            {{- end }}
-            {{- if .Values.gatewayProxy.enabled }}
-            # -- Identity-routing gateway proxy, folded in-process (DOMAIN.T4). The operator
-            #    runs a WS proxy on GATEWAY_PROXY_PORT; the wildcard Ingress routes the gateway
-            #    WS upgrade here. CLUSTERTENANT_MANAGER_INTERNAL_URL (below) is its delegated-auth target.
-            - name: GATEWAY_PROXY_ENABLED
-              value: "true"
-            - name: GATEWAY_PROXY_PORT
-              value: {{ .Values.gatewayProxy.port | quote }}
-            - name: GATEWAY_PROXY_ALLOWED_ORIGINS
-              value: {{ join "," .Values.gatewayProxy.allowedOrigins | quote }}
-            # CSWSH base-domain allowlist; defaults to the platform base so every <org>.<base> is allowed.
-            - name: GATEWAY_PROXY_ALLOWED_ORIGIN_BASE_DOMAINS
-              value: {{ default (list .Values.ingress.domain) .Values.gatewayProxy.allowedOriginBaseDomains | join "," | quote }}
-            - name: GATEWAY_PROXY_RATE_LIMIT_PER_MINUTE
-              value: {{ .Values.gatewayProxy.rateLimitPerMinute | quote }}
-            {{- end }}
-            - name: HOSTING_PROVIDER
-              value: {{ .Values.hosting.provider | quote }}
-            {{- if eq .Values.hosting.provider "gcp" }}
-            - name: GCP_PROJECT_ID
-              value: {{ .Values.hosting.gcp.projectId | quote }}
-            - name: GCP_BUCKET_PREFIX
-              value: {{ .Values.hosting.gcp.bucketPrefix | quote }}
-            - name: GCP_CSI_DRIVER
-              value: {{ .Values.hosting.gcp.csiDriver | quote }}
-            {{- end }}
-            - name: IDLE_TIMEOUT_MINUTES
-              value: {{ .Values.fleetManager.idleTimeoutMinutes | quote }}
-            - name: IDLE_CHECK_INTERVAL_SECONDS
-              value: {{ .Values.fleetManager.idleCheckIntervalSeconds | quote }}
-            # -- Linkerd identity substrate gate (S5 / ADR 0001), default off. When true the
-            #    silo reconcile annotates the silo namespace for mesh injection and emits the
-            #    per-silo deny-by-default Server + MeshTLSAuthentication + AuthorizationPolicy
-            #    (the meshed analogue of the S2 baseline NetworkPolicy). Fails closed if the
-            #    Linkerd policy CRDs are absent, so it is a safe no-op without Linkerd.
-            - name: LINKERD_MESH_ENABLED
-              value: {{ .Values.fleetManager.linkerdMeshEnabled | quote }}
-            # -- Runtime-plane endpoints injected into tenant Deployments. Resolved via
-            #    sharedPlatform scope (B5): instance mode → release-prefixed in-cluster
-            #    Service; shared mode → the externally-provided endpoint.
-            - name: MCP_GATEWAY_URL
-              value: {{ include "opencrane.mcpGatewayUrl" . | quote }}
-            - name: SKILL_REGISTRY_URL
-              value: {{ include "opencrane.skillRegistryUrl" . | quote }}
-            - name: PROJECTED_TOKEN_TTL_SECONDS
-              value: {{ .Values.projectedIdentity.ttlSeconds | quote }}
-            # -- In-cluster URL the operator injects into tenant Deployments so the
-            #    contract re-pull loop (P4A.3) can reach the internal contract endpoint.
-            - name: CLUSTERTENANT_MANAGER_INTERNAL_URL
-              value: {{ printf "http://%s-clustertenant-manager:%v" (include "opencrane.fullname" .) .Values.clustertenantManager.service.port | quote }}
-            # -- Kubernetes Deployment names for the runtime-plane drift repairer (P4A.2).
-            - name: OBOT_DEPLOYMENT_NAME
-              value: {{ printf "%s-mcp-gateway" (include "opencrane.fullname" .) | quote }}
-            - name: SKILL_REGISTRY_DEPLOYMENT_NAME
-              value: {{ printf "%s-skill-registry" (include "opencrane.fullname" .) | quote }}
-            - name: LITELLM_ENABLED
-              value: {{ .Values.litellm.enabled | quote }}
-            # -- LiteLLM base endpoint, resolved via sharedPlatform scope (B5):
-            #    instance mode → release-prefixed in-cluster Service; shared mode →
-            #    sharedPlatform.litellm.shared.endpoint.
-            - name: LITELLM_ENDPOINT
-              value: {{ include "opencrane.litellmEndpoint" . | quote }}
-            - name: LITELLM_DEFAULT_MONTHLY_BUDGET_USD
-              value: {{ .Values.litellm.defaultMonthlyBudgetUsd | quote }}
-            {{- if .Values.litellm.enabled }}
-            - name: LITELLM_MASTER_KEY
-              valueFrom:
-                secretKeyRef:
-                  {{- if .Values.litellm.existingSecret }}
-                  name: {{ .Values.litellm.existingSecret }}
-                  {{- else }}
-                  name: {{ include "opencrane.fullname" . }}-litellm
-                  {{- end }}
-                  key: {{ .Values.litellm.secretKey }}
-            {{- end }}
           resources:
             {{- toYaml .Values.fleetManager.resources | nindent 12 }}
 {{- end }}

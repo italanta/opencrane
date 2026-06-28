@@ -40,6 +40,12 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.clustertenantManager.service.port }}
+            {{- if .Values.gatewayProxy.enabled }}
+            # -- In-process identity-routing gateway proxy (DOMAIN.T4), now silo-local (Stage 5):
+            #    the wildcard Ingress routes the gateway WS upgrade here.
+            - name: gateway-proxy
+              containerPort: {{ .Values.gatewayProxy.port }}
+            {{- end }}
           env:
             - name: NAMESPACE
               valueFrom:
@@ -207,6 +213,117 @@ spec:
                   name: {{ .Values.langfuse.inCluster.existingSecret }}
                   key: LANGFUSE_INIT_PROJECT_SECRET_KEY
             {{- end }}
+            # ============================================================================
+            # In-silo controllers (Stage 5). The clustertenant-manager runs every in-silo
+            # reconcile loop over its OWN namespace — TenantOperator, PolicyOperator,
+            # idle-suspend, runtime-plane drift repair, rollout canary, Obot health, and the
+            # in-process gateway proxy — so a silo stands on its own. The fleet-manager
+            # watches only the cluster-scoped ClusterTenant CR. All of the env below is what
+            # `_LoadOperatorConfig` reads; it moved here from the fleet-manager deployment.
+            # ============================================================================
+            # -- This pod's own namespace (downward API): the operator's `ownNamespace`, the
+            #    base host for runtime-plane URL fallbacks.
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # -- This pod's own IP (downward API): expands the opt-in `auto` trusted-proxy
+            #    token into a pod-range CIDR.
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            # -- The silo watches Tenant + AccessPolicy CRs in its OWN namespace, so the watch
+            #    scope is this pod's namespace (downward API).
+            - name: WATCH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: REQUIRE_WATCH_NAMESPACE
+              value: {{ .Values.multiInstance.requireWatchNamespace | quote }}
+            - name: TENANT_DEFAULT_IMAGE
+              value: "{{ .Values.tenant.defaultImage.repository }}:{{ .Values.tenant.defaultImage.tag }}"
+            - name: DEFAULT_OPENCLAW_VERSION
+              value: {{ .Values.tenant.defaultOpenclawVersion | quote }}
+            # -- Per-org domain provisioning inputs (also consumed by the tenant runtime).
+            - name: INGRESS_IP
+              value: {{ .Values.ingress.externalIp | quote }}
+            - name: CERT_MANAGER_ISSUER_NAME
+              value: {{ .Values.certManager.issuerName | quote }}
+            - name: CERT_MANAGER_ISSUER_KIND
+              value: {{ if eq (include "opencrane.namespacedCertIssuer" .) "true" }}"Issuer"{{ else }}"ClusterIssuer"{{ end }}
+            - name: INGRESS_TLS_ENABLED
+              value: {{ .Values.ingress.tls.enabled | quote }}
+            - name: INGRESS_TLS_SECRET_NAME
+              value: {{ .Values.ingress.tls.secretName | quote }}
+            - name: GATEWAY_PORT
+              value: {{ .Values.tenant.gatewayPort | quote }}
+            - name: CLUSTER_DOMAIN
+              value: {{ .Values.clusterDomain | default "svc.cluster.local" | quote }}
+            # -- OC-2 / CONN.4 trusted-proxy allowlist: the CIDR(s)/IP(s) the OpenClaw gateway
+            #    trusts X-Forwarded-User from. EMPTY ⇒ trust nothing; a NetworkPolicy locks the
+            #    gateway port to the ingress. Set to the ingress pod source range, or `auto` to
+            #    derive a pod-range CIDR from POD_IP.
+            - name: GATEWAY_TRUSTED_PROXIES
+              value: {{ join "," .Values.tenant.gateway.trustedProxies | quote }}
+            {{- with .Values.tenant.gateway.trustedProxiesAutoMask }}
+            - name: GATEWAY_TRUSTED_PROXIES_AUTO_MASK
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.gatewayProxy.enabled }}
+            # -- Identity-routing gateway proxy, folded in-process (DOMAIN.T4): the silo runs a
+            #    WS proxy on GATEWAY_PROXY_PORT; the wildcard Ingress routes the gateway WS
+            #    upgrade here, and the proxy delegates auth to this same control plane.
+            - name: GATEWAY_PROXY_ENABLED
+              value: "true"
+            - name: GATEWAY_PROXY_PORT
+              value: {{ .Values.gatewayProxy.port | quote }}
+            - name: GATEWAY_PROXY_ALLOWED_ORIGINS
+              value: {{ join "," .Values.gatewayProxy.allowedOrigins | quote }}
+            - name: GATEWAY_PROXY_ALLOWED_ORIGIN_BASE_DOMAINS
+              value: {{ default (list .Values.ingress.domain) .Values.gatewayProxy.allowedOriginBaseDomains | join "," | quote }}
+            - name: GATEWAY_PROXY_RATE_LIMIT_PER_MINUTE
+              value: {{ .Values.gatewayProxy.rateLimitPerMinute | quote }}
+            {{- end }}
+            - name: HOSTING_PROVIDER
+              value: {{ .Values.hosting.provider | quote }}
+            {{- if eq .Values.hosting.provider "gcp" }}
+            - name: GCP_PROJECT_ID
+              value: {{ .Values.hosting.gcp.projectId | quote }}
+            - name: GCP_BUCKET_PREFIX
+              value: {{ .Values.hosting.gcp.bucketPrefix | quote }}
+            - name: GCP_CSI_DRIVER
+              value: {{ .Values.hosting.gcp.csiDriver | quote }}
+            {{- end }}
+            - name: IDLE_TIMEOUT_MINUTES
+              value: {{ .Values.fleetManager.idleTimeoutMinutes | quote }}
+            - name: IDLE_CHECK_INTERVAL_SECONDS
+              value: {{ .Values.fleetManager.idleCheckIntervalSeconds | quote }}
+            # -- Linkerd identity substrate gate (S5 / ADR 0001), default off. When true the
+            #    silo reconcile annotates its namespace for mesh injection and emits the per-silo
+            #    deny-by-default Server + MeshTLSAuthentication + AuthorizationPolicy. Fails
+            #    closed if the Linkerd policy CRDs are absent — a safe no-op without Linkerd.
+            - name: LINKERD_MESH_ENABLED
+              value: {{ .Values.fleetManager.linkerdMeshEnabled | quote }}
+            # -- Runtime-plane endpoints injected into tenant Deployments (sharedPlatform scope, B5).
+            - name: MCP_GATEWAY_URL
+              value: {{ include "opencrane.mcpGatewayUrl" . | quote }}
+            - name: SKILL_REGISTRY_URL
+              value: {{ include "opencrane.skillRegistryUrl" . | quote }}
+            - name: PROJECTED_TOKEN_TTL_SECONDS
+              value: {{ .Values.projectedIdentity.ttlSeconds | quote }}
+            # -- Internal API base the DB-less operator calls: its OWN in-pod API server.
+            - name: CLUSTERTENANT_MANAGER_INTERNAL_URL
+              value: {{ printf "http://localhost:%v" .Values.clustertenantManager.service.port | quote }}
+            # -- Kubernetes Deployment names for the runtime-plane drift repairer (P4A.2).
+            - name: OBOT_DEPLOYMENT_NAME
+              value: {{ printf "%s-mcp-gateway" (include "opencrane.fullname" .) | quote }}
+            - name: SKILL_REGISTRY_DEPLOYMENT_NAME
+              value: {{ printf "%s-skill-registry" (include "opencrane.fullname" .) | quote }}
+            - name: LITELLM_ENABLED
+              value: {{ .Values.litellm.enabled | quote }}
+            - name: LITELLM_DEFAULT_MONTHLY_BUDGET_USD
+              value: {{ .Values.litellm.defaultMonthlyBudgetUsd | quote }}
           livenessProbe:
             httpGet:
               path: /healthz
