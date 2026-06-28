@@ -30,9 +30,13 @@ fleet-namespace plane endpoint into every tenant) — a silo-local controller in
 
 ## Slices (dependency-ordered — see TaskList #11–#15)
 
-1. **S5.1** Share `config`/`watch-runner`/`k8s` (+ the `hosting` coupling) — extract to a lib
-   (`@opencrane/infra-operator`, consistent with infra-api/infra-auth) consumed by both managers,
-   OR move to the silo and have the fleet CT-operator read its ~5 fields from env. Additive/green.
+1. **S5.1** Operator config seam. REFINED: because `config.ts` re-exports `GcpHostingConfig` from
+   `hosting/` (which moves to the silo with the tenant-deploy code), a shared *lib* would create a
+   lib→app dependency. So **move `config.ts` + `shared/watch-runner.ts` + `infra/k8s.ts` + `hosting/`
+   to the silo** (they are operator concerns), and give the fleet CT-operator a **small local config**
+   (just `ingressDomain`/`ingressIp`/`certManager*`, read from its existing env). Not a separate lib.
+   This slice is therefore NOT cleanly additive — it lands together with S5.2 (the controllers depend
+   on these), so treat S5.1+S5.2 as one atomic relocation.
 2. **S5.2** `git mv` the 6 controller dirs fleet→silo; fix imports (config/watch/k8s from S5.1 lib;
    `log` from the silo; contracts/infra-api unchanged).
 3. **S5.3** Silo bootstrap: start the controllers over its own ns (`WATCH_NAMESPACE`=silo ns;
