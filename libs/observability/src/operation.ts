@@ -27,6 +27,16 @@ const _tracer = trace.getTracer("@opencrane/observability");
  * @param fn     - The work to run inside the operation scope.
  * @returns Whatever `fn` resolves to.
  */
+/**
+ * Return the currently active OpenTelemetry span, or `undefined` when no span
+ * is active. Use this instead of importing `@opentelemetry/api` directly so
+ * the dep stays contained inside the observability package.
+ */
+export function ___GetActiveSpan()
+{
+  return trace.getActiveSpan();
+}
+
 export async function ___DoWithTrace<T>(
   name: string,
   fields: Record<string, unknown>,

@@ -16,10 +16,16 @@ export type ResolveOutcome =
 
 /**
  * Ask the control plane who a gateway socket belongs to and where it should go, by
- * replaying ONLY the upgrade request's `Cookie` header to
+ * replaying the upgrade request's `Cookie` header — and the org host it arrived on — to
  * `GET /api/v1/auth/gateway-resolve`. The proxy holds no session state — the control
  * plane is the sole auth authority (delegate-auth), so the session store is never
  * shared. Even folded into the operator, the proxy makes no auth decision locally.
+ *
+ * The original org host (`<clusterTenant>.<base>`) is forwarded as `x-forwarded-host` so
+ * the control plane can scope the email→tenant resolution to the silo the socket is for.
+ * This internal call targets `opencrane-control-plane:8080`, so without it the control
+ * plane would see the internal host and fail to resolve a multi-silo owner (no/ambiguous
+ * tenant → 403).
  *
  * Fail closed on anything that is not a clean 200 with a well-formed body:
  *  - 401/403            → propagate (no session / no-or-ambiguous tenant).
@@ -28,19 +34,24 @@ export type ResolveOutcome =
  *
  * @param controlPlaneUrl - Internal control-plane base URL.
  * @param cookie          - The upgrade request's raw `Cookie` header, if any.
+ * @param host            - The org host the upgrade arrived on, forwarded for silo scoping.
  * @param signal          - Abort signal bounding the call (upgrade timeout).
  * @returns A forward target, or a fail-closed status + reason.
  */
-export async function _ResolveTarget(controlPlaneUrl: string, cookie: string | undefined, signal: AbortSignal): Promise<ResolveOutcome>
+export async function _ResolveTarget(controlPlaneUrl: string, cookie: string | undefined, host: string | undefined, signal: AbortSignal): Promise<ResolveOutcome>
 {
   const url = `${controlPlaneUrl.replace(/\/+$/, "")}${GATEWAY_RESOLVE_PATH}`;
+
+  const headers: Record<string, string> = {};
+  if (cookie) headers["cookie"] = cookie;
+  if (host) headers["x-forwarded-host"] = host;
 
   let res: Response;
   try
   {
     res = await fetch(url, {
       method: "GET",
-      headers: cookie ? { cookie } : {},
+      headers,
       signal,
       redirect: "error",
     });

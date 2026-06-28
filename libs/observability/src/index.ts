@@ -16,6 +16,6 @@ export type { Logger } from "./logger.js";
 export { ___RunWithContext, ___GetContext, ___SetContextField, ___ContextMixin } from "./context.js";
 export { ___BindConsole } from "./console-bind.js";
 export { ___RequestContext } from "./express.js";
-export { ___DoWithTrace } from "./operation.js";
+export { ___DoWithTrace, ___GetActiveSpan } from "./operation.js";
 export { ___StartTelemetry, ___ShutdownTelemetry } from "./telemetry.js";
 export type { RequestContext, LoggerOptions, TelemetryOptions } from "./observability.types.js";

@@ -39,7 +39,7 @@ export interface UpgradeDeps
   limiter: FixedWindowRateLimiter;
   log: Logger;
   /** Delegated-auth resolver; defaults to the live control-plane call. */
-  resolve?: (controlPlaneUrl: string, cookie: string | undefined, signal: AbortSignal) => Promise<ResolveOutcome>;
+  resolve?: (controlPlaneUrl: string, cookie: string | undefined, host: string | undefined, signal: AbortSignal) => Promise<ResolveOutcome>;
 }
 
 /** Bound on the delegated-auth call so a slow control plane can't pin a socket open. */
@@ -80,13 +80,18 @@ export async function _HandleUpgrade(deps: UpgradeDeps, req: IncomingMessage, so
     return;
   }
 
-  // 2. Delegated auth — the control plane is the sole authority.
+  // 2. Delegated auth — the control plane is the sole authority. Forward the org host the
+  //    upgrade arrived on (x-forwarded-host from the ingress, else Host) so the control plane
+  //    scopes the email→tenant resolution to this silo; the internal call's own host is
+  //    `opencrane-control-plane`, which would otherwise resolve nothing for a multi-silo owner.
+  const forwardedHost = typeof req.headers["x-forwarded-host"] === "string" ? req.headers["x-forwarded-host"].split(",")[0].trim() : undefined;
+  const host = forwardedHost ?? (typeof req.headers.host === "string" ? req.headers.host : undefined);
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), _RESOLVE_TIMEOUT_MS);
   let outcome: ResolveOutcome;
   try
   {
-    outcome = await resolve(config.controlPlaneUrl, req.headers.cookie, ac.signal);
+    outcome = await resolve(config.controlPlaneUrl, req.headers.cookie, host, ac.signal);
   }
   finally
   {

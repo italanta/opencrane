@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-
+import { ___DoWithTrace, ___GetActiveSpan } from "@opencrane/observability";
 import { _log } from "../../log.js";
 import { compile } from "./grant-compiler.js";
 import { GrantCompilerAccess, GrantCompilerPayloadType } from "./grant-compiler.types.js";
@@ -32,28 +32,35 @@ export async function _SyncTenantAwarenessGrants(prisma: PrismaClient,
                                                  authorization: string | undefined,
                                                  transport: CogneeGrantTransport = _defaultCogneeGrantTransport): Promise<AwarenessGrantSyncResult>
 {
-  // 1. Compile the effective awareness decisions for this principal.
-  const decisions = await compile(tenant, GrantCompilerPayloadType.Awareness, prisma);
-  const grants: CogneeAwarenessGrant[] = decisions.map(function _toGrant(d): CogneeAwarenessGrant
+  return ___DoWithTrace("grants.cognee_awareness_sync", { "grants.tenantName": tenant }, async function _runSync()
   {
-    return { payloadId: d.payloadId, access: d.access === GrantCompilerAccess.Allow ? "allow" : "deny", scope: String(d.scope) };
-  });
-  const allowed = grants.filter(function _isAllow(g) { return g.access === "allow"; }).length;
-  const denied = grants.length - allowed;
+    // 1. Compile the effective awareness decisions for this principal.
+    const decisions = await compile(tenant, GrantCompilerPayloadType.Awareness, prisma);
+    const grants: CogneeAwarenessGrant[] = decisions.map(function _toGrant(d): CogneeAwarenessGrant
+    {
+      return { payloadId: d.payloadId, access: d.access === GrantCompilerAccess.Allow ? "allow" : "deny", scope: String(d.scope) };
+    });
+    const allowed = grants.filter(function _isAllow(g) { return g.access === "allow"; }).length;
+    const denied = grants.length - allowed;
 
-  // 2. Push to Cognee, capturing (not throwing) failure so a downstream Cognee
-  //    blip never blocks the upstream policy/grant write (DB stays source of truth).
-  try
-  {
-    await transport(tenant, grants, authorization);
-    _log.debug({ tenant, allowed, denied }, "cognee awareness grants synced");
-    return { tenant, allowed, denied, ok: true };
-  }
-  catch (err)
-  {
-    _log.warn({ tenant, allowed, denied, err }, "cognee awareness grant sync failed (captured, not thrown)");
-    return { tenant, allowed, denied, ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
+    // 2. Record the total grant count on the active span so traces carry outcome
+    //    volume without a separate log field; the span is still open at this point.
+    ___GetActiveSpan()?.setAttribute("grants.syncedCount", grants.length);
+
+    // 3. Push to Cognee, capturing (not throwing) failure so a downstream Cognee
+    //    blip never blocks the upstream policy/grant write (DB stays source of truth).
+    try
+    {
+      await transport(tenant, grants, authorization);
+      _log.debug({ tenant, allowed, denied }, "cognee awareness grants synced");
+      return { tenant, allowed, denied, ok: true };
+    }
+    catch (err)
+    {
+      _log.warn({ tenant, allowed, denied, err }, "cognee awareness grant sync failed (captured, not thrown)");
+      return { tenant, allowed, denied, ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
 }
 
 /**

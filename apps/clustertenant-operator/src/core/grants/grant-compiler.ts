@@ -1,6 +1,9 @@
 import {
   type PrismaClient,
 } from "@prisma/client";
+
+import { ___DoWithTrace, ___GetActiveSpan } from "@opencrane/observability";
+
 import { ___SomeArray, ___SomeRecord, ___SortBy } from "../utils/collections.js";
 
 import {
@@ -154,9 +157,37 @@ export async function compileForPrincipals(
   prisma: PrismaClient,
 ): Promise<CompiledGrantDecision[]>
 {
-  // 0. Normalise to a minimal, distinct principal set (drop empties + duplicates). An empty
-  //    set has nothing to compile, so short-circuit before touching the DB.
+  // 0. Normalise to a minimal, distinct principal set (drop empties + duplicates), then run the
+  //    compilation inside a `grants.compile` OTEL span so every call is visible in Cloud Trace
+  //    with its principal count, payload family, and (on completion) resolved-decision volume.
   const principals = Array.from(new Set(principalIds.filter(function _present(id) { return Boolean(id); })));
+  return ___DoWithTrace(
+    "grants.compile",
+    { "grants.principalCount": principals.length, "grants.payloadType": payloadType },
+    async function _runCompile()
+    {
+      return _compileForResolvedPrincipals(principals, payloadType, prisma);
+    },
+  );
+}
+
+/**
+ * Inner grant compilation over an already-normalised principal set, executed inside the
+ * `grants.compile` span opened by {@link compileForPrincipals}. Split out so the traced body
+ * keeps its original indentation while the span attributes are derived from the normalised set.
+ *
+ * @param principals - Distinct, present-only principal identifiers.
+ * @param payloadType - Payload family to compile.
+ * @param prisma - Prisma client used to load groups and grants.
+ * @returns Final decision per payload identifier.
+ */
+async function _compileForResolvedPrincipals(
+  principals: string[],
+  payloadType: GrantCompilerPayloadType,
+  prisma: PrismaClient,
+): Promise<CompiledGrantDecision[]>
+{
+  // An empty set has nothing to compile, so short-circuit before touching the DB.
   if (principals.length === 0)
   {
     return [];
@@ -217,7 +248,12 @@ export async function compileForPrincipals(
   }
 
   // 5. Emit a stable payload ordering so callers can cache and diff compiled contracts deterministically.
-  return ___SortBy(Array.from(winnerByPayloadId.values()), "payloadId");
+  const decisions = ___SortBy(Array.from(winnerByPayloadId.values()), "payloadId");
+
+  // 6. Record the decision count on the active span before returning so the trace carries the
+  //    outcome volume without requiring a separate log line.
+  ___GetActiveSpan()?.setAttribute("grants.decisionCount", decisions.length);
+  return decisions;
 }
 
 /**

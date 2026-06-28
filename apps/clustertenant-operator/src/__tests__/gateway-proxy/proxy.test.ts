@@ -72,7 +72,7 @@ describe("_HandleUpgrade (in-operator gateway proxy)", () =>
     const resolve = vi.fn().mockResolvedValue(okTarget);
     const { deps, proxy } = _deps(resolve);
     const socket = _fakeSocket();
-    const req = _req({ origin: "https://acme.opencrane.ai", cookie: "sid=x", "x-forwarded-user": "attacker@evil.com" });
+    const req = _req({ origin: "https://acme.opencrane.ai", host: "acme.opencrane.ai", cookie: "sid=x", "x-forwarded-user": "attacker@evil.com" });
 
     await _HandleUpgrade(deps, req, socket, Buffer.alloc(0));
 
@@ -80,7 +80,19 @@ describe("_HandleUpgrade (in-operator gateway proxy)", () =>
     expect(proxy.headers[0]?.["X-Forwarded-User"]).toBe("alice@example.com");
     expect(req.headers["x-forwarded-user"]).toBeUndefined();
     expect(socket.destroyed).toBe(false);
-    expect(resolve).toHaveBeenCalledWith("http://cp:3000", "sid=x", expect.any(AbortSignal));
+    // The org host is forwarded so the control plane can scope resolution to this silo.
+    expect(resolve).toHaveBeenCalledWith("http://cp:3000", "sid=x", "acme.opencrane.ai", expect.any(AbortSignal));
+  });
+
+  it("forwards x-forwarded-host (first value) over the Host header when both are present", async () =>
+  {
+    const resolve = vi.fn().mockResolvedValue(okTarget);
+    const { deps } = _deps(resolve);
+    const req = _req({ origin: "https://acme.opencrane.ai", host: "internal:8090", "x-forwarded-host": "acme.opencrane.ai, proxy.internal", cookie: "sid=x" });
+
+    await _HandleUpgrade(deps, req, _fakeSocket(), Buffer.alloc(0));
+
+    expect(resolve).toHaveBeenCalledWith("http://cp:3000", "sid=x", "acme.opencrane.ai", expect.any(AbortSignal));
   });
 
   it("refuses (403) a non-allowlisted origin without calling the control plane (CSWSH)", async () =>
