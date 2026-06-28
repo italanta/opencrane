@@ -8,7 +8,7 @@ import express from "express";
 
 import { ___BindConsole, ___ShutdownTelemetry } from "@opencrane/observability";
 import { ___AuthMiddleware } from "@opencrane/infra-auth";
-import { _ErrorHandler } from "@opencrane/infra-http";
+import { _ErrorHandler, _RateLimit } from "@opencrane/infra-http";
 
 import { _LoadFleetOperatorConfig } from "./config.js";
 import { _CreateClusterTenantOperator } from "./cluster-tenants/index.js";
@@ -64,6 +64,10 @@ async function main(): Promise<void>
   app.set("trust proxy", true);
   app.use(...authService.createSessionMiddleware());
   app.use(express.json());
+  // Per-IP rate limit, before the auth router + auth middleware + routes, so every DB-backed /
+  // authz-gated fleet endpoint (incl. the OIDC login flow below) is covered. Generous cap — a
+  // DoS backstop, not a functional limit; /healthz, /readyz, and /api/internal are exempt.
+  app.use(_RateLimit());
   // Browser OIDC login flow + session introspection. Mounted BEFORE ___AuthMiddleware so the
   // login routes are reachable without a valid session — no bypass hack required.
   app.use("/api/v1/auth", ___FleetAuthRouter(authService));

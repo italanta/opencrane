@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "express": "^5.1.0",
+    "express-rate-limit": "^7.4.0",
     "pino": "^9.6.0"
   },
   "devDependencies": {

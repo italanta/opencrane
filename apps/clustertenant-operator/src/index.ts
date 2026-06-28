@@ -13,7 +13,7 @@ import type { PrismaClient } from "@prisma/client";
 
 import { ___BindConsole, ___GetContext, ___RequestContext, ___ShutdownTelemetry, ___DoWithTrace } from "@opencrane/observability";
 import { ___AuthMiddleware } from "@opencrane/infra-auth";
-import { _ErrorHandler } from "@opencrane/infra-http";
+import { _ErrorHandler, _RateLimit } from "@opencrane/infra-http";
 
 import { ___AuthRouter } from "./infra/auth/auth.router.js";
 import { _BuildGatewayAdmin } from "./core/connections/gateway-admin.js";
@@ -60,6 +60,10 @@ export function createApp(prisma: PrismaClient, customApi: k8s.CustomObjectsApi,
   // before any body parsing or session handling.
   app.use(_TransportSecurity());
   app.use(express.json());
+  // Per-IP rate limit, before the auth router + routes, so every DB-backed / authz-gated
+  // endpoint is covered. Generous cap — a DoS backstop, not a functional limit; /healthz,
+  // /readyz, and /api/internal (the high-frequency pod-poll surface) are exempt.
+  app.use(_RateLimit());
   // Seed the per-request correlation context BEFORE pino-http so every request
   // log (and every downstream service log) shares one requestId.
   app.use(___RequestContext());

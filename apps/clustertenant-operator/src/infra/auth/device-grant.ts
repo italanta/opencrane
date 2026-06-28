@@ -10,7 +10,7 @@
  * land on different pod instances.
  */
 
-import { randomBytes } from "crypto";
+import { randomBytes, randomInt } from "crypto";
 
 import type { DeviceGrantInfo, DevicePollResult } from "./device-grant.types.js";
 
@@ -43,8 +43,10 @@ function _pruneExpired(): void
 }
 
 /**
- * Pick `n` random characters from `_USER_CODE_CHARS` using rejection-free
- * modulo sampling via the crypto RNG.
+ * Pick `n` random characters from `_USER_CODE_CHARS` using `crypto.randomInt`, which draws an
+ * unbiased integer in `[0, _USER_CODE_CHARS.length)`. A naive `randomByte % length` would skew
+ * toward the first `256 % length` glyphs (modulo bias); `randomInt` rejection-samples internally
+ * to keep the distribution uniform.
  *
  * @param n - Number of characters to generate.
  */
@@ -52,7 +54,7 @@ function _randomChars(n: number): string
 {
   return Array.from(
     { length: n },
-    () => _USER_CODE_CHARS[randomBytes(1)[0] % _USER_CODE_CHARS.length],
+    () => _USER_CODE_CHARS[randomInt(_USER_CODE_CHARS.length)],
   ).join("");
 }
 

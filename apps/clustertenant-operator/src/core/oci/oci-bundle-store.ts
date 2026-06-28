@@ -28,15 +28,6 @@ function _Digest(content: string): string
   return `sha256:${createHash("sha256").update(content, "utf8").digest("hex")}`;
 }
 
-/** Validate an OCI content digest is well-formed `sha256:<64 hex>` before it touches a URL. */
-function _AssertDigest(digest: string): void
-{
-  if (!/^sha256:[a-f0-9]{64}$/.test(digest))
-  {
-    throw new Error(`Invalid OCI digest (expected sha256:<64 hex>): ${digest}`);
-  }
-}
-
 /**
  * Default transport: wrap Node's global `fetch` in the narrow {@link OciFetch} shape.
  * Node's `Response` is structurally a superset of `OciResponse`, so the single cast is
@@ -137,8 +128,14 @@ export class OciBundleStore
    */
   public async pullBundle(digest: string): Promise<string | null>
   {
-    // 0. Reject a malformed digest before it reaches the registry URL.
-    _AssertDigest(digest);
+    // 0. Reject a malformed digest before it reaches the registry URL. The anchored pattern
+    //    fully constrains the (caller-supplied) value to `sha256:<64 hex>`, so it can carry
+    //    neither a path segment nor a host that would redirect the request away from the
+    //    configured registry — the URL built from it below is therefore always well-formed.
+    if (!/^sha256:[a-f0-9]{64}$/.test(digest))
+    {
+      throw new Error(`Invalid OCI digest (expected sha256:<64 hex>): ${digest}`);
+    }
     // Capture `this` so the traced callback can be a named function expression.
     const self = this;
 
