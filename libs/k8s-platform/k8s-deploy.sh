@@ -94,7 +94,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # app (apps/fleet-platform = the fleet chart, apps/clustertenant-platform = the silo chart).
 # Each app's deploy.sh wrapper exports OPENCRANE_CHART_DIR to its own chart dir before exec'ing
 # this engine; running k8s-deploy.sh directly without it fails loud rather than guessing.
-CHART_DIR="${OPENCRANE_CHART_DIR:?OPENCRANE_CHART_DIR must point to a role chart dir (apps/fleet-platform | apps/clustertenant-platform) — run the app's deploy.sh, not k8s-deploy.sh directly}"
+CHART_DIR="${OPENCRANE_CHART_DIR:-}"
+if [[ -z "$CHART_DIR" ]]; then
+  echo "[k8s-deploy] OPENCRANE_CHART_DIR is unset. Run a role wrapper deploy.sh — apps/fleet-platform/deploy.sh or apps/clustertenant-platform/deploy.sh — not k8s-deploy.sh directly." >&2
+  exit 1
+fi
 
 NAMESPACE="opencrane-system"
 RELEASE="opencrane"

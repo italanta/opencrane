@@ -24,9 +24,12 @@
 
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-CHART_DIR="$ROOT_DIR/apps/fleet-platform"  # TODO(chart-split): also cover apps/clustertenant-platform
-VALUES_DIR="$CHART_DIR/values/multi-instance"
+ROOT_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
+# Multi-instance isolation is a per-SILO property (each silo is namespaced + fail-closed); the
+# fleet is the cluster-wide singleton (intentionally cluster-scoped), so it is NOT a multi-
+# instance unit and is validated separately. Render the silo chart per instance.
+CHART_DIR="$ROOT_DIR/apps/clustertenant-platform"
+VALUES_DIR="$ROOT_DIR/libs/k8s-platform/values/multi-instance"
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
@@ -88,8 +91,8 @@ check_instance()
   else
     fail "found $clusterroles ClusterRoles (expected ≤1 TokenReview)"
   fi
-  if grep -q "name: $name-opencrane-fleet-manager" "$manifest" && grep -B2 "name: $name-opencrane-fleet-manager" "$manifest" | grep -q 'kind: Role'; then
-    pass "operator RBAC is a namespaced Role"
+  if grep -q "name: $name-opencrane-clustertenant-manager" "$manifest" && grep -B2 "name: $name-opencrane-clustertenant-manager" "$manifest" | grep -q 'kind: Role'; then
+    pass "silo control-plane RBAC is a namespaced Role"
   fi
 
   # 3. No cluster-singleton issuer / secret store.

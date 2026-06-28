@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
 CLUSTER_NAME="${CLUSTER_NAME:-opencrane-e2e}"
 NAMESPACE="${NAMESPACE:-opencrane-system}"
 RELEASE_NAME="${RELEASE_NAME:-opencrane}"
@@ -195,10 +195,10 @@ fi
 
 # 6. Install Helm chart with k3d-safe overrides wired to the in-cluster database.
 echo "[e2e] Installing Helm release '$RELEASE_NAME'"
-helm upgrade --install "$RELEASE_NAME" "$ROOT_DIR/apps/fleet-platform"  # TODO(chart-split): also cover apps/clustertenant-platform \
+helm upgrade --install "$RELEASE_NAME" "$ROOT_DIR/apps/fleet-platform" \
   --namespace "$NAMESPACE" \
   --create-namespace \
-  --values "$ROOT_DIR/platform/tests/values-k3d-e2e.yaml" \
+  --values "$ROOT_DIR/libs/k8s-platform/tests/values-k3d-e2e.yaml" \
   --set "litellm.existingDatabaseSecret=opencrane-litellm-db"
 
 # Wait for operator deployment (skip helm --wait because local-path PVCs don't bind

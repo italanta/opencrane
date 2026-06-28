@@ -178,7 +178,10 @@ resource "helm_release" "opencrane"
   name             = var.release_name
   namespace        = var.namespace
   create_namespace = true
-  # TODO(chart-split): single-chart model; add a 2nd release for apps/clustertenant-platform.
+  # Chart split (Option 2): the once-per-cluster FLEET chart (bootstrap + fleet-manager).
+  # Per-org SILO charts deploy dynamically out-of-band, not as a static terraform release.
+  # NOTE: the `set` blocks below use pre-rename keys (operator.* etc.) and need updating to
+  # the fleet chart's keys — tracked separately.
   chart            = "${path.module}/../../../../../apps/fleet-platform"
   wait             = true
   timeout          = 600

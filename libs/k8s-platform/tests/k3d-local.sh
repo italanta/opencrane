@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
 CLUSTER_NAME="${CLUSTER_NAME:-opencrane-local}"
 NAMESPACE="${NAMESPACE:-opencrane-system}"
 RELEASE_NAME="${RELEASE_NAME:-opencrane}"
@@ -76,10 +76,10 @@ function _resolve_values_file()
 {
   case "$LOCAL_PROFILE" in
     default)
-      echo "$ROOT_DIR/platform/tests/values-k3d-local.yaml"
+      echo "$ROOT_DIR/libs/k8s-platform/tests/values-k3d-local.yaml"
       ;;
     strict)
-      echo "$ROOT_DIR/platform/tests/values-k3d-strict.yaml"
+      echo "$ROOT_DIR/libs/k8s-platform/tests/values-k3d-strict.yaml"
       ;;
     *)
       echo "[local] Unknown LOCAL_PROFILE: $LOCAL_PROFILE"

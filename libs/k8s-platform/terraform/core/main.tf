@@ -65,7 +65,12 @@ resource "kubernetes_namespace" "opencrane"
 resource "helm_release" "opencrane"
 {
   name       = "opencrane"
-  # TODO(chart-split): models a single chart; add a 2nd helm_release for the silo (apps/clustertenant-platform).
+  # Chart split (Option 2): terraform provisions the cluster + the once-per-cluster FLEET chart
+  # (bootstrap + fleet-manager). Per-org SILO charts (apps/clustertenant-platform) are deployed
+  # DYNAMICALLY out-of-band (deploy-silo.sh today; the fleet operator auto-stamps them in S2),
+  # so they are intentionally NOT a static terraform release. NOTE: the `set` blocks below still
+  # use pre-rename value keys (operator.* / control-plane.*) and need updating to the fleet
+  # chart's keys (fleetManager.* etc.) — tracked separately.
   chart      = "${path.module}/../../../../apps/fleet-platform"
   namespace  = kubernetes_namespace.opencrane.metadata[0].name
   wait       = true
