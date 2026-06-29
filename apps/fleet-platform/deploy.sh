@@ -60,6 +60,33 @@ done
 
 [[ -n "$BASE_DOMAIN" ]] || { err "--base-domain is required (the platform wildcard base every org is served under)."; exit 1; }
 
+# Operator bootstrap is MANDATORY for the multi-tenant profile. The fleet seeds NO org, so
+# the first platform operator must be granted by a verified seed email OR an IdP group mapping.
+# With neither, the deploy grants operator to nobody (fail-closed) and the fleet/super-admin UI
+# is inaccessible to everyone — fail fast rather than ship a dead control plane (issue #100).
+_have_operator_bootstrap() {
+  [[ -n "${OPENCRANE_PLATFORM_OPERATOR_SEED_EMAIL:-}" || -n "${OPENCRANE_PLATFORM_OPERATOR_GROUPS:-}" ]] && return 0
+  # Match the flag AND require a non-empty VALUE after it — an empty value (e.g.
+  # `--platform-operator-seed-email ""`) is dropped downstream by k8s-deploy.sh, so the
+  # flag's mere presence is not enough (would otherwise let a no-operator deploy through).
+  local i
+  for ((i = 0; i < ${#PASSTHROUGH[@]}; i++)); do
+    case "${PASSTHROUGH[$i]}" in
+      --platform-operator-seed-email|--platform-operator-groups)
+        [[ $((i + 1)) -lt ${#PASSTHROUGH[@]} && -n "${PASSTHROUGH[$((i + 1))]}" ]] && return 0
+        ;;
+    esac
+  done
+  return 1
+}
+_have_operator_bootstrap || {
+  err "multi-tenant deploy requires a platform-operator bootstrap. Set one of:
+    --platform-operator-seed-email EMAIL   (or OPENCRANE_PLATFORM_OPERATOR_SEED_EMAIL)
+    --platform-operator-groups CSV         (or OPENCRANE_PLATFORM_OPERATOR_GROUPS)
+  Without it the fleet grants operator to nobody and the control-plane UI is inaccessible."
+  exit 1
+}
+
 # MULTI-TENANT value profile: self-service manager + billing ON (the defaults, set
 # explicitly so the profile is self-documenting and robust to a changed default), NO
 # seeded org, and the fleet wildcard wiring. multiInstance stays at its default off —

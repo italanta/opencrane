@@ -148,6 +148,10 @@ fleetManager:
   #    issuerUrl is set; otherwise the fleet API stays in token/development auth mode.
   oidc:
     issuerUrl: ""
+    # -- Registered OAuth client id (OIDC_CLIENT_ID). MUST be a quoted STRING. An unquoted
+    #    18-digit Zitadel id is YAML-parsed as a float and rendered in scientific notation
+    #    (e.g. "3.78…e+17") → Zitadel App.NotFound and all login breaks. k8s-deploy.sh sets it
+    #    via --set-string; in any values file, always quote it (issue #100).
     clientId: ""
     # -- Callback URL on the fleet-manager (OIDC_REDIRECT_URI), e.g.
     #    https://<fleet-host>/api/v1/auth/callback.
@@ -296,7 +300,9 @@ clustertenantManager:
   oidc:
     # -- Issuer URL used for OIDC discovery (OIDC_ISSUER_URL). Empty → OIDC disabled.
     issuerUrl: ""
-    # -- Registered OAuth client id (OIDC_CLIENT_ID).
+    # -- Registered OAuth client id (OIDC_CLIENT_ID). MUST be a quoted STRING — an unquoted
+    #    18-digit Zitadel id is YAML-parsed as a float and corrupted to scientific notation
+    #    (breaks login). k8s-deploy.sh sets it via --set-string; quote it in any values file (issue #100).
     clientId: ""
     # -- Callback URL on the control-plane (OIDC_REDIRECT_URI), e.g.
     #    https://<control-plane-host>/api/v1/auth/callback.

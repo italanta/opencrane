@@ -20,6 +20,7 @@
 #                            [--oidc-redirect-uri URI] [--oidc-client-secret SECRET]
 #                            [--oidc-session-secret SECRET]
 #                            [--platform-operator-seed-email EMAIL]
+#                            [--platform-operator-groups CSV]
 #                            [--preflight]
 #                            [--no-ingress-nginx]
 #                            [--no-external-dns]
@@ -135,6 +136,9 @@ OIDC_CLIENT_SECRET="${OPENCRANE_OIDC_CLIENT_SECRET:-${OIDC_CLIENT_SECRET:-}}"
 OIDC_SESSION_SECRET="${OPENCRANE_OIDC_SESSION_SECRET:-${OIDC_SESSION_SECRET:-}}"
 OIDC_SECRET_NAME="opencrane-oidc"
 PLATFORM_OPERATOR_SEED_EMAIL="${OPENCRANE_PLATFORM_OPERATOR_SEED_EMAIL:-}"
+# Platform-operator GROUP mapping (CSV of IdP groups). OR-ed with the seed email; the
+# durable bootstrap once an IdP group exists. Empty → unset (fail-closed).
+PLATFORM_OPERATOR_GROUPS="${OPENCRANE_PLATFORM_OPERATOR_GROUPS:-}"
 
 # cert-manager / TLS (Step 2.5). CERT_MANAGER stays off unless --cert-manager is given;
 # the mode is then selfSigned UNLESS an --acme-email + --dns01-provider promote it to
@@ -235,6 +239,7 @@ while [[ $# -gt 0 ]]; do
     --oidc-client-secret)  OIDC_CLIENT_SECRET="$2"; shift 2 ;;
     --oidc-session-secret) OIDC_SESSION_SECRET="$2"; shift 2 ;;
     --platform-operator-seed-email) PLATFORM_OPERATOR_SEED_EMAIL="$2"; shift 2 ;;
+    --platform-operator-groups)     PLATFORM_OPERATOR_GROUPS="$2"; shift 2 ;;
     --preflight)        PREFLIGHT="1"; shift ;;
     --auto-ingress-ip)  AUTO_INGRESS_IP="1"; shift ;;
     --verify)           VERIFY="1"; shift ;;
@@ -891,19 +896,29 @@ helm_args+=(--set "langfuse.clickhouse.auth.password=$LANGFUSE_CH_PASSWORD")
 # a stale true from a previous in-cluster install.
 helm_args+=(--set "langfuse.inCluster.enabled=false")
 [[ -n "$BASE_DOMAIN" ]] && helm_args+=(--set-string "langfuse.langfuse.nextauth.url=https://langfuse.${BASE_DOMAIN}")
-# OIDC human-login (control-plane only). Rendered iff an issuer URL is given; otherwise
+# OIDC human-login (control-plane silo). Rendered iff an issuer URL is given; otherwise
 # the chart emits no OIDC env and the control-plane stays in token/development mode.
-[[ -n "$OIDC_ISSUER_URL" ]]   && helm_args+=(--set "clustertenantManager.oidc.issuerUrl=$OIDC_ISSUER_URL")
-[[ -n "$OIDC_CLIENT_ID" ]]    && helm_args+=(--set "clustertenantManager.oidc.clientId=$OIDC_CLIENT_ID")
-[[ -n "$OIDC_REDIRECT_URI" ]] && helm_args+=(--set "clustertenantManager.oidc.redirectUri=$OIDC_REDIRECT_URI")
+# --set-string (NOT --set): a large numeric Zitadel clientId passed via --set is YAML-parsed
+# as a float and rendered in scientific notation (e.g. 3.78…e+17) → Zitadel App.NotFound and
+# all login breaks. Strings stay strings (issue #100).
+[[ -n "$OIDC_ISSUER_URL" ]]   && helm_args+=(--set-string "clustertenantManager.oidc.issuerUrl=$OIDC_ISSUER_URL")
+[[ -n "$OIDC_CLIENT_ID" ]]    && helm_args+=(--set-string "clustertenantManager.oidc.clientId=$OIDC_CLIENT_ID")
+[[ -n "$OIDC_REDIRECT_URI" ]] && helm_args+=(--set-string "clustertenantManager.oidc.redirectUri=$OIDC_REDIRECT_URI")
 # Point the chart at the Secret created above (client + session secret) instead of leaving
 # its inline values empty — keeps secrets out of Helm values + the rendered manifest.
 [[ -n "$OIDC_ISSUER_URL" ]]   && helm_args+=(--set-string "clustertenantManager.oidc.existingSecret=$OIDC_SECRET_NAME")
-# Per-cluster platform-operator SEED. Set ONLY when a non-empty value is supplied; an
-# empty seed is never passed, so the chart grants operator to nobody (fail-closed).
+# Platform-operator bootstrap (seed email AND/OR IdP group mapping). The operator identity
+# is PLANE-AGNOSTIC, so forward it to BOTH the fleet plane and the control-plane silo —
+# previously only the silo received it, so the fleet (super-admin) UI was inaccessible to
+# everyone even with a seed set (issue #100). Set ONLY when non-empty; empty → fail-closed.
 if [[ -n "$PLATFORM_OPERATOR_SEED_EMAIL" ]]; then
+  helm_args+=(--set-string "fleetManager.oidc.platformOperatorSeedEmail=$PLATFORM_OPERATOR_SEED_EMAIL")
   helm_args+=(--set-string "clustertenantManager.oidc.platformOperatorSeedEmail=$PLATFORM_OPERATOR_SEED_EMAIL")
   warn "Seeding platform operator for the cluster (verified OIDC email match). Remove the seed once a group mapping is in place."
+fi
+if [[ -n "$PLATFORM_OPERATOR_GROUPS" ]]; then
+  helm_args+=(--set-string "fleetManager.oidc.platformOperatorGroups=$PLATFORM_OPERATOR_GROUPS")
+  helm_args+=(--set-string "clustertenantManager.oidc.platformOperatorGroups=$PLATFORM_OPERATOR_GROUPS")
 fi
 [[ -n "$VALUES_FILE" ]] && helm_args+=(--values "$VALUES_FILE")
 # cert-manager flags resolved in Step 2.5 (empty in mode=off). Placed before --set
