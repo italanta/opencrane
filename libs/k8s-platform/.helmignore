@@ -1,0 +1,16 @@
+# k8s-platform is a Helm LIBRARY chart consumed (vendored as a .tgz) by the fleet and silo charts.
+# Only the chart itself ships in that package: Chart.yaml, the named templates, and the values/
+# + examples/ profiles. The deploy engine and its tooling live alongside the chart in-repo but must
+# NOT be packaged — without this file `helm dep update`/`build` sweeps them into the .tgz, bloating
+# it from ~9 files to ~47 and shipping a substrate chart that differs from the one CI validates.
+*.sh
+terraform/
+tests/
+migrations/
+
+# VCS / editor / OS noise (helm only applies its built-in ignore list when this file is ABSENT).
+.git/
+.gitignore
+.DS_Store
+*~
+*.swp

@@ -21,7 +21,10 @@ dependencies:
     version: 0.1.0
     repository: "file://../../libs/k8s-platform"
   # Langfuse LLM observability — a per-silo plane, deployed when langfuse.inCluster.enabled.
+  # PINNED to an exact version (not a ">=" range): the deploy engine resolves deps from Chart.lock
+  # via `helm dep build`, so an open range would let every deploy silently ship whatever langfuse
+  # is newest at that moment — an untested version drift. Bump this deliberately + regenerate the lock.
   - name: langfuse
-    version: ">=0.6.0"
+    version: "1.5.37"
     repository: https://langfuse.github.io/langfuse-k8s
     condition: langfuse.inCluster.enabled

@@ -840,13 +840,16 @@ if [[ "$CERT_MODE" == "acme" ]] && { [[ "$INSTALL_EXTERNAL_DNS" == "1" ]] || _ex
 fi
 
 # 3. The OpenCrane chart.
-# Fetch subchart dependencies (Langfuse, and any others declared in Chart.yaml).
-# --skip-refresh avoids a network fetch when the chart is already cached; we force
-# an update for langfuse so the version constraint is always satisfied.
+# Fetch subchart dependencies (Langfuse, and any others declared in Chart.yaml) — from Chart.lock,
+# NOT by re-resolving the version constraints. `helm dep build` rebuilds charts/ to exactly the
+# versions the committed Chart.lock pins, so a deploy ships the SAME subcharts CI validated and never
+# silently drifts to a newer langfuse (the dependency is pinned to an exact version in Chart.yaml).
+# It also won't rewrite the vendored Chart.lock/.tgz on every run the way `dep update` does. Bumping a
+# dependency is a deliberate edit (change Chart.yaml + run `helm dep update` once + commit the lock).
 log "Adding Langfuse Helm repository…"
 helm repo add langfuse https://langfuse.github.io/langfuse-k8s --force-update >/dev/null
-log "Fetching chart dependencies…"
-helm dep update "$CHART_DIR"
+log "Fetching chart dependencies (from Chart.lock)…"
+helm dep build "$CHART_DIR"
 
 log "Installing the OpenCrane Helm release '$RELEASE'…"
 # LiteLLM is wired to its own `litellm` database (DATABASE_URL via opencrane-litellm-db) with
