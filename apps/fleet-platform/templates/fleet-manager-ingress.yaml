@@ -1,0 +1,41 @@
+{{- if and .Values.fleetManager.enabled .Values.ingress.enabled }}
+{{/*
+Ingress for the fleet-manager super-admin API + browser login. Served on the FIXED control-plane
+host (ingress.controlPlaneHost, default platform.<domain>) — a distinct host above every org, NOT
+an org under the *.<domain> wildcard. The platform wildcard cert covers it (platform.<domain> is a
+single label under <domain>).
+*/}}
+{{- $host := .Values.ingress.controlPlaneHost | default (printf "platform.%s" .Values.ingress.domain) }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "opencrane.fullname" . }}-fleet-manager
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fleet-manager
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ $host | quote }}
+      secretName: {{ required "ingress.tls.secretName is required when ingress.tls.enabled" .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "opencrane.fullname" . }}-fleet-manager
+                port:
+                  number: 8080
+{{- end }}

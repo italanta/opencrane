@@ -20,7 +20,8 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "opencrane.fullname" . }}-skill-registry-token-review
+  # Cluster-scoped → suffix per silo so multiple silos don't collide on one shared name.
+  name: {{ include "opencrane.fullname" . }}-skill-registry-token-review-{{ .Release.Namespace }}
   labels:
     {{- include "opencrane.labels" . | nindent 4 }}
 rules:
@@ -31,7 +32,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "opencrane.fullname" . }}-skill-registry-token-review
+  name: {{ include "opencrane.fullname" . }}-skill-registry-token-review-{{ .Release.Namespace }}
   labels:
     {{- include "opencrane.labels" . | nindent 4 }}
 subjects:
@@ -40,7 +41,7 @@ subjects:
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
-  name: {{ include "opencrane.fullname" . }}-skill-registry-token-review
+  name: {{ include "opencrane.fullname" . }}-skill-registry-token-review-{{ .Release.Namespace }}
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: apps/v1

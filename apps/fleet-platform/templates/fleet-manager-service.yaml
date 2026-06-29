@@ -1,0 +1,22 @@
+{{- if .Values.fleetManager.enabled }}
+# ClusterIP Service fronting the fleet-manager pod — the in-cluster name other components and the
+# fleet-manager Ingress route to. The container listens on 8080 (PORT) with no named port, so the
+# target is the numeric port.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "opencrane.fullname" . }}-fleet-manager
+  labels:
+    {{- include "opencrane.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fleet-manager
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "opencrane.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: fleet-manager
+{{- end }}

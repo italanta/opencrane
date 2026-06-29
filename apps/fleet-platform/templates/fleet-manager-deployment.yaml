@@ -131,6 +131,11 @@ spec:
             #    Secret, never inlined; the service account MUST hold instance-level IAM_OWNER.
             - name: ZITADEL_MGMT_API_URL
               value: {{ .mgmtApiUrl | quote }}
+            # -- Platform base domain the fleet derives each org's Zitadel redirect URIs from
+            #    (https://<org>.<base>/...). REQUIRED alongside the mgmt API — the fleet refuses
+            #    to build the Zitadel client without it. Defaults to the ingress base domain.
+            - name: PLATFORM_BASE_DOMAIN
+              value: {{ $.Values.ingress.domain | quote }}
             {{- if .existingSecret }}
             - name: ZITADEL_MGMT_SA_KEY
               valueFrom:

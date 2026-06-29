@@ -123,10 +123,10 @@ describe("ClusterTenant isolation enforcement (CT.5 reconcile flow)", () =>
     const operator = _makeOperator(core, apps, networking, clusterTenant);
     await operator.reconcileTenant(tenant);
 
-    // PSA namespace applied with restricted enforce label, in the bound namespace.
+    // PSA namespace applied with baseline enforce label, in the bound namespace.
     const namespace = core.created.find((r) => r.kind === "Namespace");
     expect(namespace?.metadata?.name).toBe("ct-acme");
-    expect(namespace?.metadata?.labels?.["pod-security.kubernetes.io/enforce"]).toBe("restricted");
+    expect(namespace?.metadata?.labels?.["pod-security.kubernetes.io/enforce"]).toBe("baseline");
 
     // ResourceQuota derived from the parent's quota block.
     const quota = core.created.find((r) => r.kind === "ResourceQuota") as k8s.V1ResourceQuota | undefined;

@@ -929,8 +929,15 @@ helm "${helm_args[@]}"
 # so the db-migrate initContainer alone could leave the schema behind when the
 # database was recreated under a running pod). The initContainer remains a
 # belt-and-suspenders guard for pod (re)creation between deploys. Idempotent.
-kubectl rollout status "deployment/${RELEASE}-fleet-manager" -n "$NAMESPACE" --timeout="${TIMEOUT}s"
-kubectl rollout status "deployment/${RELEASE}-clustertenant-manager" -n "$NAMESPACE" --timeout="${TIMEOUT}s"
+# Wait only on the deployment(s) this chart actually rendered: the fleet chart ships
+# the fleet-manager, the silo chart the clustertenant-manager. A fleet-only (or silo-only)
+# install has just one, so guard each wait on the deployment existing rather than waiting
+# unconditionally (which NotFound-errored on the absent component after the split).
+for _comp in fleet-manager clustertenant-manager; do
+  if kubectl get "deployment/${RELEASE}-${_comp}" -n "$NAMESPACE" >/dev/null 2>&1; then
+    kubectl rollout status "deployment/${RELEASE}-${_comp}" -n "$NAMESPACE" --timeout="${TIMEOUT}s"
+  fi
+done
 
 # 5. Post-deploy verify (opt-in, --verify). Advisory only — surfaces the failure modes that
 # leave a "green" install unreachable (pods not Running, no DNSEndpoints, external-dns auth

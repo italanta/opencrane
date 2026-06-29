@@ -93,6 +93,11 @@ PROFILE_SET=(
   --set "billing.enabled=false"
   --set "multiInstance.enabled=false"
   --set "ingress.tls.enabled=true"
+  # The silo's control-plane (clustertenant-manager) serves at the ORG host
+  # `<cluster-tenant>.<base>` — NOT the chart default `platform.<base>`, which is the FLEET's
+  # super-admin host (deploy-multi-tenant). Without this, the silo's clustertenant-manager Ingress
+  # collides with the fleet's at platform.<base>. A caller --set later overrides this default.
+  --set "ingress.controlPlaneHost=${CLUSTER_TENANT}.${BASE_DOMAIN}"
 )
 # Pin the cluster ingress IP when given; otherwise derive it from the cluster-wide ingress-nginx
 # LoadBalancer (installed by the central release) so the silo's per-org hosts resolve.

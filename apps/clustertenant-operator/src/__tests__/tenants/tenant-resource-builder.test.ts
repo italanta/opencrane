@@ -395,15 +395,15 @@ describe("Silo Linkerd identity policy (S5 / ADR 0001 — meshed default-deny si
 
 describe("ClusterTenant isolation builders (CT.5)", () =>
 {
-  it("builds a Namespace labelled for PSA restricted enforce/warn/audit", () =>
+  it("builds a Namespace labelled for PSA baseline enforce/warn/audit", () =>
   {
     const ns = _BuildClusterTenantNamespace("ct-acme", "acme");
     const labels = ns.metadata?.labels ?? {};
 
     expect(ns.metadata?.name).toBe("ct-acme");
-    expect(labels["pod-security.kubernetes.io/enforce"]).toBe("restricted");
-    expect(labels["pod-security.kubernetes.io/warn"]).toBe("restricted");
-    expect(labels["pod-security.kubernetes.io/audit"]).toBe("restricted");
+    expect(labels["pod-security.kubernetes.io/enforce"]).toBe("baseline");
+    expect(labels["pod-security.kubernetes.io/warn"]).toBe("baseline");
+    expect(labels["pod-security.kubernetes.io/audit"]).toBe("baseline");
     expect(labels["opencrane.io/cluster-tenant"]).toBe("acme");
   });
 

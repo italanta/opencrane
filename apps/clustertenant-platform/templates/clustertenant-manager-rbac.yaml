@@ -48,7 +48,9 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "opencrane.fullname" . }}-clustertenant-manager
+  # Cluster-scoped → name MUST be unique per silo, or a second silo's release can't import a
+  # ClusterRole the first already owns. Suffix with the release namespace (one silo per ns).
+  name: {{ include "opencrane.fullname" . }}-clustertenant-manager-{{ .Release.Namespace }}
   labels:
     {{- include "opencrane.labels" . | nindent 4 }}
 rules:
@@ -57,13 +59,13 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "opencrane.fullname" . }}-clustertenant-manager
+  name: {{ include "opencrane.fullname" . }}-clustertenant-manager-{{ .Release.Namespace }}
   labels:
     {{- include "opencrane.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "opencrane.fullname" . }}-clustertenant-manager
+  name: {{ include "opencrane.fullname" . }}-clustertenant-manager-{{ .Release.Namespace }}
 subjects:
   - kind: ServiceAccount
     name: {{ include "opencrane.fullname" . }}-clustertenant-manager
@@ -81,7 +83,8 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "opencrane.fullname" . }}-clustertenant-manager-ct-read
+  # Cluster-scoped → suffix per silo (see the clustertenant-manager ClusterRole above).
+  name: {{ include "opencrane.fullname" . }}-clustertenant-manager-ct-read-{{ .Release.Namespace }}
   labels:
     {{- include "opencrane.labels" . | nindent 4 }}
 rules:
@@ -92,13 +95,13 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "opencrane.fullname" . }}-clustertenant-manager-ct-read
+  name: {{ include "opencrane.fullname" . }}-clustertenant-manager-ct-read-{{ .Release.Namespace }}
   labels:
     {{- include "opencrane.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "opencrane.fullname" . }}-clustertenant-manager-ct-read
+  name: {{ include "opencrane.fullname" . }}-clustertenant-manager-ct-read-{{ .Release.Namespace }}
 subjects:
   - kind: ServiceAccount
     name: {{ include "opencrane.fullname" . }}-clustertenant-manager
