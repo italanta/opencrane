@@ -4,6 +4,86 @@
  */
 
 export interface paths {
+    "/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Return current auth mode and authenticated user identity (if any)
+         * @description No authentication required. Returns 200 with the current session or an anonymous identity when no session is established. The fleet plane is cluster-wide, so (unlike the silo control plane) the user carries no per-silo `clusterTenant`.
+         */
+        get: operations["getAuthStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Redirect the browser to the configured OIDC identity provider to start login
+         * @description Browser redirect — not intended for programmatic use. Returns 503 when OIDC is not configured.
+         */
+        get: operations["startOidcLogin"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * OIDC authorization callback — validates the response and establishes a session
+         * @description Called by the identity provider after a successful login. Redirects back to the SPA.
+         */
+        get: operations["completeOidcLogin"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Destroy the current session and return the IdP RP-initiated logout URL
+         * @description Invalidates the server-side session. When OIDC is enabled and the identity provider advertises an `end_session_endpoint`, returns the URL the browser should navigate to so the upstream IdP session is also terminated (OIDC RP-Initiated Logout). The local session is always destroyed; `endSessionUrl` is null when no upstream logout is possible (OIDC disabled, IdP exposes no end-session endpoint, or the session captured no id_token). Non-browser callers may ignore the URL.
+         */
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/zitadel/sa-key:rotate": {
         parameters: {
             query?: never;
@@ -1102,6 +1182,143 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getAuthStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Auth status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * @description Active authentication mode for this instance.
+                         * @enum {string}
+                         */
+                        mode: "development" | "oidc" | "token";
+                        authenticated: boolean;
+                        user?: {
+                            sub: string;
+                            /** @description Identity provider that authenticated the user. */
+                            issuer: string;
+                            /** @description The caller's group memberships from the OIDC groups claim (empty when none). */
+                            groups: string[];
+                            /** @description True iff the caller's groups intersect OPENCRANE_PLATFORM_OPERATOR_GROUPS. Empty/unset config ⇒ false (fail-closed). Introspection only — the API stays the enforcement point and the frontend uses this only to hide UI. */
+                            isPlatformOperator: boolean;
+                            /** @description True iff the caller is an organisation admin (groups intersect OPENCRANE_ORG_ADMIN_GROUPS, or the caller is a platform operator). Empty/unset config ⇒ false (fail-closed). Introspection only — the API stays the enforcement point. */
+                            isOrgAdmin: boolean;
+                            /** @description Organisations the caller owns or administers, derived fresh from their OrgMembership rows (owner/admin only; members excluded). Empty when the caller administers no org. Introspection only — never taken from request input. */
+                            ownedOrgs?: {
+                                /** @description The organisation (ClusterTenant) key. */
+                                clusterTenant: string;
+                                /**
+                                 * @description The administering role the caller holds in this org.
+                                 * @enum {string}
+                                 */
+                                role: "owner" | "admin";
+                            }[];
+                            email?: string;
+                            emailVerified?: boolean;
+                            name?: string;
+                            picture?: string;
+                            /** Format: date-time */
+                            authenticatedAt?: string;
+                        } | null;
+                    };
+                };
+            };
+        };
+    };
+    startOidcLogin: {
+        parameters: {
+            query?: {
+                /** @description Path to redirect back to after a successful login. */
+                returnTo?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to identity provider. */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description OIDC not configured. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    completeOidcLogin: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect back into the application. */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description OIDC not configured. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Session destroyed; optional IdP logout URL returned. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Absolute URL the browser should navigate to in order to terminate the upstream IdP session. Null when no upstream logout is configured or possible. */
+                        endSessionUrl: string | null;
+                    };
+                };
+            };
+        };
+    };
     rotateZitadelSaKey: {
         parameters: {
             query?: never;
