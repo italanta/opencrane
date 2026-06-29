@@ -42,6 +42,20 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # `pnpm build` regenerates the emitted OpenAPI specs and the typed
+      # clients from source, then typechecks against the fresh output — so a
+      # stale committed spec/client never fails the typecheck on its own.
+      # Diff the regenerated artifacts to fail fast when codegen wasn't re-run
+      # after a source change (see the /auth/* fleet-api.ts drift).
+      - name: Verify generated specs and clients are up to date
+        run: |
+          git diff --exit-code -- \
+            apps/clustertenant-operator/openapi.json \
+            apps/fleet-operator/openapi.json \
+            libs/contracts/src/generated/api.ts \
+            libs/contracts/src/generated/fleet-api.ts \
+          || { echo "::error::Generated OpenAPI specs/clients are stale. Run 'pnpm build' (or 'pnpm --filter @opencrane/contracts generate') and commit the result."; exit 1; }
+
       - name: Test operator
         run: pnpm --filter @opencrane/fleet-operator test
 
