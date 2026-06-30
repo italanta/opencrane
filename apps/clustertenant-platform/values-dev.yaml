@@ -1,0 +1,57 @@
+# =============================================================================
+# Dev resource profile — apply with `clustertenant-platform/deploy.sh --dev-resources`.
+#
+# Tunes the per-silo platform planes for a small, CPU-reservation-constrained dev cluster.
+# Principle (NOT for prod — size to real load there):
+#   - CPU is compressible (throttle, not crash), and dev load is near-idle, so CPU REQUESTS
+#     are cut hard to relieve the scheduling squeeze; CPU limits stay generous for burst.
+#   - Memory is NOT compressible (under-request → OOM/eviction), so memory REQUESTS are raised
+#     to observed usage + headroom (litellm/cognee/clustertenant-manager were running ABOVE
+#     their requests — first to be evicted under node pressure).
+# Frees ~0.3 vCPU of requests per silo (~0.9 vCPU across three) vs the default profile.
+# =============================================================================
+
+clustertenantManager:
+  resources:
+    requests:
+      cpu: 50m       # was 100m; observed ~2m, but it's operator+proxy+API — keep headroom
+      memory: 256Mi  # was 128Mi; observed ~135Mi (was OVER its request)
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # cognee plane (opencrane-cognee) is configured under clustertenantManager.cognee
+  cognee:
+    resources:
+      requests:
+        cpu: 25m       # was 100m; observed ~3m
+        memory: 384Mi  # was 256Mi; observed ~303Mi (was OVER its request)
+      limits:
+        cpu: "1"
+        memory: 1Gi
+
+litellm:
+  resources:
+    requests:
+      cpu: 25m       # was 100m; observed ~6m
+      memory: 768Mi  # was 256Mi; observed ~584Mi (was WAY over its request — OOM risk)
+    limits:
+      cpu: "1"
+      memory: 1280Mi
+
+mcpGateway:
+  resources:
+    requests:
+      cpu: 75m       # was 250m (the biggest over-reservation); observed ~34m
+      memory: 256Mi  # observed ~116Mi — keep as-is for headroom
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+skillRegistry:
+  resources:
+    requests:
+      cpu: 25m       # was 100m; observed ~1m
+      memory: 128Mi  # observed ~71Mi — fine
+    limits:
+      cpu: 500m
+      memory: 256Mi

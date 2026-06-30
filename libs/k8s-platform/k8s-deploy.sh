@@ -117,6 +117,7 @@ TENANT_TAG=""           # empty → falls back to IMAGE_TAG
 BASE_DOMAIN="${OPENCRANE_BASE_DOMAIN:-}"
 STORAGE_CLASS=""        # empty → cluster default StorageClass
 VALUES_FILE=""
+DEV_RESOURCES=""     # "--dev-resources": overlay the chart's values-dev.yaml (small dev footprint)
 REUSE_VALUES=""      # "--reuse-values" mode: inherit current helm values; add only overrides
 EXTRA_SET=()
 
@@ -253,6 +254,7 @@ while [[ $# -gt 0 ]]; do
     --dns01-credentials) DNS01_CREDENTIALS="$2"; shift 2 ;;
     --dns01-project)     DNS01_PROJECT="$2"; shift 2 ;;
     --values)        VALUES_FILE="$2"; shift 2 ;;
+    --dev-resources) DEV_RESOURCES="1"; shift ;;
     --reuse-values)  REUSE_VALUES="1"; shift ;;
     --set)           EXTRA_SET+=(--set "$2"); shift 2 ;;
     -h|--help)       grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -921,6 +923,19 @@ if [[ -n "$PLATFORM_OPERATOR_GROUPS" ]]; then
   helm_args+=(--set-string "clustertenantManager.oidc.platformOperatorGroups=$PLATFORM_OPERATOR_GROUPS")
 fi
 [[ -n "$VALUES_FILE" ]] && helm_args+=(--values "$VALUES_FILE")
+# --dev-resources: overlay the chart's values-dev.yaml (small CPU requests / right-sized memory
+# for a reservation-constrained dev cluster). Placed AFTER --values and BEFORE --set so an
+# explicit --values can still seed it and a --set can still override an individual field. Only
+# applies when the chart actually ships the overlay (the fleet chart may not), else fail fast so
+# a typo'd profile never silently deploys prod-sized requests onto a dev cluster.
+if [[ -n "$DEV_RESOURCES" ]]; then
+  if [[ -f "$CHART_DIR/values-dev.yaml" ]]; then
+    warn "applying the DEV resource profile (values-dev.yaml) — small requests, NOT for production"
+    helm_args+=(--values "$CHART_DIR/values-dev.yaml")
+  else
+    err "--dev-resources given but $CHART_DIR/values-dev.yaml does not exist for this chart."; exit 1
+  fi
+fi
 # cert-manager flags resolved in Step 2.5 (empty in mode=off). Placed before --set
 # overrides so an operator can still override individual issuer fields on the CLI.
 [ ${#CERT_MANAGER_HELM_FLAGS[@]} -gt 0 ] && helm_args+=("${CERT_MANAGER_HELM_FLAGS[@]}")
