@@ -129,6 +129,76 @@ describe("projection repair routes", function ()
     expect(create).toHaveBeenCalledOnce();
   });
 
+  it("projects status.ingressHost into the tenant row so /auth/pod-token can resolve the gateway", async function ()
+  {
+    const customApi = {
+      listNamespacedCustomObject: vi.fn().mockResolvedValue({
+        items: [
+          {
+            metadata: { name: "elewa-be-default" },
+            spec: { displayName: "Elewa", email: "jente@elewa.ke", team: null },
+            // Observed host the operator stamped at reconcile step 10.
+            status: { ingressHost: "elewa-be.dev.opencrane.ai" },
+          },
+        ],
+      }),
+    } as unknown as k8s.CustomObjectsApi;
+
+    const update = vi.fn().mockResolvedValue({});
+    const prisma = {
+      tenant: {
+        findMany: vi.fn().mockResolvedValue([
+          // Row exists with spec in sync but no ingressHost yet — the gap that left
+          // /auth/pod-token returning POD_NOT_READY.
+          { name: "elewa-be-default", displayName: "Elewa", email: "jente@elewa.ke", team: null, ingressHost: null },
+        ]),
+        create: vi.fn(),
+        update,
+      },
+    } as unknown as PrismaClient;
+
+    const res = await request(_BuildTenantRepairApp(customApi, prisma)).post("/repair?dryRun=false");
+
+    expect(res.status).toBe(200);
+    expect(res.body.entries[0]).toMatchObject({ name: "elewa-be-default", action: "updated", dryRun: false });
+    expect(update).toHaveBeenCalledWith({
+      where: { name: "elewa-be-default" },
+      data: expect.objectContaining({ ingressHost: "elewa-be.dev.opencrane.ai" }),
+    });
+  });
+
+  it("does not clobber a populated ingressHost when the CR has no status yet", async function ()
+  {
+    const customApi = {
+      listNamespacedCustomObject: vi.fn().mockResolvedValue({
+        items: [
+          {
+            metadata: { name: "pending-default" },
+            spec: { displayName: "Pending", email: "p@example.com", team: null },
+            // No status.ingressHost — the CR has not reconciled (or is mid-reconcile).
+          },
+        ],
+      }),
+    } as unknown as k8s.CustomObjectsApi;
+
+    const update = vi.fn();
+    const prisma = {
+      tenant: {
+        findMany: vi.fn().mockResolvedValue([
+          { name: "pending-default", displayName: "Pending", email: "p@example.com", team: null, ingressHost: "pending.dev.opencrane.ai" },
+        ]),
+        create: vi.fn(),
+        update,
+      },
+    } as unknown as PrismaClient;
+
+    const res = await request(_BuildTenantRepairApp(customApi, prisma)).post("/repair?dryRun=false");
+
+    expect(res.status).toBe(200);
+    expect(res.body.repairedCount).toBe(0);
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it("skips a tenant projection row that has no matching CRD source", async function ()
   {
     const customApi = {

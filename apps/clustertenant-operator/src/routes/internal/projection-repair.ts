@@ -29,6 +29,17 @@ interface TenantCrd
     /** Parent ClusterTenant this UserTenant belongs to, when reparented (CT.4). */
     clusterTenantRef?: string;
   };
+
+  /** Observed state written back by the operator's reconcile. */
+  status?: {
+    /**
+     * Org host the tenant's OpenClaw pod is served at (`<org>.<base>` or vanity),
+     * set by the operator at step 10 of reconcile. Projected into the DB row so the
+     * `/auth/pod-token` broker — which reads `tenant.ingressHost`, not the CR — can
+     * resolve the gateway URL without a manual `PUT /pairing`.
+     */
+    ingressHost?: string;
+  };
 }
 
 /** Minimal AccessPolicy CRD shape needed for repair. */
@@ -88,6 +99,10 @@ export async function _RepairTenantProjection(customApi: k8s.CustomObjectsApi, p
     const email = crd.spec?.email ?? "";
     const team = crd.spec?.team ?? null;
     const clusterTenantRef = crd.spec?.clusterTenantRef ?? null;
+    // Project the observed ingress host ONLY once the operator has set it (a CR that
+    // has not reconciled yet has no status). When absent we leave the DB value alone
+    // rather than clobbering a good host with a transient null.
+    const ingressHost = crd.status?.ingressHost && crd.status.ingressHost.length > 0 ? crd.status.ingressHost : null;
     const existing = rowByName.get(name);
 
     if (!existing)
@@ -95,24 +110,27 @@ export async function _RepairTenantProjection(customApi: k8s.CustomObjectsApi, p
       // 3a. Projection row is missing — insert from CRD state.
       if (!dryRun)
       {
-        await prisma.tenant.create({ data: { name, displayName, email, team: team ?? undefined, clusterTenantRef: clusterTenantRef ?? undefined } });
+        await prisma.tenant.create({ data: { name, displayName, email, team: team ?? undefined, clusterTenantRef: clusterTenantRef ?? undefined, ingressHost: ingressHost ?? undefined } });
       }
 
       entries.push({ name, action: "created", reason: "missing projection row created from CRD", dryRun });
       continue;
     }
 
-    // 3b. Both sides exist — check for field drift and update if needed.
+    // 3b. Both sides exist — check for field drift and update if needed. ingressHost
+    //     drifts only when the CR carries a host that differs (a null status never
+    //     overwrites a populated DB host — see above).
     const drifted = existing.displayName !== displayName
       || existing.email !== email
       || (existing.team ?? null) !== team
-      || (existing.clusterTenantRef ?? null) !== clusterTenantRef;
+      || (existing.clusterTenantRef ?? null) !== clusterTenantRef
+      || (ingressHost !== null && (existing.ingressHost ?? null) !== ingressHost);
 
     if (drifted)
     {
       if (!dryRun)
       {
-        await prisma.tenant.update({ where: { name }, data: { displayName, email, team: team ?? undefined, clusterTenantRef: clusterTenantRef ?? undefined } });
+        await prisma.tenant.update({ where: { name }, data: { displayName, email, team: team ?? undefined, clusterTenantRef: clusterTenantRef ?? undefined, ingressHost: ingressHost ?? undefined } });
       }
 
       entries.push({ name, action: "updated", reason: "field drift corrected from CRD", dryRun });
