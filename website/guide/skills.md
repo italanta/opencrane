@@ -21,7 +21,7 @@ oc skills get <id>
 ```bash
 oc skills create \
   --name sales-follow-up \
-  --version 1.0.0 \
+  --bundle-version 1.0.0 \
   --digest sha256:… \
   --scope personal
 ```

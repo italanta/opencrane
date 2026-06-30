@@ -1,5 +1,5 @@
 /** Supported organizational scopes for skill bundles. */
-export type SkillCatalogRouteScope = "org" | "department" | "project" | "personal";
+export type SkillCatalogRouteScope = "org" | "department" | "team" | "project" | "personal";
 
 /** Supported access outcomes for skill entitlements. */
 export type SkillCatalogRouteAccess = "allow" | "deny";

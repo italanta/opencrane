@@ -1,6 +1,6 @@
 import express from "express";
 import type { Express } from "express";
-import type { PrismaClient } from "@prisma/client";
+import { GrantScope, SkillBundleStatus, type PrismaClient } from "@prisma/client";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
@@ -155,6 +155,51 @@ describe("skillCatalogRouter — PUT /:id (publish gate)", () =>
 
 describe("skillCatalogRouter — POST / (direct-publish guard)", () =>
 {
+  it("maps API scope strings to Prisma enums on create", async () =>
+  {
+    const createSpy = vi.fn().mockResolvedValue({ id: "bundle-1", name: "demo-skill" });
+    const prisma = {
+      skillBundle: { create: createSpy },
+      auditEntry: { create: vi.fn().mockResolvedValue({}) },
+    } as unknown as PrismaClient;
+    const app = _buildApp(prisma);
+
+    const res = await request(app)
+      .post("/api/v1/skills/catalog")
+      .send({
+        name: "demo-skill",
+        version: "1.0.0",
+        digest: "sha256:abc",
+        scope: "org",
+      });
+
+    expect(res.status).toBe(201);
+    expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        scope: GrantScope.Org,
+        status: SkillBundleStatus.Draft,
+      }),
+    }));
+  });
+
+  it("returns 400 when create receives an unsupported scope", async () =>
+  {
+    const prisma = _buildPrismaStub();
+    const app = _buildApp(prisma);
+
+    const res = await request(app)
+      .post("/api/v1/skills/catalog")
+      .send({
+        name: "bad-skill",
+        version: "1.0.0",
+        digest: "sha256:abc",
+        scope: "global",
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("VALIDATION_ERROR");
+  });
+
   it("returns 422 when trying to create a bundle with status published", async () =>
   {
     const prisma = _buildPrismaStub();

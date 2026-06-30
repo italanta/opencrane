@@ -39,4 +39,4 @@ domain), while `oc tenants` manages **UserTenants** (per-user OpenClaw gateways,
 
 ## Notable command shapes
 
-`oc tenants create --name --display-name --email [--team --budget --policy-ref]`; `oc cluster-tenant create` builds the quota body from `--quota-{cpu,memory,pods,storage,gpu}` and placement from `--compute shared|dedicated [--node-pool]`; `oc skills create --name --version --digest [--scope]` (or `--body <json>`); `oc tokens create` prints the plaintext token once; `oc awareness rollout promote [--wave]`.
+`oc tenants create --name --display-name --email [--team --budget --policy-ref]`; `oc cluster-tenant create` builds the quota body from `--quota-{cpu,memory,pods,storage,gpu}` and placement from `--compute shared|dedicated [--node-pool]`; `oc skills create --name --bundle-version --digest [--scope]` (or `--body <json>`); `oc tokens create` prints the plaintext token once; `oc awareness rollout promote [--wave]`.
