@@ -10,10 +10,12 @@ describe("_ResolveOpenClawPairing", function _suite()
 		expect(pairing).toEqual({ gatewayUrl: "wss://pod/gateway" });
 	});
 
-	it("derives the gateway URL from ingressHost when none is stored", function _derived()
+	it("derives the gateway URL from ingressHost when none is stored, routed at /gateway", function _derived()
 	{
+		// Same-origin hosting: the SPA owns `/` and the control plane `/api`, so the WS is
+		// exposed at `/gateway` (the proxy strips the prefix before forwarding to the pod).
 		const pairing = _ResolveOpenClawPairing(null, "pod.example.com");
-		expect(pairing).toEqual({ gatewayUrl: "wss://pod.example.com" });
+		expect(pairing).toEqual({ gatewayUrl: "wss://pod.example.com/gateway" });
 	});
 
 	it("returns null when there is no URL and no ingress host", function _notReady()
@@ -24,14 +26,14 @@ describe("_ResolveOpenClawPairing", function _suite()
 
 	it("ignores a malformed configOverrides shape", function _malformed()
 	{
-		expect(_ResolveOpenClawPairing("not-an-object", "pod.example.com")?.gatewayUrl).toBe("wss://pod.example.com");
+		expect(_ResolveOpenClawPairing("not-an-object", "pod.example.com")?.gatewayUrl).toBe("wss://pod.example.com/gateway");
 		expect(_ResolveOpenClawPairing({ openclaw: 42 }, null)).toBeNull();
 	});
 
 	it("rejects a non-wss stored gateway URL, falling back to wss ingress", function _rejectsWs()
 	{
 		const pairing = _ResolveOpenClawPairing({ openclaw: { gatewayUrl: "ws://pod/gateway" } }, "pod.example.com");
-		expect(pairing).toEqual({ gatewayUrl: "wss://pod.example.com" });
+		expect(pairing).toEqual({ gatewayUrl: "wss://pod.example.com/gateway" });
 	});
 
 	it("returns null when the stored URL is non-wss and there is no ingress host", function _rejectsWsNoFallback()

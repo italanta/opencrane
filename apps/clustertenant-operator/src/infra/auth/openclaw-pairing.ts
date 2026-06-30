@@ -1,5 +1,12 @@
 import type { OpenClawPairing } from "./openclaw-pairing.types.js";
 
+/**
+ * Path the gateway WebSocket is exposed under on the org host. The SPA owns `/` and the
+ * control plane `/api`, so the WS is routed at `/gateway`; the proxy strips it before
+ * forwarding to the pod (gateway-proxy/proxy.ts). Keep in sync with that prefix.
+ */
+const OPENCLAW_GATEWAY_WS_PATH = "/gateway";
+
 /** Shape we read out of `Tenant.configOverrides.openclaw`. */
 interface _StoredPairing
 {
@@ -24,11 +31,17 @@ export function _ResolveOpenClawPairing(configOverrides: unknown, ingressHost: s
   // Only ever hand the browser an encrypted `wss://` endpoint. A stored `ws://`
   // (or any non-wss) URL is rejected and we fall back to the `wss://<ingressHost>`
   // form — never downgrade the transport, even if the column is misconfigured.
+  //
+  // The host-derived URL targets `/gateway`: under same-origin hosting the org host
+  // serves the SPA at `/` and the control plane at `/api`, so the gateway WS is routed
+  // at `/gateway` (the proxy strips the prefix before forwarding — see
+  // gateway-proxy/proxy.ts `_StripGatewayPrefix`). A stored URL is used verbatim so an
+  // operator can pin an explicit endpoint (including its own path).
   const storedUrl = typeof stored?.gatewayUrl === "string" ? stored.gatewayUrl : "";
   const gatewayUrl = storedUrl.startsWith("wss://")
     ? storedUrl
     : ingressHost
-      ? `wss://${ingressHost}`
+      ? `wss://${ingressHost}${OPENCLAW_GATEWAY_WS_PATH}`
       : null;
 
   if (!gatewayUrl)

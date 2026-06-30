@@ -3,7 +3,7 @@ import type { Duplex } from "node:stream";
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import { _HandleUpgrade } from "../../gateway-proxy/proxy.js";
+import { _HandleUpgrade, _StripGatewayPrefix } from "../../gateway-proxy/proxy.js";
 import type { UpgradeDeps, WsProxy, GatewayProxyRuntime } from "../../gateway-proxy/proxy.js";
 import type { ResolveOutcome } from "../../gateway-proxy/auth-client.js";
 import { FixedWindowRateLimiter } from "../../gateway-proxy/rate-limit.js";
@@ -123,5 +123,36 @@ describe("_HandleUpgrade (in-operator gateway proxy)", () =>
     await _HandleUpgrade(limited.deps, _req({ origin: "https://acme.opencrane.ai", cookie: "x" }), b, Buffer.alloc(0));
     expect(limited.proxy.targets).toHaveLength(1);
     expect(b.written[0]).toMatch(/^HTTP\/1\.1 429/);
+  });
+
+  it("strips the /gateway routing prefix before forwarding so the pod sees the path it expects", async () =>
+  {
+    const resolve = vi.fn().mockResolvedValue(okTarget);
+    const { deps } = _deps(resolve);
+    // The org host routes the WS at /gateway (the SPA owns /); the pod gateway listens at /.
+    const req = { headers: { origin: "https://acme.opencrane.ai", host: "acme.opencrane.ai", cookie: "x" }, url: "/gateway", socket: { remoteAddress: "10.0.0.1" } } as unknown as IncomingMessage;
+
+    await _HandleUpgrade(deps, req, _fakeSocket(), Buffer.alloc(0));
+
+    expect(req.url).toBe("/");
+  });
+});
+
+describe("_StripGatewayPrefix", () =>
+{
+  it("strips a leading /gateway segment, preserving the remainder and query", () =>
+  {
+    expect(_StripGatewayPrefix("/gateway")).toBe("/");
+    expect(_StripGatewayPrefix("/gateway/")).toBe("/");
+    expect(_StripGatewayPrefix("/gateway/socket")).toBe("/socket");
+    expect(_StripGatewayPrefix("/gateway?token=x")).toBe("/?token=x");
+  });
+
+  it("leaves a non-prefixed path untouched (backward-compatible with a bare / client)", () =>
+  {
+    expect(_StripGatewayPrefix("/")).toBe("/");
+    expect(_StripGatewayPrefix("/api")).toBe("/api");
+    expect(_StripGatewayPrefix("/gateways")).toBe("/gateways"); // not the /gateway segment
+    expect(_StripGatewayPrefix(undefined)).toBe("/");
   });
 });

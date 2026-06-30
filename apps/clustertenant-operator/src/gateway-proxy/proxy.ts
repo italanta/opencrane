@@ -46,6 +46,42 @@ export interface UpgradeDeps
 const _RESOLVE_TIMEOUT_MS = 5_000;
 
 /**
+ * External path prefix the gateway WebSocket is exposed under on the org host.
+ *
+ * Same-origin hosting (DOMAIN.T4) puts the org-admin SPA at `/` and the control plane
+ * at `/api`, so the gateway WS cannot also own `/` — it is routed at `/gateway`. The
+ * OpenClaw pod's gateway listens at `/`, so the proxy strips this prefix before
+ * forwarding (see {@link _StripGatewayPrefix}). No ingress `rewrite-target` is needed,
+ * and a legacy client connecting at `/` still works (the prefix is only stripped when
+ * present), so the change is backward-compatible.
+ */
+const _GATEWAY_PATH_PREFIX = "/gateway";
+
+/**
+ * Strip a leading `/gateway` segment from the upgrade request path so the upstream
+ * OpenClaw pod (whose gateway listens at `/`) sees the path it expects, regardless of
+ * the external routing prefix. Only strips when the prefix is actually present, so a
+ * bare `/` upgrade is forwarded unchanged.
+ *
+ * @param url - The raw upgrade request URL (path + optional query).
+ * @returns The path with any leading `/gateway` segment removed.
+ */
+export function _StripGatewayPrefix(url: string | undefined): string
+{
+  const u = typeof url === "string" && url.length > 0 ? url : "/";
+  if (u === _GATEWAY_PATH_PREFIX)
+  {
+    return "/";
+  }
+  if (u.startsWith(`${_GATEWAY_PATH_PREFIX}/`) || u.startsWith(`${_GATEWAY_PATH_PREFIX}?`))
+  {
+    const rest = u.slice(_GATEWAY_PATH_PREFIX.length);
+    return rest.startsWith("/") ? rest : `/${rest}`;
+  }
+  return u;
+}
+
+/**
  * Authorise and route a single gateway WebSocket upgrade — the proxy's only job, now
  * folded into the operator process.
  *
@@ -117,6 +153,10 @@ export async function _HandleUpgrade(deps: UpgradeDeps, req: IncomingMessage, so
 
   // 4. Strip any client-supplied identity header, inject the verified one, forward.
   delete req.headers[config.userHeader.toLowerCase()];
+  // The gateway WS is exposed at `/gateway` on the org host (the SPA owns `/`); the pod
+  // gateway listens at `/`, so drop the prefix before forwarding. Backward-compatible: a
+  // bare `/` upgrade is left untouched.
+  req.url = _StripGatewayPrefix(req.url);
   const target = `ws://${podService.name}.${podService.namespace}.${config.clusterDomain}:${config.gatewayPort}`;
   reqLog.info({ email: user.email, tenant: tenant.name, target }, "gateway upgrade authorised; proxying");
   proxy.ws(req, socket, head, { target, headers: { [config.userHeader]: user.email } }, function _onProxyError(err: Error)

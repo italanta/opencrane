@@ -3,10 +3,13 @@
 Single-per-org-host topology (DOMAIN.T4). Every org is served at its own host under the
 platform wildcard `*.<ingress.domain>` (e.g. `acme.weownai.eu`). One wildcard Ingress covers
 them all and path-routes the SAME origin:
-  - `/api/*`  → the control plane (so the OIDC session cookie is host-scoped to the org host)
-  - `/`       → the operator's in-process gateway proxy (the gateway WebSocket upgrade)
-There are NO per-user subdomains and NO per-user Ingresses; the proxy routes each socket to the
-right pod by session identity (see /auth/gateway-resolve). The org host gets an EXPLICIT
+  - `/api/*`     → the control plane (so the OIDC session cookie is host-scoped to the org host)
+  - `/gateway/*` → the operator's in-process gateway proxy (the gateway WebSocket upgrade)
+  - `/`          → free for the org-admin SPA served same-origin by the frontend layer
+The gateway WS is routed at `/gateway`, NOT `/`, so the same-origin SPA can own `/`. The proxy
+strips the prefix before forwarding (the pod gateway listens at `/`), so no rewrite-target is
+needed. There are NO per-user subdomains and NO per-user Ingresses; the proxy routes each socket
+to the right pod by session identity (see /auth/gateway-resolve). The org host gets an EXPLICIT
 external-dns record (org-domain provisioner) and rides the platform `*.<domain>` TLS cert.
 See website/security/connection-security.md.
 */ -}}
@@ -43,8 +46,10 @@ spec:
                 name: {{ include "opencrane.fullname" . }}-clustertenant-manager
                 port:
                   number: {{ .Values.clustertenantManager.service.port }}
-          # Everything else (the gateway WebSocket upgrade) → the operator's proxy Service.
-          - path: /
+          # The gateway WebSocket upgrade → the operator's proxy Service. Routed at
+          # `/gateway` (not `/`) so the same-origin SPA can own `/`; the proxy strips the
+          # prefix before forwarding to the pod (which listens at `/`).
+          - path: /gateway
             pathType: Prefix
             backend:
               service:

@@ -63,7 +63,7 @@ describe("POST /auth/pod-token (OpenClaw connection broker)", function _suite()
 		});
 	});
 
-	it("derives the gateway URL from ingressHost when no pairing is stored", async function _derived()
+	it("derives the gateway URL from ingressHost when no pairing is stored, routed at /gateway", async function _derived()
 	{
 		const prisma = _buildPrisma([{ name: "alex.oc", ingressHost: "alex.oc.example.com", configOverrides: null }]);
 		const app = _buildApp({ authUser: { sub: "u1", email: "alex@acme.com" } }, prisma);
@@ -71,7 +71,8 @@ describe("POST /auth/pod-token (OpenClaw connection broker)", function _suite()
 		const res = await request(app).post("/auth/pod-token");
 
 		expect(res.status).toBe(200);
-		expect(res.body.gatewayUrl).toBe("wss://alex.oc.example.com");
+		// Same-origin hosting: the SPA owns `/`, so the WS is exposed at `/gateway`.
+		expect(res.body.gatewayUrl).toBe("wss://alex.oc.example.com/gateway");
 	});
 
 	it("returns 401 without a session", async function _noSession()
