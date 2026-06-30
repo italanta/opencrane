@@ -236,23 +236,31 @@ enum GrantScope {
   Team       @map("team")
   Project    @map("project")
   Personal   @map("personal")
+
+  @@map("grant_scope")
 }
 
 enum GrantSubjectType {
   Group  @map("group")
   Tenant @map("tenant")
   User   @map("user")
+
+  @@map("grant_subject_type")
 }
 
 enum GrantAccess {
   Allow @map("allow")
   Deny  @map("deny")
+
+  @@map("grant_access")
 }
 
 enum GrantPayloadType {
   Awareness  @map("awareness")
   McpServer  @map("mcp-server")
   SkillBundle @map("skill-bundle")
+
+  @@map("grant_payload_type")
 }
 
 model Grant {
@@ -290,12 +298,16 @@ enum McpServerTransport {
   StreamableHttp   @map("streamable-http")
   ServerSentEvents @map("sse")
   WebSocket        @map("websocket")
+
+  @@map("mcp_server_transport")
 }
 
 enum McpServerStatus {
   Active   @map("active")
   Degraded @map("degraded")
   Draft    @map("draft")
+
+  @@map("mcp_server_status")
 }
 
 // Consumption shape advertised to the operator API: how a caller connects a
@@ -451,6 +463,8 @@ enum SkillBundleStatus {
   Published @map("published")
   Review    @map("review")
   Draft     @map("draft")
+
+  @@map("skill_bundle_status")
 }
 
 enum SkillBundleScanStatus {
@@ -465,6 +479,8 @@ enum SkillPromotionStatus {
   Proposed @map("proposed")
   Approved @map("approved")
   Rejected @map("rejected")
+
+  @@map("skill_promotion_status")
 }
 
 model SkillBundle {
@@ -538,6 +554,8 @@ enum ThirdPartySourceKind {
   AnthropicSkills  @map("anthropic-skills")
   GitRepository    @map("git-repository")
   ManualUpload     @map("manual-upload")
+
+  @@map("third_party_source_kind")
 }
 
 enum ThirdPartySourceStatus {
@@ -545,11 +563,15 @@ enum ThirdPartySourceStatus {
   Syncing         @map("syncing")
   Error           @map("error")
   PendingApproval @map("pending-approval")
+
+  @@map("third_party_source_status")
 }
 
 enum ThirdPartySourceItemKind {
   McpServer   @map("mcp-server")
   SkillBundle @map("skill-bundle")
+
+  @@map("third_party_source_item_kind")
 }
 
 model ThirdPartySource {

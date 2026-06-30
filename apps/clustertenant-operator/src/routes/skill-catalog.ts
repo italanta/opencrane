@@ -1,12 +1,48 @@
 import { Router } from "express";
 import type { Grant, SkillBundle, SkillPromotion } from "@opencrane/contracts";
-import type { PrismaClient } from "@prisma/client";
+import { GrantAccess, GrantPayloadType, GrantScope, GrantSubjectType, SkillBundleStatus, SkillPromotionStatus, type PrismaClient } from "@prisma/client";
 
 import { _log } from "../log.js";
 import { _ScanBundleContent } from "../core/scanning/scan-bundle.js";
 import { _BackfillBundlesToOci } from "../core/oci/oci-backfill.js";
 import type { OciBundleStore } from "../core/oci/oci-bundle-store.js";
 import type { SkillBundleWriteRequest, SkillEntitlementInput } from "./skill-catalog.types.js";
+
+/** Map API scope strings to the Prisma GrantScope enum used for persistence. */
+const _PRISMA_SCOPE_BY_API: Record<string, GrantScope> = {
+  org: GrantScope.Org,
+  department: GrantScope.Department,
+  team: GrantScope.Team,
+  project: GrantScope.Project,
+  personal: GrantScope.Personal,
+};
+
+/** Map API bundle status strings to the Prisma SkillBundleStatus enum. */
+const _PRISMA_BUNDLE_STATUS_BY_API: Record<string, SkillBundleStatus> = {
+  published: SkillBundleStatus.Published,
+  review: SkillBundleStatus.Review,
+  draft: SkillBundleStatus.Draft,
+};
+
+/** Map API subject-type strings to the Prisma GrantSubjectType enum. */
+const _PRISMA_SUBJECT_TYPE_BY_API: Record<string, GrantSubjectType> = {
+  group: GrantSubjectType.Group,
+  tenant: GrantSubjectType.Tenant,
+  user: GrantSubjectType.User,
+};
+
+/** Map API access strings to the Prisma GrantAccess enum. */
+const _PRISMA_ACCESS_BY_API: Record<string, GrantAccess> = {
+  allow: GrantAccess.Allow,
+  deny: GrantAccess.Deny,
+};
+
+/** Map API promotion status strings to the Prisma SkillPromotionStatus enum. */
+const _PRISMA_PROMOTION_STATUS_BY_API: Record<string, SkillPromotionStatus> = {
+  proposed: SkillPromotionStatus.Proposed,
+  approved: SkillPromotionStatus.Approved,
+  rejected: SkillPromotionStatus.Rejected,
+};
 
 /**
  * Best-effort push of a published bundle's content to the OCI store (P4D.2 dual-write).
@@ -96,6 +132,15 @@ export function skillCatalogRouter(prisma: PrismaClient, ociStore: OciBundleStor
   router.post("/", async function _createSkillBundle(req, res)
   {
     const body = req.body as SkillBundleWriteRequest;
+    const scope = _ToPrismaScope(body.scope);
+    const status = body.status ? _ToPrismaBundleStatus(body.status) : SkillBundleStatus.Draft;
+    const enumValidationError = _ValidateSkillBundleEnums(body);
+
+    if (enumValidationError)
+    {
+      res.status(400).json({ error: enumValidationError, code: "VALIDATION_ERROR" });
+      return;
+    }
 
     // Reject requests that try to create a bundle already marked published —
     // bundles must pass a scan before promotion to Published.
@@ -119,8 +164,8 @@ export function skillCatalogRouter(prisma: PrismaClient, ociStore: OciBundleStor
         description: body.description ?? "",
         version: body.version,
         digest: body.digest,
-        scope: body.scope,
-        status: body.status ?? "draft",
+        scope,
+        status,
         tags: _NormalizeStringArray(body.tags),
         ...(body.sourceId ? { sourceId: body.sourceId } : {}),
         ...(body.publishedAt ? { publishedAt: new Date(body.publishedAt) } : {}),
@@ -244,6 +289,15 @@ export function skillCatalogRouter(prisma: PrismaClient, ociStore: OciBundleStor
   router.put("/:id", async function _updateSkillBundle(req, res)
   {
     const body = req.body as Partial<SkillBundleWriteRequest>;
+    const scope = body.scope ? _ToPrismaScope(body.scope) : undefined;
+    const status = body.status ? _ToPrismaBundleStatus(body.status) : undefined;
+    const enumValidationError = _ValidateSkillBundleEnums(body);
+
+    if (enumValidationError)
+    {
+      res.status(400).json({ error: enumValidationError, code: "VALIDATION_ERROR" });
+      return;
+    }
 
     // 1. Gate: promotion to Published requires a passing scan — a published bundle is
     //    deliverable, so it must clear the vulnerability scan before it can be promoted.
@@ -284,8 +338,8 @@ export function skillCatalogRouter(prisma: PrismaClient, ociStore: OciBundleStor
         ...(body.description !== undefined ? { description: body.description ?? "" } : {}),
         ...(body.version ? { version: body.version } : {}),
         ...(body.digest ? { digest: body.digest } : {}),
-        ...(body.scope ? { scope: body.scope } : {}),
-        ...(body.status ? { status: body.status } : {}),
+        ...(scope ? { scope } : {}),
+        ...(status ? { status } : {}),
         ...(body.tags ? { tags: _NormalizeStringArray(body.tags) } : {}),
         ...(body.sourceId !== undefined ? { sourceId: body.sourceId } : {}),
         ...(body.publishedAt !== undefined ? { publishedAt: body.publishedAt ? new Date(body.publishedAt) : null } : {}),
@@ -352,20 +406,25 @@ async function _WriteSkillBundleChildren(prisma: PrismaClient, bundleId: string,
 {
   if (body.promotions && body.promotions.length > 0)
   {
+    const promotions = body.promotions.map(function _toPrismaPromotion(promotion)
+    {
+      const fromScope = _ToPrismaScope(promotion.fromScope);
+      const toScope = _ToPrismaScope(promotion.toScope);
+      const status = promotion.status ? _ToPrismaPromotionStatus(promotion.status) : SkillPromotionStatus.Proposed;
+      return {
+        skillBundleId: bundleId,
+        fromScope,
+        toScope,
+        promotedBy: promotion.promotedBy,
+        status,
+        notes: promotion.notes,
+      };
+    });
+
     await (prisma as unknown as {
       skillPromotion: { createMany: (args: { data: Array<Record<string, unknown>> }) => Promise<unknown> };
     }).skillPromotion.createMany({
-      data: body.promotions.map(function _mapPromotion(promotion)
-      {
-        return {
-          skillBundleId: bundleId,
-          fromScope: promotion.fromScope,
-          toScope: promotion.toScope,
-          promotedBy: promotion.promotedBy,
-          status: promotion.status ?? "proposed",
-          notes: promotion.notes,
-        };
-      }),
+      data: promotions,
     });
   }
 
@@ -377,32 +436,36 @@ async function _WriteSkillBundleChildren(prisma: PrismaClient, bundleId: string,
   const entitlementRows: Array<Record<string, unknown>> = [];
   for (const grant of body.grants)
   {
+    const scope = _ToPrismaScope(grant.scope);
+    const subjectType = _ToPrismaSubjectType(grant.subjectType);
+    const access = _ToPrismaAccess(grant.access);
+
     const genericGrant = await (prisma as unknown as {
       grant: { create: (args: { data: Record<string, unknown> }) => Promise<{ id: string }> };
     }).grant.create({
       data: {
-        payloadType: "skill-bundle",
+        payloadType: GrantPayloadType.SkillBundle,
         payloadId: bundleId,
-        scope: grant.scope,
-        subjectType: grant.subjectType,
+        scope,
+        subjectType,
         subjectId: _ResolveGrantSubjectId(grant),
-        access: grant.access,
+        access,
         priority: grant.priority ?? 0,
         note: grant.note,
-        ...(grant.subjectType === "group" ? { groupId: _ResolveGrantSubjectId(grant) } : {}),
+        ...(subjectType === GrantSubjectType.Group ? { groupId: _ResolveGrantSubjectId(grant) } : {}),
         skillBundleId: bundleId,
       },
     });
     entitlementRows.push({
       skillBundleId: bundleId,
       grantId: genericGrant.id,
-      scope: grant.scope,
-      subjectType: grant.subjectType,
+      scope,
+      subjectType,
       subjectId: _ResolveGrantSubjectId(grant),
-      access: grant.access,
+      access,
       priority: grant.priority ?? 0,
       note: grant.note,
-      ...(grant.subjectType === "group" ? { groupId: _ResolveGrantSubjectId(grant) } : {}),
+      ...(subjectType === GrantSubjectType.Group ? { groupId: _ResolveGrantSubjectId(grant) } : {}),
     });
   }
 
@@ -501,6 +564,85 @@ function _NormalizeStringArray(values: string[] | undefined): string[]
   {
     return value.length > 0;
   })));
+}
+
+/** Translate an API scope string to the Prisma GrantScope enum. */
+function _ToPrismaScope(scope: string | undefined): GrantScope | undefined
+{
+  return scope ? _PRISMA_SCOPE_BY_API[scope] : undefined;
+}
+
+/** Translate an API bundle status string to the Prisma SkillBundleStatus enum. */
+function _ToPrismaBundleStatus(status: string | undefined): SkillBundleStatus | undefined
+{
+  return status ? _PRISMA_BUNDLE_STATUS_BY_API[status] : undefined;
+}
+
+/** Translate an API subject-type string to the Prisma GrantSubjectType enum. */
+function _ToPrismaSubjectType(subjectType: string | undefined): GrantSubjectType | undefined
+{
+  return subjectType ? _PRISMA_SUBJECT_TYPE_BY_API[subjectType] : undefined;
+}
+
+/** Translate an API access string to the Prisma GrantAccess enum. */
+function _ToPrismaAccess(access: string | undefined): GrantAccess | undefined
+{
+  return access ? _PRISMA_ACCESS_BY_API[access] : undefined;
+}
+
+/** Translate an API promotion-status string to the Prisma SkillPromotionStatus enum. */
+function _ToPrismaPromotionStatus(status: string | undefined): SkillPromotionStatus | undefined
+{
+  return status ? _PRISMA_PROMOTION_STATUS_BY_API[status] : undefined;
+}
+
+/**
+ * Validate all enum-backed skill payload fields before Prisma writes.
+ *
+ * @param body - Create/update request body.
+ * @returns Human-readable validation error, or null when valid.
+ */
+function _ValidateSkillBundleEnums(body: Partial<SkillBundleWriteRequest>): string | null
+{
+  if (body.scope && !_ToPrismaScope(body.scope))
+  {
+    return "scope must be one of org|department|team|project|personal";
+  }
+
+  if (body.status && !_ToPrismaBundleStatus(body.status))
+  {
+    return "status must be one of published|review|draft";
+  }
+
+  for (const grant of body.grants ?? [])
+  {
+    if (!_ToPrismaScope(grant.scope))
+    {
+      return "grant scope must be one of org|department|team|project|personal";
+    }
+    if (!_ToPrismaSubjectType(grant.subjectType))
+    {
+      return "grant subjectType must be one of group|tenant|user";
+    }
+    if (!_ToPrismaAccess(grant.access))
+    {
+      return "grant access must be one of allow|deny";
+    }
+  }
+
+  for (const promotion of body.promotions ?? [])
+  {
+    if (!_ToPrismaScope(promotion.fromScope) || !_ToPrismaScope(promotion.toScope))
+    {
+      return "promotion scopes must be one of org|department|team|project|personal";
+    }
+    if (promotion.status && !_ToPrismaPromotionStatus(promotion.status))
+    {
+      return "promotion status must be one of proposed|approved|rejected";
+    }
+  }
+
+  return null;
 }
 
 /**

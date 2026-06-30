@@ -39,7 +39,7 @@ export function _RegisterSkills(parent: Command, getConfig: () => CliConfig): vo
     .command("create")
     .description("Create a new skill bundle")
     .requiredOption("--name <name>", "Bundle name")
-    .requiredOption("--version <version>", "Semantic version (e.g. 1.0.0)")
+    .requiredOption("--bundle-version <version>", "Semantic version (e.g. 1.0.0)")
     .requiredOption("--digest <digest>", "Immutable OCI digest (sha256:...)")
     .option("--scope <scope>", "Scope: org|team|project|personal", "org")
     .option("--description <desc>", "Human-readable description")
@@ -48,7 +48,7 @@ export function _RegisterSkills(parent: Command, getConfig: () => CliConfig): vo
     .option("-o, --output <format>", "Output format: table|json", "table")
     .action(async function _create(opts: {
       name: string;
-      version: string;
+      bundleVersion: string;
       digest: string;
       scope: string;
       description?: string;
@@ -61,7 +61,7 @@ export function _RegisterSkills(parent: Command, getConfig: () => CliConfig): vo
         ? JSON.parse(opts.body)
         : {
             name: opts.name,
-            version: opts.version,
+            version: opts.bundleVersion,
             digest: opts.digest,
             scope: opts.scope,
             ...(opts.description ? { description: opts.description } : {}),
@@ -78,7 +78,7 @@ export function _RegisterSkills(parent: Command, getConfig: () => CliConfig): vo
     .command("update <id>")
     .description("Update a skill bundle (pass --body JSON or individual flags)")
     .option("--name <name>", "New bundle name")
-    .option("--version <version>", "New version")
+    .option("--bundle-version <version>", "New version")
     .option("--digest <digest>", "New digest")
     .option("--scope <scope>", "New scope")
     .option("--status <status>", "New status: draft|published|deprecated")
@@ -86,7 +86,7 @@ export function _RegisterSkills(parent: Command, getConfig: () => CliConfig): vo
     .option("-o, --output <format>", "Output format: table|json", "table")
     .action(async function _update(id: string, opts: {
       name?: string;
-      version?: string;
+      bundleVersion?: string;
       digest?: string;
       scope?: string;
       status?: string;
@@ -98,7 +98,7 @@ export function _RegisterSkills(parent: Command, getConfig: () => CliConfig): vo
         ? JSON.parse(opts.body)
         : {
             ...(opts.name ? { name: opts.name } : {}),
-            ...(opts.version ? { version: opts.version } : {}),
+            ...(opts.bundleVersion ? { version: opts.bundleVersion } : {}),
             ...(opts.digest ? { digest: opts.digest } : {}),
             ...(opts.scope ? { scope: opts.scope } : {}),
             ...(opts.status ? { status: opts.status } : {}),
