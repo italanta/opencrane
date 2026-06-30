@@ -115,6 +115,17 @@ describe("mcp-servers router — _RequireOrgAdmin gate (P0.5)", function _suite(
     expect(spies["mcpServer.delete"]).toHaveBeenCalled();
   });
 
+  it("returns 400 when an org-admin omits the required scope on create", async function _missingScope()
+  {
+    const { prisma, spies } = _mockPrisma();
+    const res = await request(_buildApp(prisma, { isOrgAdmin: true }))
+      .post("/api/v1/mcp-servers").send({ name: "x", endpoint: "https://e", transport: "streamable-http" });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ code: "VALIDATION_ERROR", error: "scope is required" });
+    expect(spies["mcpServer.create"]).toBeUndefined();
+  });
+
   it("opens the gate under dev mode when no session and no real auth is configured", async function _devOpen()
   {
     const { prisma } = _mockPrisma();

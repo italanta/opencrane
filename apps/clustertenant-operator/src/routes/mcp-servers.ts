@@ -6,6 +6,37 @@ import { _RequireOrgAdmin } from "@opencrane/infra-auth";
 import type { McpServerCredentialInput, McpServerWriteRequest } from "./mcp-servers.types.js";
 
 /**
+ * Validate the minimum MCP server create payload before it reaches Prisma.
+ *
+ * @param body - Untrusted route payload supplied by the caller.
+ * @returns A human-readable validation error when the request is incomplete.
+ */
+function _validateCreateBody(body: McpServerWriteRequest): string | null
+{
+  if (!(typeof body.name === "string" && body.name.trim()))
+  {
+    return "name is required";
+  }
+
+  if (!(typeof body.endpoint === "string" && body.endpoint.trim()))
+  {
+    return "endpoint is required";
+  }
+
+  if (!(typeof body.scope === "string" && body.scope.trim()))
+  {
+    return "scope is required";
+  }
+
+  if (!(typeof body.transport === "string" && body.transport.trim()))
+  {
+    return "transport is required";
+  }
+
+  return null;
+}
+
+/**
  * CRUD router for the MCP server catalog.
  *
  * **Authorization (P0.5):** curating the catalogue is an org-admin action, so the
@@ -46,6 +77,13 @@ export function mcpServersRouter(prisma: PrismaClient): Router
     try
     {
       const body = req.body as McpServerWriteRequest;
+      const validationError = _validateCreateBody(body);
+      if (validationError)
+      {
+        res.status(400).json({ error: validationError, code: "VALIDATION_ERROR" });
+        return;
+      }
+
       res.status(201).json(await createMcpServer(prisma, body));
     }
     catch (err)

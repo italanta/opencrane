@@ -40,20 +40,27 @@ export function _RegisterMcpServers(parent: Command, getConfig: () => CliConfig)
     .description("Create a new MCP server")
     .requiredOption("--name <name>", "Display name")
     .requiredOption("--endpoint <endpoint>", "Server endpoint URL")
+    .option("--scope <scope>", "Scope: org|department|project|personal")
     .option("--transport <transport>", "Transport: streamable-http|sse|websocket", "streamable-http")
     .option("--body <json>", "Full JSON payload (overrides individual flags)")
     .option("-o, --output <format>", "Output format: table|json", "table")
     .action(async function _create(opts: {
       name: string;
       endpoint: string;
+      scope?: string;
       transport: string;
       body?: string;
       output: OutputFormat;
     })
     {
+      if (!opts.body && !opts.scope)
+      {
+        _PrintApiError("mcp create", { error: "scope is required unless --body is used", code: "VALIDATION_ERROR" });
+      }
+
       const body = opts.body
         ? JSON.parse(opts.body)
-        : { name: opts.name, endpoint: opts.endpoint, transport: opts.transport };
+        : { name: opts.name, endpoint: opts.endpoint, scope: opts.scope, transport: opts.transport };
 
       const client = _MakeClient(getConfig());
       const { data, error } = await client.POST("/mcp-servers", { body });
