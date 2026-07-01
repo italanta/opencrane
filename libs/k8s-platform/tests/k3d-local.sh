@@ -329,6 +329,18 @@ if kubectl get deployment/opencrane-silo-litellm -n "$NAMESPACE" >/dev/null 2>&1
   _wait_for_rollout "deployment/opencrane-silo-litellm"
 fi
 
+if kubectl get deployment/opencrane-silo-cognee -n "$NAMESPACE" >/dev/null 2>&1; then
+  _wait_for_rollout "deployment/opencrane-silo-cognee"
+fi
+
+if kubectl get deployment/opencrane-silo-mcp-gateway -n "$NAMESPACE" >/dev/null 2>&1; then
+  _wait_for_rollout "deployment/opencrane-silo-mcp-gateway"
+fi
+
+if kubectl get deployment/opencrane-silo-skill-registry -n "$NAMESPACE" >/dev/null 2>&1; then
+  _wait_for_rollout "deployment/opencrane-silo-skill-registry"
+fi
+
 echo "[local] PASS: local full-stack install succeeded"
 echo "[local] Cluster: $CLUSTER_NAME"
 echo "[local] Namespace: $NAMESPACE"
