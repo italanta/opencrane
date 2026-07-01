@@ -14,6 +14,14 @@ DB_SECRET_NAME="${DB_SECRET_NAME:-opencrane-db}"
 DB_PASSWORD="${DB_PASSWORD:-opencrane-local-password}"
 LITELLM_SECRET_NAME="${LITELLM_SECRET_NAME:-opencrane-litellm}"
 LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY:-opencrane-local-master-key}"
+LANGFUSE_SECRET_NAME="${LANGFUSE_SECRET_NAME:-opencrane-langfuse}"
+LANGFUSE_NEXTAUTH_SECRET="${LANGFUSE_NEXTAUTH_SECRET:-opencrane-local-langfuse-nextauth-secret}"
+LANGFUSE_SALT="${LANGFUSE_SALT:-opencrane-local-langfuse-salt}"
+LANGFUSE_ENCRYPTION_KEY="${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}"
+LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY:-pk-lf-opencrane-local-public-key}"
+LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY:-sk-lf-opencrane-local-secret-key}"
+LANGFUSE_ADMIN_PASSWORD="${LANGFUSE_ADMIN_PASSWORD:-opencrane-local-langfuse-admin-password}"
+LANGFUSE_CH_PASSWORD="${LANGFUSE_CH_PASSWORD:-opencrane-local-langfuse-clickhouse-password}"
 
 function _require_cmd()
 {
@@ -111,21 +119,29 @@ docker build -f "$ROOT_DIR/apps/tenant/deploy/Dockerfile" -t opencrane/tenant:lo
 echo "[local] Building control-plane image"
 docker build -f "$ROOT_DIR/apps/clustertenant-operator/deploy/Dockerfile" -t opencrane/clustertenant-manager:local "$ROOT_DIR"
 
+echo "[local] Building skill-registry image"
+docker build -f "$ROOT_DIR/apps/skill-registry/deploy/Dockerfile" -t opencrane/skill-registry:local "$ROOT_DIR"
+
 # 3. Create a fresh cluster for a deterministic full-stack install.
 echo "[local] Recreating k3d cluster '$CLUSTER_NAME'"
 k3d cluster delete "$CLUSTER_NAME" >/dev/null 2>&1 || true
 k3d cluster create "$CLUSTER_NAME" --agents 1
 
-# 4a. Pre-pulling the official CloudNativePG database image.
-echo "[local] Pre-pulling official CloudNativePG database image"
+# 4a. Pre-pulling the official CloudNativePG database and plane images.
+echo "[local] Pre-pulling official third-party database and plane images"
 docker pull ghcr.io/cloudnative-pg/postgresql:16
+docker pull cognee/cognee:1.2.1
+docker pull ghcr.io/obot-platform/obot:v0.23.1
 
-# 4b. Import locally built images into the k3d runtime.
+# 4b. Import locally built and pre-pulled images into the k3d runtime.
 echo "[local] Importing images into k3d"
 k3d image import opencrane/operator:local --cluster "$CLUSTER_NAME"
 k3d image import opencrane/tenant:local --cluster "$CLUSTER_NAME"
 k3d image import opencrane/clustertenant-manager:local --cluster "$CLUSTER_NAME"
+k3d image import opencrane/skill-registry:local --cluster "$CLUSTER_NAME"
 k3d image import ghcr.io/cloudnative-pg/postgresql:16 --cluster "$CLUSTER_NAME"
+k3d image import cognee/cognee:1.2.1 --cluster "$CLUSTER_NAME"
+k3d image import ghcr.io/obot-platform/obot:v0.23.1 --cluster "$CLUSTER_NAME"
 
 echo "[local] Using profile '$LOCAL_PROFILE' with values '$VALUES_FILE'"
 
@@ -175,6 +191,7 @@ spec:
         # The silo (clustertenant) control-plane is a SEPARATE Prisma client from the fleet
         # registry — they cannot share a database (each owns its own _prisma_migrations).
         - CREATE DATABASE silo OWNER opencrane;
+        $( if grep -A 5 "langfuse:" "$VALUES_FILE" 2>/dev/null | grep -A 5 "inCluster:" | grep -q "enabled: true"; then echo "        - CREATE DATABASE langfuse OWNER opencrane;"; fi )
 EOF
 
 echo "[local] Waiting for Control-Plane Database Engine to stabilize..."
@@ -195,7 +212,7 @@ kubectl create secret generic "opencrane-silo-db" \
   -o yaml | kubectl apply -f -
 
 echo "[local] Bootstrapping credentials secret for Obot MCP Gateway"
-kubectl create secret generic "opencrane-obot" \
+kubectl create secret generic "opencrane-silo-obot" \
   -n "$NAMESPACE" \
   --from-literal=dsn="postgresql://opencrane:${DB_PASSWORD}@${DB_RELEASE_NAME}-rw.${NAMESPACE}.svc.cluster.local:5432/obot" \
   --dry-run=client \
@@ -208,6 +225,20 @@ kubectl create secret generic "opencrane-litellm-db" \
   --dry-run=client \
   -o yaml | kubectl apply -f -
 
+if grep -A 5 "langfuse:" "$VALUES_FILE" 2>/dev/null | grep -A 5 "inCluster:" | grep -q "enabled: true"; then
+  echo "[local] Bootstrapping credentials secret for Langfuse"
+  kubectl create secret generic "opencrane-langfuse" \
+    -n "$NAMESPACE" \
+    --from-literal=NEXTAUTH_SECRET="$LANGFUSE_NEXTAUTH_SECRET" \
+    --from-literal=SALT="$LANGFUSE_SALT" \
+    --from-literal=ENCRYPTION_KEY="$LANGFUSE_ENCRYPTION_KEY" \
+    --from-literal=CLICKHOUSE_PASSWORD="$LANGFUSE_CH_PASSWORD" \
+    --from-literal=LANGFUSE_INIT_PROJECT_PUBLIC_KEY="$LANGFUSE_PUBLIC_KEY" \
+    --from-literal=LANGFUSE_INIT_PROJECT_SECRET_KEY="$LANGFUSE_SECRET_KEY" \
+    --from-literal=LANGFUSE_INIT_USER_PASSWORD="$LANGFUSE_ADMIN_PASSWORD" \
+    --dry-run=client \
+    -o yaml | kubectl apply -f -
+fi
 
 if [[ "$LOCAL_PROFILE" == "strict" ]]; then
   kubectl create secret generic "$LITELLM_SECRET_NAME" \
@@ -296,6 +327,18 @@ _wait_for_rollout "deployment/opencrane-silo-clustertenant-manager"
 
 if kubectl get deployment/opencrane-silo-litellm -n "$NAMESPACE" >/dev/null 2>&1; then
   _wait_for_rollout "deployment/opencrane-silo-litellm"
+fi
+
+if kubectl get deployment/opencrane-silo-cognee -n "$NAMESPACE" >/dev/null 2>&1; then
+  _wait_for_rollout "deployment/opencrane-silo-cognee"
+fi
+
+if kubectl get deployment/opencrane-silo-mcp-gateway -n "$NAMESPACE" >/dev/null 2>&1; then
+  _wait_for_rollout "deployment/opencrane-silo-mcp-gateway"
+fi
+
+if kubectl get deployment/opencrane-silo-skill-registry -n "$NAMESPACE" >/dev/null 2>&1; then
+  _wait_for_rollout "deployment/opencrane-silo-skill-registry"
 fi
 
 echo "[local] PASS: local full-stack install succeeded"
