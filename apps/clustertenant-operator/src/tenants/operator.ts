@@ -10,7 +10,7 @@ import { TenantPolicyResolutionState, TenantStatusPhase } from "./models/tenant-
 import { __IsK8sForbidden, __K8sApplyResource } from "@opencrane/infra-api";
 import { _RunWatchLoop, K8sWatchEventType } from "@opencrane/infra-api";
 import { OPENCRANE_API_GROUP, OPENCRANE_API_VERSION, TENANT_CRD_PLURAL } from "@opencrane/infra-api";
-import { _BuildClusterTenantLimitRange, _BuildClusterTenantNamespace, _BuildClusterTenantResourceQuota, _BuildConfigMap, _BuildDeployment, _BuildGatewayNetworkPolicy, _BuildService, _BuildServiceAccount, _BuildSiloBaselineNetworkPolicy, _BuildSiloLinkerdIdentityPolicy, _BuildStatePvc } from "./deploy/index.js";
+import { _BuildClusterTenantLimitRange, _BuildClusterTenantNamespace, _BuildClusterTenantResourceQuota, _BuildConfigMap, _BuildDeployment, _BuildGatewayNetworkPolicy, _BuildService, _BuildServiceAccount, _BuildSiloBaselineNetworkPolicy, _BuildSiloLinkerdIdentityPolicy, _BuildStatePvc, _ConfigChecksum } from "./deploy/index.js";
 import { TenantCleanup } from "./destroy/tenant-cleanup.js";
 import { LinkerdIdentityClient } from "./internal/linkerd-identity.client.js";
 
@@ -335,8 +335,16 @@ export class TenantOperator
       }
 
       // 5. ConfigMap — serialises the base OpenClaw JSON config merged with any
-      //    spec.configOverrides the tenant author provided.
-      await __K8sApplyResource(this.coreApi, _BuildConfigMap(this.config, effectiveTenant, namespace, policyResolution.effectivePolicy, modelSet, ingressDomain), this.log);
+      //    spec.configOverrides the tenant author provided. Capture it so its
+      //    checksum can roll the pod when the config changes (step 7).
+      const configMap = _BuildConfigMap(this.config, effectiveTenant, namespace, policyResolution.effectivePolicy, modelSet, ingressDomain);
+      await __K8sApplyResource(this.coreApi, configMap, this.log);
+      // Checksum of the rendered config — stamped on the pod template so a config
+      // change (e.g. a newly-registered BYOK default model landing in openclaw.json)
+      // rolls the pod. Without this, a mounted ConfigMap update never restarts the
+      // running OpenClaw process, which reads openclaw.json only at startup — so a
+      // pod that booted before its models existed stays on the keyless fallback.
+      const configChecksum = _ConfigChecksum(configMap);
 
       // 6. State volume — adapter decides CSI mount (cloud) vs PVC (on-prem).
       //    Create the PVC only when the adapter requests it (on-prem path).
@@ -348,7 +356,7 @@ export class TenantOperator
 
       // 7. Deployment — single-replica pod running the tenant's OpenClaw gateway.
       //    Mounts the ConfigMap, encryption key, state volume, and projected identity tokens.
-      await __K8sApplyResource(this.appsApi, _BuildDeployment(this.config, stateVolume, effectiveTenant, namespace, compute), this.log);
+      await __K8sApplyResource(this.appsApi, _BuildDeployment(this.config, stateVolume, effectiveTenant, namespace, compute, configChecksum), this.log);
 
       // 8. Service — ClusterIP that makes the gateway reachable inside the cluster
       //    on the configured gateway port.

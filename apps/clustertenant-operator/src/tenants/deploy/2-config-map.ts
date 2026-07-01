@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -243,6 +244,28 @@ export function _BuildConfigMap(config: OpenClawTenantOperatorConfig, tenant: Te
       "USER.md.seed": _ReadWorkspaceTemplate("USER.md.seed"),
     },
   };
+}
+
+/**
+ * Deterministic SHA-256 over a ConfigMap's `data` block, for the pod-template
+ * `opencrane.io/config-checksum` annotation (see `_BuildDeployment`).
+ *
+ * WHY: OpenClaw reads `openclaw.json` only at process START. A mounted ConfigMap
+ * update (e.g. a newly-registered BYOK default model landing in the `models`
+ * block) refreshes the file on disk but does NOT restart the running process, so
+ * a pod that booted before its models existed stays on the keyless
+ * `gateway-injected` fallback forever. Stamping this digest on the pod template
+ * makes any config change alter the template → the Recreate strategy rolls the
+ * pod → OpenClaw re-reads the config and picks up the LiteLLM default model.
+ *
+ * Keys are sorted so the digest is stable across reconciles (no spurious rolls);
+ * the values are the already-deterministic rendered config strings.
+ */
+export function _ConfigChecksum(configMap: k8s.V1ConfigMap): string
+{
+  const data = configMap.data ?? {};
+  const canonical = JSON.stringify(data, Object.keys(data).sort());
+  return createHash("sha256").update(canonical).digest("hex");
 }
 
 /**

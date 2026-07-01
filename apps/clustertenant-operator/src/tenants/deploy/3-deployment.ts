@@ -24,9 +24,15 @@ import { _BuildClusterTenantScheduling } from "./cluster-tenant-scheduling.js";
  * @param compute - Optional ClusterTenant compute placement; when `dedicated`
  *   with a node pool, the pod is pinned to that pool. Omitted/shared leaves the
  *   pod unconstrained, keeping ref-less openclaws byte-for-byte unchanged.
+ * @param configChecksum - Optional SHA of the tenant ConfigMap (`_ConfigChecksum`).
+ *   When set it is stamped as the pod-template `opencrane.io/config-checksum`
+ *   annotation so a config change (e.g. a newly-registered BYOK default model)
+ *   rolls the pod — a mounted ConfigMap update alone does not restart OpenClaw,
+ *   which reads `openclaw.json` only at startup. Omitted ⇒ no annotation, so the
+ *   suspend path and existing tests render byte-for-byte unchanged.
  */
 export function _BuildDeployment(config: OpenClawTenantOperatorConfig, stateVolume: TenantStateVolume, tenant: Tenant,
-                                 namespace: string, compute?: ClusterTenantComputeView): k8s.V1Deployment
+                                 namespace: string, compute?: ClusterTenantComputeView, configChecksum?: string): k8s.V1Deployment
 {
   const name = tenant.metadata!.name!;
   const image = tenant.spec.openclawImage ?? config.tenantDefaultImage;
@@ -169,6 +175,9 @@ export function _BuildDeployment(config: OpenClawTenantOperatorConfig, stateVolu
             "opencrane.io/tenant": name,
             ...(tenant.spec.team ? { "opencrane.io/team": tenant.spec.team } : {}),
           },
+          // Roll the pod when the tenant config changes (OpenClaw reads openclaw.json
+          // only at startup). Omitted when no checksum is supplied (suspend path).
+          ...(configChecksum ? { annotations: { "opencrane.io/config-checksum": configChecksum } } : {}),
         },
         spec: {
           // 4. Pod defaults — enforce the baseline runtime hardening profile

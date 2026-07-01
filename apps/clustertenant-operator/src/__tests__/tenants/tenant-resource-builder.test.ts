@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { defaultConfig, gcpConfig, gcpAdapter, onPremAdapter, _makeAccessPolicy, _makeTenant } from "../fixtures.js";
-import { _BuildClusterTenantLimitRange, _BuildClusterTenantNamespace, _BuildClusterTenantResourceQuota, _BuildClusterTenantScheduling, _BuildConfigMap, _BuildDeployment, _BuildGatewayNetworkPolicy, _BuildServiceAccount, _BuildSiloBaselineNetworkPolicy, _BuildSiloLinkerdIdentityPolicy, _BuildStatePvc } from "../../tenants/deploy/index.js";
+import { _BuildClusterTenantLimitRange, _BuildClusterTenantNamespace, _BuildClusterTenantResourceQuota, _BuildClusterTenantScheduling, _BuildConfigMap, _BuildDeployment, _BuildGatewayNetworkPolicy, _BuildServiceAccount, _BuildSiloBaselineNetworkPolicy, _BuildSiloLinkerdIdentityPolicy, _BuildStatePvc, _ConfigChecksum } from "../../tenants/deploy/index.js";
 
 describe("TenantResourceBuilder", () =>
 {
@@ -554,5 +554,34 @@ describe("ClusterTenant isolation builders (CT.5)", () =>
 
     expect(podSpec?.nodeSelector).toBeUndefined();
     expect(podSpec?.tolerations).toBeUndefined();
+  });
+});
+
+describe("config checksum → pod roll", () =>
+{
+  const _annotations = (config: string | undefined) =>
+    _BuildDeployment(defaultConfig, onPremAdapter.buildStateVolume("jente"), _makeTenant("jente"), "default", undefined, config)
+      .spec?.template?.metadata?.annotations;
+
+  it("computes a deterministic, config-sensitive digest", () =>
+  {
+    const cmA = _BuildConfigMap(defaultConfig, _makeTenant("jente"), "default");
+    const cmAAgain = _BuildConfigMap(defaultConfig, _makeTenant("jente"), "default");
+    const cmB = _BuildConfigMap(defaultConfig, _makeTenant("other"), "default");
+
+    // Stable across identical renders (no spurious rolls), and changes with the config.
+    expect(_ConfigChecksum(cmA)).toBe(_ConfigChecksum(cmAAgain));
+    expect(_ConfigChecksum(cmA)).not.toBe(_ConfigChecksum(cmB));
+    expect(_ConfigChecksum(cmA)).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("stamps the checksum on the pod template so a config change rolls the pod", () =>
+  {
+    expect(_annotations("abc123")).toEqual({ "opencrane.io/config-checksum": "abc123" });
+  });
+
+  it("omits the annotation when no checksum is supplied (suspend path unchanged)", () =>
+  {
+    expect(_annotations(undefined)).toBeUndefined();
   });
 });
