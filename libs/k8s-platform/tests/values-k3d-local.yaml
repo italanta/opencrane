@@ -19,6 +19,12 @@ tenant:
     tag: local
     pullPolicy: IfNotPresent
 
+skillRegistry:
+  image:
+    repository: opencrane/skill-registry
+    tag: local
+    pullPolicy: IfNotPresent
+
 sharedSkills:
   enabled: true
   pvc:

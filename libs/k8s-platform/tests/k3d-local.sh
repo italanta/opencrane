@@ -119,6 +119,9 @@ docker build -f "$ROOT_DIR/apps/tenant/deploy/Dockerfile" -t opencrane/tenant:lo
 echo "[local] Building control-plane image"
 docker build -f "$ROOT_DIR/apps/clustertenant-operator/deploy/Dockerfile" -t opencrane/clustertenant-manager:local "$ROOT_DIR"
 
+echo "[local] Building skill-registry image"
+docker build -f "$ROOT_DIR/apps/skill-registry/deploy/Dockerfile" -t opencrane/skill-registry:local "$ROOT_DIR"
+
 # 3. Create a fresh cluster for a deterministic full-stack install.
 echo "[local] Recreating k3d cluster '$CLUSTER_NAME'"
 k3d cluster delete "$CLUSTER_NAME" >/dev/null 2>&1 || true
@@ -133,6 +136,7 @@ echo "[local] Importing images into k3d"
 k3d image import opencrane/operator:local --cluster "$CLUSTER_NAME"
 k3d image import opencrane/tenant:local --cluster "$CLUSTER_NAME"
 k3d image import opencrane/clustertenant-manager:local --cluster "$CLUSTER_NAME"
+k3d image import opencrane/skill-registry:local --cluster "$CLUSTER_NAME"
 k3d image import ghcr.io/cloudnative-pg/postgresql:16 --cluster "$CLUSTER_NAME"
 
 echo "[local] Using profile '$LOCAL_PROFILE' with values '$VALUES_FILE'"
