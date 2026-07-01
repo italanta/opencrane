@@ -52,14 +52,20 @@ async function _registerLive(endpoint: string, masterKey: string, input: LiteLlm
 {
   try
   {
-    // 2. Register the deployment GLOBALLY. `api_key` is an `os.environ/<KEY>` reference so the
-    //    raw key never transits OpenCrane — LiteLLM reads it from its own synced environment.
+    // 2. Register the deployment GLOBALLY. Prefer the BYOK dynamic path: when a credential name is
+    //    bound, reference it via `litellm_credential_name` so LiteLLM resolves the key from its
+    //    encrypted store. Otherwise fall back to the env baseline — `api_key` as an `os.environ/<KEY>`
+    //    reference so the raw key never transits OpenCrane (LiteLLM reads it from its own environment).
     const litellmParams: Record<string, unknown> = { model: input.upstreamModel };
     if (input.apiBase)
     {
       litellmParams.api_base = input.apiBase;
     }
-    if (input.apiKeyEnvRef)
+    if (input.litellmCredentialName)
+    {
+      litellmParams.litellm_credential_name = input.litellmCredentialName;
+    }
+    else if (input.apiKeyEnvRef)
     {
       litellmParams.api_key = `os.environ/${input.apiKeyEnvRef}`;
     }

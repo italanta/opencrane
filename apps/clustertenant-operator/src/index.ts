@@ -28,6 +28,8 @@ import { TenantProjectionRepairer } from "./infra/tenant-projection-repairer.js"
 // namespace, so a silo stands on its own; the fleet-manager watches only the cluster-scoped
 // ClusterTenant CR and nothing inside a silo.
 import { _LoadOperatorConfig } from "./config.js";
+import type { OpenClawTenantOperatorConfig } from "./config.js";
+import { _ProvisionByokKey } from "./core/model-routing/provision-byok-key.js";
 import { _CreateTenantOperator, IdleChecker } from "./tenants/index.js";
 import { PolicyOperator } from "./policies/operator.js";
 import { RuntimePlaneDriftRepairer } from "./runtime-planes/drift-repairer.js";
@@ -158,12 +160,49 @@ let _gatewayProxyRef: GatewayProxyServer | null = null;
  * management API + health endpoint stay up so the misconfiguration is diagnosable rather than
  * crash-looping.
  */
+/**
+ * Optional boot-time bootstrap of this silo's OpenAI BYOK key, gated on the
+ * `OPENCRANE_BOOTSTRAP_OPENAI_KEY` env var (injected from a deploy Secret — never hardcoded). When
+ * set, provisions it as the silo's Global OpenAI key via the same path as the BYOK route: writes the
+ * encrypted Secret, registers the LiteLLM credential, and seeds a default model. Idempotent (upsert)
+ * so re-running on every boot is safe, and best-effort so a hiccup never blocks controller startup.
+ *
+ * Intended for short-lived testing: populate the deploy Secret to light a silo up, then delete it to
+ * stop re-applying (the live key is removed via the BYOK delete endpoint / Model Keys UI, not by
+ * clearing the env). The raw key is never logged.
+ *
+ * @param config - Operator config; supplies the operator's own namespace for the Secret write.
+ */
+async function _BootstrapProviderKeyIfConfigured(config: OpenClawTenantOperatorConfig): Promise<void>
+{
+  const apiKey = process.env.OPENCRANE_BOOTSTRAP_OPENAI_KEY?.trim();
+  if (!apiKey)
+  {
+    return;
+  }
+
+  try
+  {
+    const result = await _ProvisionByokKey({ prisma, coreApi, operatorNamespace: config.operatorNamespace, provider: "openai", apiKey, log });
+    log.info({ provider: "openai", litellmRegistered: result.litellmRegistered }, "bootstrap provider key provisioned for silo");
+  }
+  catch (err)
+  {
+    log.warn({ err }, "bootstrap provider key provisioning failed; continuing boot");
+  }
+}
+
 async function _startInSiloControllers(): Promise<void>
 {
   try
   {
     const config = _LoadOperatorConfig();
     log.info({ watchNamespace: config.watchNamespace }, "starting in-silo controllers");
+
+    // Optional test bootstrap — provision this silo's OpenAI BYOK key from an injected env var
+    // (sourced from a deploy Secret), BEFORE the default-tenant seed so the model it seeds satisfies
+    // the seed's ≥1-model onboarding gate and the silo comes up usable. Awaited for that ordering.
+    await _BootstrapProviderKeyIfConfigured(config);
 
     // Seed this silo's own `<org>-default` workspace Tenant from its ClusterTenant CR owner.
     // Use config.watchNamespace (the namespace the operators below reconcile in) so the seed

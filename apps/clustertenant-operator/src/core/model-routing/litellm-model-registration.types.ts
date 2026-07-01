@@ -18,4 +18,10 @@ export interface LiteLlmModelRegistration
   apiBase?: string | null;
   /** Optional environment variable name LiteLLM reads the provider key from (`os.environ/<ref>`). */
   apiKeyEnvRef?: string | null;
+  /**
+   * Optional LiteLLM `/credentials` name (the BYOK dynamic path). When set it takes precedence over
+   * `apiKeyEnvRef`: the deployment binds `litellm_credential_name` so the key is resolved from
+   * LiteLLM's encrypted credential store with no pod restart, instead of the `os.environ` baseline.
+   */
+  litellmCredentialName?: string | null;
 }

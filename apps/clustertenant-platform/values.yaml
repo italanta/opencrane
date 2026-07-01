@@ -327,6 +327,20 @@ clustertenantManager:
   # `clustertenantManager.oidc.issuerUrl`; it makes no Zitadel management API calls.
 
 # -- LiteLLM integration settings
+# -- Short-lived TEST bootstrap of a silo's provider key. When providerKey.existingSecret names a
+#    Secret, the operator provisions its OpenAI key as this silo's BYOK key on boot (encrypted
+#    Secret + LiteLLM credential + seeded default model), so a freshly-deployed silo is usable
+#    without a manual key-set. OFF by default. NOT for production: it injects ONE shared key for all
+#    tenants in the silo (no per-tenant spend isolation). Create the Secret out-of-band, e.g.
+#    `kubectl -n <silo-ns> create secret generic opencrane-bootstrap-provider-key --from-literal=openaiApiKey=sk-...`
+#    then set providerKey.existingSecret to its name; delete the Secret to stop re-applying.
+bootstrap:
+  providerKey:
+    # -- Name of an existing Secret holding the OpenAI key; empty disables the bootstrap.
+    existingSecret: ""
+    # -- Key within that Secret carrying the raw OpenAI API key.
+    secretKey: openaiApiKey
+
 litellm:
   # -- Cost routing is enabled by default as part of platform setup.
   enabled: true

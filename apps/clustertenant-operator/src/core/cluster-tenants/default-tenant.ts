@@ -59,6 +59,20 @@ export async function _EnsureOwnerDefaultTenant(opts: {
     return { tenantName, created: false };
   }
 
+  // 1b. Onboarding precondition — at least one model must be registered. Tenant pods run LiteLLM
+  //     in `replace` mode (the proxy is the ONLY provider — see 2-config-map.ts `models.mode`), so a
+  //     silo with no models would provision a pod with an empty allowlist and zero usable models.
+  //     Refuse to seed the org's first workspace until a model exists at its scope (Global, or its
+  //     own ClusterTenant). Self-heals: registering a model — or setting a provider key, which
+  //     auto-seeds one — then refreshing the org re-runs this seed.
+  const modelCount = await prisma.modelDefinition.count({
+    where: { OR: [{ scope: "Global" }, { scope: "ClusterTenant", clusterTenant: orgName }] },
+  });
+  if (modelCount === 0)
+  {
+    return { tenantName, created: false, skippedReason: "no models registered for this org — register a model or set a provider key before its workspace can start (LiteLLM replace mode requires ≥1 model)" };
+  }
+
   // 2. Resolve the owner email: the caller's value wins; otherwise recover it from an
   //    already-seeded CRD (the path we are repairing). The CRD read also tells us whether
   //    to skip the create-CRD step below.

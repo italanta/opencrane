@@ -80,13 +80,15 @@ function _validateWrite(body: Record<string, unknown>): { error: string; code: s
  * @param prisma - Prisma client used to look up the credential.
  * @param providerCredentialId - The requested credential id, or undefined/null when none.
  * @param modelClusterTenant - The owning ClusterTenant of the model (null for Global scope).
- * @returns `{ secretRef }` (null when no credential requested), or a `{ error, code }` envelope.
+ * @returns `{ secretRef, litellmCredentialName }` (both null when no credential requested), or a
+ *          `{ error, code }` envelope. `litellmCredentialName` is non-null for a BYOK credential on
+ *          the dynamic path and selects `litellm_credential_name` over the `os.environ` baseline.
  */
-async function _resolveCredential(prisma: PrismaClient, providerCredentialId: string | null | undefined, modelClusterTenant: string | null): Promise<{ secretRef: string | null } | { error: string; code: string }>
+async function _resolveCredential(prisma: PrismaClient, providerCredentialId: string | null | undefined, modelClusterTenant: string | null): Promise<{ secretRef: string | null; litellmCredentialName: string | null } | { error: string; code: string }>
 {
   if (!providerCredentialId)
   {
-    return { secretRef: null };
+    return { secretRef: null, litellmCredentialName: null };
   }
   const credential = await prisma.providerCredential.findUnique({ where: { id: providerCredentialId } });
   if (!credential)
@@ -98,7 +100,7 @@ async function _resolveCredential(prisma: PrismaClient, providerCredentialId: st
   {
     return { error: "providerCredentialId is owned by a different ClusterTenant.", code: "CREDENTIAL_SCOPE_MISMATCH" };
   }
-  return { secretRef: credential.secretRef };
+  return { secretRef: credential.secretRef, litellmCredentialName: credential.litellmCredentialName };
 }
 
 /**
@@ -187,6 +189,7 @@ export function modelRegistryRouter(prisma: PrismaClient): Router
     const apiKeyEnvRef = credentialResult.secretRef;
 
     // 3. Best-effort LiteLLM registration; returns a deterministic placeholder when unconfigured.
+    //    A BYOK credential name (when present) selects the dynamic path over the env baseline.
     const litellmModelId = await _RegisterLiteLlmModel({
       publicModelName: write.publicModelName.trim(),
       upstreamModel: write.upstreamModel.trim(),
@@ -194,6 +197,7 @@ export function modelRegistryRouter(prisma: PrismaClient): Router
       clusterTenant: scope === ModelRoutingScope.ClusterTenant ? write.clusterTenant!.trim() : null,
       apiBase: write.apiBase?.trim() || null,
       apiKeyEnvRef,
+      litellmCredentialName: credentialResult.litellmCredentialName,
     });
 
     // 4. Persist the row with the resolved deployment id.

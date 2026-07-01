@@ -80,6 +80,47 @@ export interface ModelDefinition
   updatedAt: string;
 }
 
+/**
+ * Providers a BYOK upstream key may be set for. Unlike {@link ProviderCredential} (a reference to
+ * an externally-synced Secret), a BYOK key is set with its RAW value over HTTPS, persisted to a
+ * k8s Secret, and registered with LiteLLM's `/credentials` dynamic path. Add providers here as the
+ * runtime gains routing support for them.
+ */
+export const ByokProvider = {
+  OpenAI: "openai",
+  Anthropic: "anthropic",
+  Gemini: "gemini",
+  Mistral: "mistral",
+  Deepseek: "deepseek",
+  Glm: "glm",
+} as const;
+
+/** Union of the {@link ByokProvider} values. */
+export type ByokProvider = (typeof ByokProvider)[keyof typeof ByokProvider];
+
+/**
+ * Set/refresh body for a BYOK provider key. Carries the RAW upstream key — accepted only over
+ * HTTPS, written straight to a k8s Secret and LiteLLM, and NEVER echoed back by any read endpoint.
+ */
+export interface ProviderKeySetRequest
+{
+  /** The raw upstream provider API key (e.g. `sk-...`). */
+  apiKey: string;
+}
+
+/** Read-side status of a BYOK provider key. Carries no key material — presence and timestamps only. */
+export interface ProviderKeyStatus
+{
+  /** The provider this status describes. */
+  provider: ByokProvider;
+  /** Whether a key is currently set for this provider in this silo. */
+  configured: boolean;
+  /** Whether the key was accepted by LiteLLM's `/credentials` dynamic path (false ⇒ Secret-only). */
+  litellmRegistered: boolean;
+  /** When the key was last set (ISO-8601); null when not configured. */
+  updatedAt: string | null;
+}
+
 /** Create/update body for a {@link ModelDefinition}. */
 export interface ModelDefinitionWrite
 {

@@ -426,6 +426,25 @@ const ProviderKeySchema = {
   },
 };
 
+const ByokProviderKeyStatusSchema = {
+  type: "object" as const,
+  required: ["provider", "configured", "litellmRegistered"],
+  properties: {
+    provider: { type: "string", enum: ["openai", "anthropic", "gemini", "mistral", "deepseek", "glm"], description: "The provider this status describes." },
+    configured: { type: "boolean", description: "Whether a key is currently set for this provider in this silo." },
+    litellmRegistered: { type: "boolean", description: "Whether LiteLLM's /credentials dynamic path accepted the key (false ⇒ Secret-only)." },
+    updatedAt: { type: "string", format: "date-time", nullable: true, description: "When the key was last set; null when not configured." },
+  },
+};
+
+const ProviderKeySetRequestSchema = {
+  type: "object" as const,
+  required: ["apiKey"],
+  properties: {
+    apiKey: { type: "string", description: "The raw upstream provider API key. Accepted only over HTTPS; written to a k8s Secret + LiteLLM and never returned by any read." },
+  },
+};
+
 const ProviderCredentialSchema = {
   type: "object" as const,
   required: ["id", "scope", "provider", "secretRef"],
@@ -815,6 +834,8 @@ export const spec = {
       AuditEntry: AuditEntrySchema,
       AccessToken: AccessTokenSchema,
       ProviderKey: ProviderKeySchema,
+      ByokProviderKeyStatus: ByokProviderKeyStatusSchema,
+      ProviderKeySetRequest: ProviderKeySetRequestSchema,
       ProviderCredential: ProviderCredentialSchema,
       ProviderCredentialWrite: ProviderCredentialWriteSchema,
       ModelDefinition: ModelDefinitionSchema,
@@ -2177,6 +2198,49 @@ export const spec = {
         responses: {
           204: { description: "Key deleted." },
           404: notFound("Provider key not found."),
+        },
+      },
+    },
+
+    // ------------------------------------------------------------------
+    // BYOK provider keys — set/refresh a RAW upstream key over HTTPS for this
+    // silo. The key is written to a k8s Secret + LiteLLM's /credentials dynamic
+    // path; reads return presence + timestamps only, never the key value.
+    // ------------------------------------------------------------------
+    "/providers/byok": {
+      get: {
+        operationId: "listByokProviderKeys",
+        summary: "List BYOK provider key status for every supported provider (never the key value)",
+        tags: ["Provider Keys"],
+        responses: {
+          200: ok("BYOK provider key status list.", { type: "array", items: { $ref: "#/components/schemas/ByokProviderKeyStatus" } }),
+        },
+      },
+    },
+
+    "/providers/byok/{provider}": {
+      put: {
+        operationId: "setByokProviderKey",
+        summary: "Set or refresh a provider's raw key (writes a k8s Secret + LiteLLM credential)",
+        tags: ["Provider Keys"],
+        parameters: [{ name: "provider", in: "path", required: true, schema: { type: "string", enum: ["openai", "anthropic", "gemini", "mistral", "deepseek", "glm"] } }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { $ref: "#/components/schemas/ProviderKeySetRequest" } } },
+        },
+        responses: {
+          200: ok("Key set; returns the provider's status.", { $ref: "#/components/schemas/ByokProviderKeyStatus" }),
+          400: badRequest("Unsupported provider (code UNSUPPORTED_PROVIDER) or missing apiKey (code VALIDATION_ERROR)."),
+        },
+      },
+      delete: {
+        operationId: "deleteByokProviderKey",
+        summary: "Remove a provider's key (deletes the Secret, LiteLLM credential, and record)",
+        tags: ["Provider Keys"],
+        parameters: [{ name: "provider", in: "path", required: true, schema: { type: "string", enum: ["openai", "anthropic", "gemini", "mistral", "deepseek", "glm"] } }],
+        responses: {
+          204: { description: "Key removed (idempotent — 204 even when no key was set)." },
+          400: badRequest("Unsupported provider (code UNSUPPORTED_PROVIDER)."),
         },
       },
     },

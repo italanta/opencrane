@@ -58,6 +58,26 @@ describe("TenantResourceBuilder", () =>
     expect(runtimeContract.skills.registry).toBe(defaultConfig.skillRegistryUrl);
   });
 
+  it("emits litellm-proxy in replace mode (LiteLLM is the only provider — no bare-provider bypass)", () =>
+  {
+    const liteLlmConfig = { ...defaultConfig, liteLlmEnabled: true };
+    const tenant = _makeTenant("ll");
+
+    // Non-empty modelSet → replace, default surfaced, allowlist restricted to the set.
+    const withModels = JSON.parse(_BuildConfigMap(liteLlmConfig, tenant, "default", undefined, { models: ["openai/gpt-4o", "anthropic/claude-sonnet-4-5"], defaultModel: "openai/gpt-4o" }).data?.["openclaw.json"] ?? "{}");
+    expect(withModels.models.mode).toBe("replace");
+    expect(withModels.models.default).toBe("openai/gpt-4o");
+    expect(Object.keys(withModels.models.providers)).toEqual(["litellm-proxy"]);
+    expect(withModels.models.providers["litellm-proxy"].models).toEqual(["openai/gpt-4o", "anthropic/claude-sonnet-4-5"]);
+
+    // Empty/null modelSet → still replace (no built-in fallback); empty allowlist, no default.
+    // This bricked-pod window is what cluster onboarding's ≥1-model requirement prevents.
+    const noModels = JSON.parse(_BuildConfigMap(liteLlmConfig, tenant, "default", undefined, null).data?.["openclaw.json"] ?? "{}");
+    expect(noModels.models.mode).toBe("replace");
+    expect(noModels.models.default).toBeUndefined();
+    expect(noModels.models.providers["litellm-proxy"].models).toEqual([]);
+  });
+
   it("normalises the gateway owner allowlist (trim + lowercase) to match gateway-verify", () =>
   {
     // gateway-verify injects email.trim().toLowerCase(); a mixed-case / padded owner

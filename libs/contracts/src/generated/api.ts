@@ -871,6 +871,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/providers/byok": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List BYOK provider key status for every supported provider (never the key value) */
+        get: operations["listByokProviderKeys"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/providers/byok/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set or refresh a provider's raw key (writes a k8s Secret + LiteLLM credential) */
+        put: operations["setByokProviderKey"];
+        post?: never;
+        /** Remove a provider's key (deletes the Secret, LiteLLM credential, and record) */
+        delete: operations["deleteByokProviderKey"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/providers/credentials": {
         parameters: {
             query?: never;
@@ -1872,6 +1907,26 @@ export interface components {
             configured?: boolean;
             /** Format: date-time */
             updatedAt?: string;
+        };
+        ByokProviderKeyStatus: {
+            /**
+             * @description The provider this status describes.
+             * @enum {string}
+             */
+            provider: "openai" | "anthropic" | "gemini" | "mistral" | "deepseek" | "glm";
+            /** @description Whether a key is currently set for this provider in this silo. */
+            configured: boolean;
+            /** @description Whether LiteLLM's /credentials dynamic path accepted the key (false ⇒ Secret-only). */
+            litellmRegistered: boolean;
+            /**
+             * Format: date-time
+             * @description When the key was last set; null when not configured.
+             */
+            updatedAt?: string | null;
+        };
+        ProviderKeySetRequest: {
+            /** @description The raw upstream provider API key. Accepted only over HTTPS; written to a k8s Secret + LiteLLM and never returned by any read. */
+            apiKey: string;
         };
         ProviderCredential: {
             /** @description Stable identifier. */
@@ -4963,6 +5018,90 @@ export interface operations {
             };
             /** @description Provider key not found. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listByokProviderKeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description BYOK provider key status list. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ByokProviderKeyStatus"][];
+                };
+            };
+        };
+    };
+    setByokProviderKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "openai" | "anthropic" | "gemini" | "mistral" | "deepseek" | "glm";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderKeySetRequest"];
+            };
+        };
+        responses: {
+            /** @description Key set; returns the provider's status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ByokProviderKeyStatus"];
+                };
+            };
+            /** @description Unsupported provider (code UNSUPPORTED_PROVIDER) or missing apiKey (code VALIDATION_ERROR). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteByokProviderKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "openai" | "anthropic" | "gemini" | "mistral" | "deepseek" | "glm";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Key removed (idempotent — 204 even when no key was set). */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unsupported provider (code UNSUPPORTED_PROVIDER). */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

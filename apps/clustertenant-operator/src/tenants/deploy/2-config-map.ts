@@ -34,10 +34,13 @@ const _WORKSPACE_PATH = "/data/openclaw/workspace";
  * @param namespace - Namespace the ConfigMap is written to.
  * @param effectivePolicy - The resolved AccessPolicy, when one applies.
  * @param modelSet - The tenant's allowed model set fetched best-effort from the
- *        control-plane, or `null`. When non-empty (and LiteLLM is enabled) the
- *        `litellm-proxy` provider is restricted to those models and the default
- *        model is surfaced; when empty/null the provider keeps `models: []`
- *        (unchanged today's behaviour — OpenClaw treats `[]` as the proxy default).
+ *        control-plane, or `null`. When LiteLLM is enabled the `litellm-proxy` provider runs in
+ *        `replace` mode (it is the ONLY provider), restricted to these models with the default
+ *        surfaced. An empty/null result yields `models: []` — and because there are no built-in
+ *        providers to fall back to, the pod then has zero usable models. Cluster onboarding makes
+ *        that impossible by requiring ≥1 registered model before a silo is provisioned; a transient
+ *        control-plane outage at reconcile is the only window it can occur, and it self-heals on the
+ *        next successful fetch.
  * @param servingHost - The host the org's Control UI is served at (`<org>.<base>` or
  *        vanity), used to allowlist the browser Origin in `gateway.controlUi.allowedOrigins`.
  *        With `bind: lan` the gateway rejects a Control-UI WS whose Origin is not allowlisted
@@ -49,10 +52,11 @@ export function _BuildConfigMap(config: OpenClawTenantOperatorConfig, tenant: Te
 {
   const name = tenant.metadata!.name!;
 
-  // 0. Allowed models — restrict the litellm-proxy provider to the tenant's
-  //    registered set when the control-plane returned a non-empty list. An empty
-  //    or null result falls back to `[]` (unchanged), so a control-plane outage
-  //    never narrows or breaks the tenant's model access.
+  // 0. Allowed models — the litellm-proxy provider (the ONLY provider under `replace` mode below)
+  //    is restricted to the tenant's registered set. An empty or null result yields `[]`; with no
+  //    built-ins to fall back to that means no usable models, which onboarding prevents by requiring
+  //    ≥1 registered model before provisioning (the empty case is only reachable on a transient
+  //    control-plane outage at reconcile, and self-heals on the next fetch).
   const allowedModels = modelSet && modelSet.models.length > 0 ? [...modelSet.models] : [];
   const defaultModel = modelSet?.defaultModel ?? null;
 
@@ -119,7 +123,14 @@ export function _BuildConfigMap(config: OpenClawTenantOperatorConfig, tenant: Te
     ...(config.liteLlmEnabled
       ? {
             models: {
-              mode: "merge",
+              // `replace` (not `merge`): the litellm-proxy provider REPLACES OpenClaw's built-in
+              // providers, so EVERY model call must go through LiteLLM — no bare-provider bypass of
+              // the virtual key / budget metering / BYOK upstream key. This makes a non-empty model
+              // allowlist a hard requirement (an empty list ⇒ the pod has zero usable models), which
+              // cluster onboarding enforces by requiring at least one registered model before a silo
+              // is provisioned (see fleet-operator ClusterTenant readiness). The BYOK key flow also
+              // auto-seeds a default model, so a key-configured silo always satisfies this.
+              mode: "replace",
               ...(defaultModel ? { default: defaultModel } : {}),
               providers: {
                 "litellm-proxy": {

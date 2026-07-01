@@ -32,6 +32,7 @@ export {
 } from "./mcp-operator.types.js";
 export {
   AutoRoutingObjective,
+  ByokProvider,
   ModelRoutingScope,
   RoutingProposalStatus,
   SkillModelMode,
@@ -42,6 +43,8 @@ export {
   type ModelRoutingDefaultWrite,
   type ProviderCredential,
   type ProviderCredentialWrite,
+  type ProviderKeySetRequest,
+  type ProviderKeyStatus,
   type RoutingEvalCase,
   type RoutingEvalCaseWrite,
   type RoutingMeasurement,

@@ -17,6 +17,7 @@ import { policiesRouter } from "./routes/policies.js";
 import { prometheusMetricsRouter } from "./routes/prometheus-metrics.js";
 import { providerKeysRouter } from "./routes/provider-keys.js";
 import { providerCredentialsRouter } from "./routes/provider-credentials.js";
+import { providerByokRouter } from "./routes/provider-byok.js";
 import { modelRegistryRouter } from "./routes/model-registry.js";
 import { modelRoutingDefaultsRouter } from "./routes/model-routing-defaults.js";
 import { modelRoutingRecommendationsRouter } from "./routes/model-routing-recommendations.js";
@@ -126,6 +127,9 @@ export function _RegisterRoutes(app: Express, prisma: PrismaClient, customApi: k
   app.use("/api/v1/access-tokens", accessTokensRouter(prisma));
   app.use("/api/v1/providers/keys", providerKeysRouter(prisma));
   app.use("/api/v1/providers/credentials", providerCredentialsRouter(prisma));
+  // BYOK raw-key path — writes the silo's provider key Secret in the operator's own namespace
+  // (POD_NAMESPACE, downward-API populated; "default" fallback mirrors config._readOwnNamespace).
+  app.use("/api/v1/providers/byok", providerByokRouter(prisma, coreApi, process.env.POD_NAMESPACE?.trim() || "default"));
   app.use("/api/v1/models", modelRegistryRouter(prisma));
   app.use("/api/v1/openapi.json", _OpenapiRouter(spec));
   app.get("/healthz", _CheckDbHealth(prisma));
