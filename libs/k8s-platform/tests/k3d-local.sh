@@ -127,17 +127,21 @@ echo "[local] Recreating k3d cluster '$CLUSTER_NAME'"
 k3d cluster delete "$CLUSTER_NAME" >/dev/null 2>&1 || true
 k3d cluster create "$CLUSTER_NAME" --agents 1
 
-# 4a. Pre-pulling the official CloudNativePG database image.
-echo "[local] Pre-pulling official CloudNativePG database image"
+# 4a. Pre-pulling the official CloudNativePG database and plane images.
+echo "[local] Pre-pulling official third-party database and plane images"
 docker pull ghcr.io/cloudnative-pg/postgresql:16
+docker pull cognee/cognee:1.2.1
+docker pull ghcr.io/obot-platform/obot:v0.23.1
 
-# 4b. Import locally built images into the k3d runtime.
+# 4b. Import locally built and pre-pulled images into the k3d runtime.
 echo "[local] Importing images into k3d"
 k3d image import opencrane/operator:local --cluster "$CLUSTER_NAME"
 k3d image import opencrane/tenant:local --cluster "$CLUSTER_NAME"
 k3d image import opencrane/clustertenant-manager:local --cluster "$CLUSTER_NAME"
 k3d image import opencrane/skill-registry:local --cluster "$CLUSTER_NAME"
 k3d image import ghcr.io/cloudnative-pg/postgresql:16 --cluster "$CLUSTER_NAME"
+k3d image import cognee/cognee:1.2.1 --cluster "$CLUSTER_NAME"
+k3d image import ghcr.io/obot-platform/obot:v0.23.1 --cluster "$CLUSTER_NAME"
 
 echo "[local] Using profile '$LOCAL_PROFILE' with values '$VALUES_FILE'"
 
