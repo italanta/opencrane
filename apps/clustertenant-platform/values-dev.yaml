@@ -11,6 +11,15 @@
 # Frees ~0.3 vCPU of requests per silo (~0.9 vCPU across three) vs the default profile.
 # =============================================================================
 
+# Disable idle auto-suspend in dev. Suspend scales the OpenClaw agent pod to zero after
+# IDLE_TIMEOUT_MINUTES (default 30); on this small, packed cluster resume is slow (autoscale +
+# image pull), so a tester who steps away returns to a dead gateway socket. 0 disables the
+# IdleChecker entirely (idle-checker.ts: "idle auto-suspend disabled"). PROD keeps auto-suspend —
+# the correct prod answer is wake-on-access (pod-token unsuspends + the SPA provisioning loader),
+# tracked in docs/optimalisation-plan.md (D5); until that ships, dev simply stays warm.
+fleetManager:
+  idleTimeoutMinutes: 0
+
 clustertenantManager:
   resources:
     requests:
