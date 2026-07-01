@@ -31,6 +31,34 @@ spec:
     - host: {{ $host | quote }}
       http:
         paths:
+          {{- if .Values.ingress.sameOrigin.enabled }}
+          # Same-origin: backend under /api (auth = /api/v1/auth/*), gateway WS under
+          # /gateway, and the org-admin SPA owns /. Helm OWNS these rules so no out-of-band
+          # kubectl patch is needed (see values ingress.sameOrigin + docs/optimalisation-plan.md §5).
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "opencrane.fullname" . }}-clustertenant-manager
+                port:
+                  number: {{ .Values.clustertenantManager.service.port }}
+          {{- if .Values.gatewayProxy.enabled }}
+          - path: /gateway
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "opencrane.fullname" . }}-gateway-proxy
+                port:
+                  number: {{ .Values.gatewayProxy.port }}
+          {{- end }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.ingress.sameOrigin.spaService }}
+                port:
+                  number: {{ .Values.ingress.sameOrigin.spaPort }}
+          {{- else }}
           - path: /
             pathType: Prefix
             backend:
@@ -38,4 +66,5 @@ spec:
                 name: {{ include "opencrane.fullname" . }}-clustertenant-manager
                 port:
                   number: {{ .Values.clustertenantManager.service.port }}
+          {{- end }}
 {{- end }}

@@ -550,6 +550,25 @@ ingress:
   #    per-org DNS side effect (the Certificate is still applied). Wired to the operator
   #    as INGRESS_IP.
   externalIp: ""
+  # -- Same-origin hosting (DOMAIN.T4 / frontend-same-origin). When enabled, the org host's
+  #    Ingress serves the org-admin SPA at `/` and path-routes the SAME origin so the browser
+  #    gets first-party cookies with no CORS:
+  #      /api      → the control-plane backend (auth lives at /api/v1/auth/*)
+  #      /gateway  → the OpenClaw gateway WS proxy (only when gatewayProxy.enabled)
+  #      /         → the org-admin SPA Service (spaService, applied by the frontend layer)
+  #    DEFAULT OFF: a default render keeps the historical `/`→control-plane layout byte-for-byte,
+  #    so nothing regresses. Turning it ON makes Helm OWN these rules, so the frontend layer no
+  #    longer has to kubectl-patch this Ingress out-of-band — the patch fought `helm upgrade`
+  #    (SSA field-manager conflict) and reverted on every reconcile. See docs/optimalisation-plan.md §5.
+  #    NOTE: the mirror-image fleet host is already folded (fleet-manager-ingress renders /api+/auth
+  #    unconditionally); this brings the org host to parity.
+  sameOrigin:
+    enabled: false
+    # -- Name of the same-origin SPA Service that owns `/` (applied by the frontend layer, e.g.
+    #    weownai's platform/k8s/frontend-control-plane.yaml). Only consulted when enabled.
+    spaService: weownai-control-plane
+    # -- Port on the SPA Service.
+    spaPort: 80
   tls:
     enabled: false
     # -- Secret name for the platform wildcard TLS cert (`*.<domain>`, covering every
