@@ -174,15 +174,18 @@ describe("providerByokRouter", function _suite()
     const app = _buildApp(store, new Map(), { isOrgAdmin: true }, models);
     await request(app).put("/api/v1/providers/byok/openai").send({ apiKey: "sk-live-123" });
 
+    // All of OpenAI's model classes are seeded (one credential, many models); flagship is default.
     const seeded = Array.from(models.values());
-    expect(seeded).toHaveLength(1);
-    expect(seeded[0]).toMatchObject({ scope: "Global", clusterTenant: null, publicModelName: "openai/gpt-4o", isDefault: true });
-    // Bound to the upserted credential row so LiteLLM resolves the BYOK key for it.
+    expect(seeded).toHaveLength(3);
+    const flagship = seeded.find(function f(m) { return m.publicModelName === "openai/gpt-5.5"; });
+    expect(flagship).toMatchObject({ scope: "Global", clusterTenant: null, isDefault: true });
+    expect(seeded.filter(function d(m) { return m.isDefault; })).toHaveLength(1);
+    // Every class is bound to the one upserted credential row.
     const cred = Array.from(store.values())[0];
-    expect(seeded[0].providerCredentialId).toBe(cred.id);
+    expect(seeded.every(function bound(m) { return m.providerCredentialId === cred.id; })).toBe(true);
   });
 
-  it("first provider configured wins the silo default; the second is added but not default", async function _firstWins()
+  it("first provider configured wins the silo default; later providers add models but not the default", async function _firstWins()
   {
     const store = new Map<string, Row>();
     const models = new Map<string, Row>();
@@ -190,9 +193,12 @@ describe("providerByokRouter", function _suite()
     await request(app).put("/api/v1/providers/byok/openai").send({ apiKey: "k1" });
     await request(app).put("/api/v1/providers/byok/anthropic").send({ apiKey: "k2" });
 
+    // Both providers' full catalogs are registered (3 + 3), but only OpenAI's flagship is default.
     const byName = new Map(Array.from(models.values()).map(function _n(m) { return [m.publicModelName, m]; }));
-    expect(byName.get("openai/gpt-4o")).toMatchObject({ isDefault: true });
-    expect(byName.get("anthropic/claude-sonnet-4-5")).toMatchObject({ isDefault: false });
+    expect(byName.get("openai/gpt-5.5")).toMatchObject({ isDefault: true });
+    expect(byName.get("anthropic/claude-opus-4-8")).toMatchObject({ isDefault: false });
+    expect(Array.from(models.values()).filter(function d(m) { return m.isDefault; })).toHaveLength(1);
+    expect(models.size).toBe(6);
   });
 
   it("never echoes the raw key back in the response body", async function _noEcho()

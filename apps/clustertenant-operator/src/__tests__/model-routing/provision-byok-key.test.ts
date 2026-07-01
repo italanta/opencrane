@@ -66,10 +66,15 @@ describe("_ProvisionByokKey / _DeprovisionByokKey", function _suite()
     expect(result.litellmRegistered).toBe(false);
     expect(Buffer.from(secrets.get(_byokSecretName("openai"))!.data!.apiKey, "base64").toString("utf8")).toBe("sk-test-123");
     expect(Array.from(creds.values())[0]).toMatchObject({ scope: "Global", clusterTenant: null, provider: "openai" });
+    // All of the provider's model classes are seeded, ALL bound to the one credential.
     const seeded = Array.from(models.values());
-    expect(seeded).toHaveLength(1);
-    expect(seeded[0]).toMatchObject({ publicModelName: "openai/gpt-4o", isDefault: true });
-    expect(seeded[0].providerCredentialId).toBe(result.row.id);
+    expect(seeded).toHaveLength(3);
+    expect(seeded.map(function slug(m) { return m.publicModelName; }).sort()).toEqual(["openai/gpt-5.4", "openai/gpt-5.4-nano", "openai/gpt-5.5"]);
+    expect(seeded.every(function bound(m) { return m.providerCredentialId === result.row.id; })).toBe(true);
+    // The flagship (default class) claims the silo default; the other tiers do not.
+    const flagship = seeded.find(function f(m) { return m.publicModelName === "openai/gpt-5.5"; });
+    expect(flagship).toMatchObject({ isDefault: true });
+    expect(seeded.filter(function d(m) { return m.isDefault; })).toHaveLength(1);
   });
 
   it("deprovisions: removes the Secret and the credential row", async function _deprovision()

@@ -7,7 +7,8 @@ import type { PrismaClient, ProviderCredential as PrismaProviderCredential } fro
 
 import { _DeleteLiteLlmCredential, _UpsertLiteLlmCredential } from "./litellm-credential-registration.js";
 import { _RegisterLiteLlmModel } from "./litellm-model-registration.js";
-import { _BYOK_DEFAULT_MODELS } from "./byok-default-models.js";
+import { _BYOK_PROVIDER_CATALOG } from "./byok-default-models.js";
+import type { ByokProviderCatalog } from "./byok-default-models.js";
 
 /**
  * Reusable core for setting/removing a silo's BYOK provider key — the work behind both the HTTP
@@ -62,27 +63,30 @@ export async function _ProvisionByokKey(opts: {
 }): Promise<ProvisionByokKeyResult>
 {
   const { prisma, coreApi, operatorNamespace, provider, apiKey, log } = opts;
+  const catalog = _BYOK_PROVIDER_CATALOG[provider];
 
   // 1. Persist the raw key to its k8s Secret first — the durable source of truth.
   await _applyProviderKeySecret(coreApi, operatorNamespace, provider, apiKey);
 
   // 2. Best-effort push to LiteLLM's /credentials dynamic path; Secret-only when unconfigured/down.
+  //    custom_llm_provider is the catalog's litellmProvider (glm ⇒ zai), falling back to the key.
   const credentialName = _byokCredentialName(provider);
-  const litellmRegistered = await _UpsertLiteLlmCredential({ credentialName, provider, apiKey });
+  const litellmRegistered = await _UpsertLiteLlmCredential({ credentialName, provider: catalog?.litellmProvider ?? provider, apiKey });
 
   // 3. Record the credential reference (litellmCredentialName set only when LiteLLM accepted it).
   const secretRef = _byokSecretName(provider);
   const litellmCredentialName = litellmRegistered ? credentialName : null;
   const row = await _upsertCredentialRow(prisma, provider, secretRef, litellmCredentialName);
 
-  // 4. Best-effort: light up a default model so the key is usable end-to-end. Never fail the set.
+  // 4. Best-effort: register EVERY model class for the provider, all bound to this one credential,
+  //    so LiteLLM can switch across tiers on the single key. Never fail the set if this trips.
   try
   {
-    await _ensureProviderDefaultModel(prisma, provider, row.id, litellmCredentialName);
+    await _ensureProviderModels(prisma, catalog, row.id, litellmCredentialName);
   }
   catch (err)
   {
-    log.warn({ provider, err }, "byok default-model seed failed; key is set but no default model was seeded");
+    log.warn({ provider, err }, "byok model seed failed; key is set but its models were not seeded");
   }
 
   return { litellmRegistered, row };
@@ -212,50 +216,70 @@ async function _upsertCredentialRow(prisma: PrismaClient, provider: string, secr
 }
 
 /**
- * Best-effort: ensure the silo has a routable default model for a provider whose key was just set,
- * so the pod's `main` agent resolves to a `litellm-proxy` model. Registered Global-scoped and bound
- * to the BYOK credential, then surfaced by the tenant-models endpoint into the pod config.
+ * Best-effort: register EVERY model class in a provider's catalog, all Global-scoped and bound to
+ * the provider's SINGLE credential, so the pod's `main` agent resolves to a `litellm-proxy` model
+ * and LiteLLM can switch across the provider's tiers on the one key. The rows are surfaced by the
+ * tenant-models endpoint into the pod config.
  *
- * Non-destructive: an existing Global row for the slug is reused (re-bound rather than duplicated),
- * and the silo default is claimed only when no Global model is default yet — first provider wins.
+ * Non-destructive: an existing Global row for a slug is reused (re-bound to this credential rather
+ * than duplicated). The silo default is claimed by the catalog's `defaultClass` model only when no
+ * Global model is default yet — the first provider configured wins, and an existing default (here
+ * or a higher-precedence routing default) is never stolen.
+ *
+ * @param prisma                - Prisma client.
+ * @param catalog               - The provider's catalog, or undefined (provider not catalogued ⇒ no-op).
+ * @param providerCredentialId  - The single ProviderCredential id every class binds to.
+ * @param litellmCredentialName - The LiteLLM credential name (null ⇒ Secret-only; models register
+ *                                without a key binding and reconcile when LiteLLM is reachable).
  */
-async function _ensureProviderDefaultModel(prisma: PrismaClient, provider: string, providerCredentialId: string, litellmCredentialName: string | null): Promise<void>
+async function _ensureProviderModels(prisma: PrismaClient, catalog: ByokProviderCatalog | undefined, providerCredentialId: string, litellmCredentialName: string | null): Promise<void>
 {
-  const slug = _BYOK_DEFAULT_MODELS[provider];
-  if (!slug)
+  if (!catalog)
   {
     return;
   }
 
-  // 1. Find or register the Global model deployment for this slug, bound to the BYOK credential.
-  let model = await prisma.modelDefinition.findFirst({ where: { scope: "Global", clusterTenant: null, publicModelName: slug } });
-  if (model)
+  // 1. Find or register each class's Global model deployment, all bound to the ONE credential.
+  let defaultModelId: string | null = null;
+  for (const entry of catalog.models)
   {
-    if (model.providerCredentialId !== providerCredentialId)
+    let model = await prisma.modelDefinition.findFirst({ where: { scope: "Global", clusterTenant: null, publicModelName: entry.slug } });
+    if (model)
     {
-      model = await prisma.modelDefinition.update({ where: { id: model.id }, data: { providerCredentialId } });
+      if (model.providerCredentialId !== providerCredentialId)
+      {
+        model = await prisma.modelDefinition.update({ where: { id: model.id }, data: { providerCredentialId } });
+      }
+    }
+    else
+    {
+      const litellmModelId = await _RegisterLiteLlmModel({
+        publicModelName: entry.slug,
+        upstreamModel: entry.slug,
+        scope: ModelRoutingScope.Global,
+        clusterTenant: null,
+        apiBase: null,
+        apiKeyEnvRef: null,
+        litellmCredentialName,
+      });
+      model = await prisma.modelDefinition.create({
+        data: { scope: "Global", clusterTenant: null, publicModelName: entry.slug, litellmModelId, upstreamModel: entry.slug, apiBase: null, isDefault: false, providerCredentialId },
+      });
+    }
+    if (entry.className === catalog.defaultClass)
+    {
+      defaultModelId = model.id;
     }
   }
-  else
-  {
-    const litellmModelId = await _RegisterLiteLlmModel({
-      publicModelName: slug,
-      upstreamModel: slug,
-      scope: ModelRoutingScope.Global,
-      clusterTenant: null,
-      apiBase: null,
-      apiKeyEnvRef: null,
-      litellmCredentialName,
-    });
-    model = await prisma.modelDefinition.create({
-      data: { scope: "Global", clusterTenant: null, publicModelName: slug, litellmModelId, upstreamModel: slug, apiBase: null, isDefault: false, providerCredentialId },
-    });
-  }
 
-  // 2. Claim the silo default only when nothing is default yet — first provider configured wins.
-  const hasDefault = await prisma.modelDefinition.findFirst({ where: { scope: "Global", clusterTenant: null, isDefault: true } });
-  if (!hasDefault)
+  // 2. Claim the silo default with the provider's default-class model, only when nothing is default
+  //    yet — first provider configured wins; never steal an existing default.
+  if (defaultModelId)
   {
-    await prisma.modelDefinition.update({ where: { id: model.id }, data: { isDefault: true } });
+    const hasDefault = await prisma.modelDefinition.findFirst({ where: { scope: "Global", clusterTenant: null, isDefault: true } });
+    if (!hasDefault)
+    {
+      await prisma.modelDefinition.update({ where: { id: defaultModelId }, data: { isDefault: true } });
+    }
   }
 }
