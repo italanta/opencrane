@@ -195,7 +195,7 @@ kubectl create secret generic "opencrane-silo-db" \
   -o yaml | kubectl apply -f -
 
 echo "[local] Bootstrapping credentials secret for Obot MCP Gateway"
-kubectl create secret generic "opencrane-obot" \
+kubectl create secret generic "opencrane-silo-obot" \
   -n "$NAMESPACE" \
   --from-literal=dsn="postgresql://opencrane:${DB_PASSWORD}@${DB_RELEASE_NAME}-rw.${NAMESPACE}.svc.cluster.local:5432/obot" \
   --dry-run=client \
