@@ -14,6 +14,14 @@ DB_SECRET_NAME="${DB_SECRET_NAME:-opencrane-db}"
 DB_PASSWORD="${DB_PASSWORD:-opencrane-local-password}"
 LITELLM_SECRET_NAME="${LITELLM_SECRET_NAME:-opencrane-litellm}"
 LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY:-opencrane-local-master-key}"
+LANGFUSE_SECRET_NAME="${LANGFUSE_SECRET_NAME:-opencrane-langfuse}"
+LANGFUSE_NEXTAUTH_SECRET="${LANGFUSE_NEXTAUTH_SECRET:-opencrane-local-langfuse-nextauth-secret}"
+LANGFUSE_SALT="${LANGFUSE_SALT:-opencrane-local-langfuse-salt}"
+LANGFUSE_ENCRYPTION_KEY="${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}"
+LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY:-pk-lf-opencrane-local-public-key}"
+LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY:-sk-lf-opencrane-local-secret-key}"
+LANGFUSE_ADMIN_PASSWORD="${LANGFUSE_ADMIN_PASSWORD:-opencrane-local-langfuse-admin-password}"
+LANGFUSE_CH_PASSWORD="${LANGFUSE_CH_PASSWORD:-opencrane-local-langfuse-clickhouse-password}"
 
 function _require_cmd()
 {
@@ -175,6 +183,7 @@ spec:
         # The silo (clustertenant) control-plane is a SEPARATE Prisma client from the fleet
         # registry — they cannot share a database (each owns its own _prisma_migrations).
         - CREATE DATABASE silo OWNER opencrane;
+        $( if grep -A 5 "langfuse:" "$VALUES_FILE" 2>/dev/null | grep -A 5 "inCluster:" | grep -q "enabled: true"; then echo "        - CREATE DATABASE langfuse OWNER opencrane;"; fi )
 EOF
 
 echo "[local] Waiting for Control-Plane Database Engine to stabilize..."
@@ -208,6 +217,20 @@ kubectl create secret generic "opencrane-litellm-db" \
   --dry-run=client \
   -o yaml | kubectl apply -f -
 
+if grep -A 5 "langfuse:" "$VALUES_FILE" 2>/dev/null | grep -A 5 "inCluster:" | grep -q "enabled: true"; then
+  echo "[local] Bootstrapping credentials secret for Langfuse"
+  kubectl create secret generic "opencrane-langfuse" \
+    -n "$NAMESPACE" \
+    --from-literal=NEXTAUTH_SECRET="$LANGFUSE_NEXTAUTH_SECRET" \
+    --from-literal=SALT="$LANGFUSE_SALT" \
+    --from-literal=ENCRYPTION_KEY="$LANGFUSE_ENCRYPTION_KEY" \
+    --from-literal=CLICKHOUSE_PASSWORD="$LANGFUSE_CH_PASSWORD" \
+    --from-literal=LANGFUSE_INIT_PROJECT_PUBLIC_KEY="$LANGFUSE_PUBLIC_KEY" \
+    --from-literal=LANGFUSE_INIT_PROJECT_SECRET_KEY="$LANGFUSE_SECRET_KEY" \
+    --from-literal=LANGFUSE_INIT_USER_PASSWORD="$LANGFUSE_ADMIN_PASSWORD" \
+    --dry-run=client \
+    -o yaml | kubectl apply -f -
+fi
 
 if [[ "$LOCAL_PROFILE" == "strict" ]]; then
   kubectl create secret generic "$LITELLM_SECRET_NAME" \
